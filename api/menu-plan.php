@@ -9,11 +9,10 @@ $input = $_SERVER['REQUEST_METHOD'] === 'POST' ? getJsonInput() : [];
 // Ensure weekly_menu table exists
 $db->exec("CREATE TABLE IF NOT EXISTS weekly_menu (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    day_of_week TINYINT NOT NULL COMMENT '0=Sunday,1=Monday...6=Saturday',
+    day_of_week TINYINT NOT NULL,
     meal ENUM('lunch','dinner') NOT NULL,
     recipe_id INT NOT NULL,
-    sort_order INT DEFAULT 0,
-    FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+    sort_order INT DEFAULT 0
 )");
 
 switch ($action) {
