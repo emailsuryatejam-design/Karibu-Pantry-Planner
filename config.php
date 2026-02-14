@@ -8,10 +8,10 @@
 session_start();
 
 // ── Database ──
-define('DB_HOST', 'localhost');
-define('DB_NAME', 'pantry_planner');
-define('DB_USER', 'root');
-define('DB_PASS', '');
+define('DB_HOST', 'auth-db960.hstgr.io');
+define('DB_NAME', 'u929828006_Pantryplanner');
+define('DB_USER', 'u929828006_Pantryplanner');
+define('DB_PASS', '6145ury@Teja');
 
 function getDB() {
     static $pdo = null;
