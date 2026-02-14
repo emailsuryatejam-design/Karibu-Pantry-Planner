@@ -28,7 +28,7 @@ switch ($action) {
 
         $dishes = [];
         if ($plan) {
-            $stmt = $db->prepare('SELECT d.*, r.name as recipe_name FROM menu_dishes d LEFT JOIN recipes r ON d.recipe_id = r.id WHERE d.plan_id = ? ORDER BY FIELD(d.course, "appetizer","soup","salad","main_course","side","dessert","beverage"), d.id');
+            $stmt = $db->prepare('SELECT d.*, r.name as recipe_name, r.servings as recipe_servings FROM menu_dishes d LEFT JOIN recipes r ON d.recipe_id = r.id WHERE d.plan_id = ? ORDER BY FIELD(d.course, "appetizer","soup","salad","main_course","side","dessert","beverage"), d.id');
             $stmt->execute([$plan['id']]);
             $dishes = $stmt->fetchAll();
 
