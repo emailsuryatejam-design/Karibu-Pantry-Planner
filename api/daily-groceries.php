@@ -152,7 +152,6 @@ switch ($action) {
         }
 
         auditLog('submit_order', 'grocery_orders', $orderId, null, ['date' => $date, 'meal' => $meal, 'items' => count($items)]);
-        showToast('Order submitted!');
         jsonResponse(['order_id' => $orderId]);
         break;
 

@@ -3,7 +3,7 @@
   "appName": "Karibu Pantry Planner",
   "webDir": "www",
   "server": {
-    "url": "https://pantry.karibucamps.com",
+    "url": "https://mediumblue-beaver-992445.hostingersite.com",
     "cleartext": false
   },
   "android": {
