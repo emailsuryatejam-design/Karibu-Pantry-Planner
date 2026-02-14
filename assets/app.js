@@ -7,6 +7,7 @@ async function api(endpoint, options = {}) {
     const method = (options.method || 'GET').toUpperCase();
     const config = {
         method,
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', ...options.headers },
     };
     if (options.body && method !== 'GET') {

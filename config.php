@@ -5,6 +5,12 @@
  */
 
 // ── Session ──
+session_set_cookie_params([
+    'lifetime' => 86400,
+    'path' => '/',
+    'httponly' => true,
+    'samesite' => 'Lax',
+]);
 session_start();
 
 // ── Database ──
