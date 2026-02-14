@@ -301,7 +301,7 @@ function populateRecipePicker() {
     for (const [cat, items] of Object.entries(grouped)) {
         html += `<optgroup label="${cat.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}">`;
         items.forEach(r => {
-            html += `<option value="${r.id}" data-name="${r.name}" data-cat="${r.category}">${r.name} (${r.ingredient_count || 0} ing)</option>`;
+            html += `<option value="${r.id}" data-name="${r.name}" data-cat="${r.category}">${r.name}</option>`;
         });
         html += '</optgroup>';
     }

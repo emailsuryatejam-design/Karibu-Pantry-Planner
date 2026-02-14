@@ -43,8 +43,8 @@ switch ($action) {
             }
         }
 
-        // Get all recipes for dropdown — single efficient query
-        $recipes = $db->query('SELECT r.id, r.name, r.category, COUNT(ri.id) as ingredient_count FROM recipes r LEFT JOIN recipe_ingredients ri ON ri.recipe_id = r.id GROUP BY r.id, r.name, r.category ORDER BY r.name')->fetchAll();
+        // Get all recipes for dropdown — simple fast query
+        $recipes = $db->query('SELECT id, name, category FROM recipes ORDER BY name')->fetchAll();
 
         jsonResponse([
             'plan' => $plan,
