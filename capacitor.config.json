@@ -1,0 +1,12 @@
+{
+  "appId": "com.karibucamps.pantry",
+  "appName": "Karibu Pantry Planner",
+  "webDir": "www",
+  "server": {
+    "url": "https://pantry.karibucamps.com",
+    "cleartext": false
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

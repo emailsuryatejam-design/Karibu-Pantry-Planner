@@ -1,0 +1,17 @@
+{
+  "name": "karibu-pantry-planner",
+  "version": "1.0.0",
+  "description": "Karibu Pantry Planner — Kitchen management for Karibu Camps",
+  "scripts": {
+    "cap:sync": "npx cap sync android",
+    "cap:open": "npx cap open android",
+    "apk": "npx cap sync android && cd android && ./gradlew assembleDebug && echo 'APK built at android/app/build/outputs/apk/debug/app-debug.apk'"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.0.0"
+  }
+}
