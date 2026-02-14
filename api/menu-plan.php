@@ -23,16 +23,28 @@ switch ($action) {
             $stmt->execute([$plan['id']]);
             $dishes = $stmt->fetchAll();
 
-            // Load ingredients for each dish
-            foreach ($dishes as &$dish) {
-                $ing = $db->prepare('SELECT * FROM dish_ingredients WHERE dish_id = ? ORDER BY id');
-                $ing->execute([$dish['id']]);
-                $dish['ingredients'] = $ing->fetchAll();
+            // Single query for all ingredients across all dishes
+            if (!empty($dishes)) {
+                $dishIds = array_column($dishes, 'id');
+                $placeholders = implode(',', array_fill(0, count($dishIds), '?'));
+                $ingStmt = $db->prepare("SELECT * FROM dish_ingredients WHERE dish_id IN ($placeholders) ORDER BY id");
+                $ingStmt->execute($dishIds);
+                $allIngredients = $ingStmt->fetchAll();
+
+                // Group by dish_id
+                $ingByDish = [];
+                foreach ($allIngredients as $ing) {
+                    $ingByDish[$ing['dish_id']][] = $ing;
+                }
+                foreach ($dishes as &$dish) {
+                    $dish['ingredients'] = $ingByDish[$dish['id']] ?? [];
+                }
+                unset($dish);
             }
         }
 
-        // Get all recipes for dropdown
-        $recipes = $db->query('SELECT id, name, category, (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = recipes.id) as ingredient_count FROM recipes ORDER BY name')->fetchAll();
+        // Get all recipes for dropdown — single efficient query
+        $recipes = $db->query('SELECT r.id, r.name, r.category, COUNT(ri.id) as ingredient_count FROM recipes r LEFT JOIN recipe_ingredients ri ON ri.recipe_id = r.id GROUP BY r.id, r.name, r.category ORDER BY r.name')->fetchAll();
 
         jsonResponse([
             'plan' => $plan,
