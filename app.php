@@ -3,7 +3,7 @@ require_once __DIR__ . '/config.php';
 requireLogin();
 
 $user = currentUser();
-$page = $_GET['page'] ?? (isChef() ? 'menu-plan' : 'store-orders');
+$page = $_GET['page'] ?? (isStorekeeper() ? 'store-orders' : 'menu-plan');
 
 // Valid pages per role
 $chefPages = ['menu-plan', 'daily-groceries', 'recipes', 'settings'];
@@ -74,7 +74,7 @@ $pageTitle = $pageTitles[$page] ?? 'Pantry Planner';
     </header>
 
     <!-- Content -->
-    <main class="pb-20 lg:pb-4 max-w-2xl mx-auto px-4 py-4">
+    <main class="pb-20 max-w-2xl mx-auto px-4 py-4">
         <?php
         $pageFile = __DIR__ . '/pages/' . $page . '.php';
         if (file_exists($pageFile)) {
@@ -86,7 +86,7 @@ $pageTitle = $pageTitles[$page] ?? 'Pantry Planner';
     </main>
 
     <!-- Mobile Bottom Nav -->
-    <nav class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-50">
         <div class="flex justify-around items-center h-16 px-1">
             <?php if (isChef() || isAdmin()): ?>
                 <a href="app.php?page=menu-plan"
