@@ -109,7 +109,7 @@ $tables = [
         id INT AUTO_INCREMENT PRIMARY KEY,
         order_date DATE NOT NULL,
         meal ENUM('lunch', 'dinner') NOT NULL,
-        status ENUM('pending', 'reviewing', 'approved', 'partial', 'rejected', 'fulfilled') DEFAULT 'pending',
+        status ENUM('pending', 'reviewing', 'approved', 'partial', 'rejected', 'fulfilled', 'received') DEFAULT 'pending',
         total_items INT DEFAULT 0,
         notes TEXT,
         created_by INT DEFAULT NULL,
@@ -151,6 +151,22 @@ foreach ($tables as $name => $sql) {
         echo "  [OK] $name\n";
     } catch (PDOException $e) {
         echo "  [FAIL] $name: " . $e->getMessage() . "\n";
+    }
+}
+
+// ── Migrations (alter existing tables) ──
+echo "\n--- Running migrations ---\n";
+
+$migrations = [
+    "ALTER TABLE grocery_orders MODIFY COLUMN status ENUM('pending', 'reviewing', 'approved', 'partial', 'rejected', 'fulfilled', 'received') DEFAULT 'pending'",
+];
+
+foreach ($migrations as $sql) {
+    try {
+        $db->exec($sql);
+        echo "  [OK] Migration applied\n";
+    } catch (PDOException $e) {
+        echo "  [SKIP] " . $e->getMessage() . "\n";
     }
 }
 

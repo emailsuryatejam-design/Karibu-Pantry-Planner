@@ -1,255 +1,220 @@
-<!-- Store Orders — Storekeeper view -->
+<!-- Store Orders — Storekeeper view: see chef orders, mark items as sent -->
 <div id="storeOrdersPage">
+    <!-- Header -->
+    <div class="flex items-center justify-between mb-4">
+        <div>
+            <h1 class="text-lg font-bold text-gray-900 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-green-600"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+                Store Orders
+            </h1>
+            <p class="text-xs text-gray-500 mt-0.5">Orders from kitchen</p>
+        </div>
+    </div>
 
     <!-- Status Tabs -->
-    <div class="flex gap-1.5 overflow-x-auto pb-2 mb-4 -mx-1 px-1 scroll-touch">
-        <button onclick="filterOrders('all')" id="tab-all"
-            class="tab-btn flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-green-600 text-white">
-            All <span id="count-all" class="text-[10px] opacity-80">0</span>
+    <div class="flex gap-1.5 overflow-x-auto pb-2 mb-3 -mx-1 px-1 scroll-touch">
+        <button onclick="soFilter('all')" id="so-tab-all"
+            class="so-tab flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-green-600 text-white">
+            All <span id="so-count-all" class="text-[10px] opacity-80">0</span>
         </button>
-        <button onclick="filterOrders('pending')" id="tab-pending"
-            class="tab-btn flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600">
-            Pending <span id="count-pending" class="text-[10px] opacity-80">0</span>
+        <button onclick="soFilter('pending')" id="so-tab-pending"
+            class="so-tab flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600">
+            New <span id="so-count-pending" class="text-[10px] opacity-80">0</span>
         </button>
-        <button onclick="filterOrders('reviewing')" id="tab-reviewing"
-            class="tab-btn flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600">
-            Reviewing <span id="count-reviewing" class="text-[10px] opacity-80">0</span>
+        <button onclick="soFilter('fulfilled')" id="so-tab-fulfilled"
+            class="so-tab flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600">
+            Sent <span id="so-count-fulfilled" class="text-[10px] opacity-80">0</span>
         </button>
-        <button onclick="filterOrders('approved')" id="tab-approved"
-            class="tab-btn flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600">
-            Approved <span id="count-approved" class="text-[10px] opacity-80">0</span>
-        </button>
-        <button onclick="filterOrders('partial')" id="tab-partial"
-            class="tab-btn flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600">
-            Partial <span id="count-partial" class="text-[10px] opacity-80">0</span>
-        </button>
-        <button onclick="filterOrders('fulfilled')" id="tab-fulfilled"
-            class="tab-btn flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600">
-            Fulfilled <span id="count-fulfilled" class="text-[10px] opacity-80">0</span>
+        <button onclick="soFilter('received')" id="so-tab-received"
+            class="so-tab flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600">
+            Received <span id="so-count-received" class="text-[10px] opacity-80">0</span>
         </button>
     </div>
 
+    <!-- Loading -->
+    <div id="soLoading" class="flex flex-col items-center justify-center py-16">
+        <svg class="animate-spin text-green-500 mb-3" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+        <p class="text-sm text-gray-500">Loading orders...</p>
+    </div>
+
     <!-- Orders List -->
-    <div id="ordersList" class="space-y-3">
-        <div class="text-center py-8 text-gray-400 text-sm">Loading orders...</div>
+    <div id="soList" class="space-y-2 hidden"></div>
+
+    <!-- Empty State -->
+    <div id="soEmpty" class="hidden text-center py-12">
+        <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="mx-auto text-gray-300 mb-3"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
+        <p class="text-gray-500 text-sm">No orders found</p>
     </div>
 </div>
 
 <script>
-let currentFilter = 'all';
-let ordersData = [];
+let soStatus = 'all';
+let soOrders = [];
 
-// ── Load orders ──
-async function loadOrders() {
-    try {
-        const res = await api(`api/store-orders.php?action=list&status=${currentFilter}`);
-        ordersData = res.orders || [];
+soLoad();
 
-        // Update tab counts
-        const counts = res.counts || {};
-        ['all', 'pending', 'reviewing', 'approved', 'partial', 'fulfilled', 'rejected'].forEach(s => {
-            const el = document.getElementById('count-' + s);
-            if (el) el.textContent = counts[s] || 0;
-        });
-
-        renderOrders();
-    } catch (err) {
-        document.getElementById('ordersList').innerHTML =
-            `<div class="text-center py-8 text-red-500 text-sm">${err.message}</div>`;
-    }
-}
-
-function filterOrders(status) {
-    currentFilter = status;
-
+function soFilter(status) {
+    soStatus = status;
     // Update tabs
-    document.querySelectorAll('.tab-btn').forEach(btn => {
+    document.querySelectorAll('.so-tab').forEach(btn => {
         btn.className = btn.className.replace(/bg-green-600 text-white/g, 'bg-gray-100 text-gray-600');
     });
-    const active = document.getElementById('tab-' + status);
+    const active = document.getElementById('so-tab-' + status);
     if (active) {
         active.className = active.className.replace(/bg-gray-100 text-gray-600/g, 'bg-green-600 text-white');
     }
-
-    loadOrders();
+    soLoad();
 }
 
-function statusBadge(status) {
+function soStatusBadge(status) {
     const map = {
-        pending: 'bg-amber-100 text-amber-700',
-        reviewing: 'bg-blue-100 text-blue-700',
-        approved: 'bg-green-100 text-green-700',
-        partial: 'bg-orange-100 text-orange-700',
-        rejected: 'bg-red-100 text-red-700',
-        fulfilled: 'bg-emerald-100 text-emerald-700',
+        pending: { cls: 'bg-amber-100 text-amber-700', label: 'New' },
+        fulfilled: { cls: 'bg-emerald-100 text-emerald-700', label: 'Sent' },
+        received: { cls: 'bg-green-100 text-green-700', label: 'Received' },
     };
-    const cls = map[status] || 'bg-gray-100 text-gray-600';
-    return `<span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${cls}">${status.charAt(0).toUpperCase() + status.slice(1)}</span>`;
+    const s = map[status] || { cls: 'bg-gray-100 text-gray-600', label: status };
+    return `<span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${s.cls}">${s.label}</span>`;
 }
 
-function renderOrders() {
-    const list = document.getElementById('ordersList');
-    if (ordersData.length === 0) {
-        list.innerHTML = `
-            <div class="text-center py-12">
-                <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="mx-auto text-gray-300 mb-3"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
-                <p class="text-gray-500 text-sm">No orders found</p>
-            </div>`;
+async function soLoad() {
+    document.getElementById('soLoading').classList.remove('hidden');
+    document.getElementById('soList').classList.add('hidden');
+    document.getElementById('soEmpty').classList.add('hidden');
+
+    try {
+        const res = await api(`api/store-orders.php?action=list&status=${soStatus}`);
+        soOrders = res.orders || [];
+
+        // Update tab counts
+        const counts = res.counts || {};
+        ['all', 'pending', 'fulfilled', 'received'].forEach(s => {
+            const el = document.getElementById('so-count-' + s);
+            if (el) el.textContent = counts[s] || 0;
+        });
+
+        soRender();
+    } catch (err) {
+        document.getElementById('soList').innerHTML =
+            `<div class="text-center py-8 text-red-500 text-sm">${err.message}</div>`;
+        document.getElementById('soList').classList.remove('hidden');
+    } finally {
+        document.getElementById('soLoading').classList.add('hidden');
+    }
+}
+
+function soRender() {
+    if (soOrders.length === 0) {
+        document.getElementById('soEmpty').classList.remove('hidden');
         return;
     }
 
-    list.innerHTML = ordersData.map(order => {
+    const list = document.getElementById('soList');
+    list.classList.remove('hidden');
+
+    list.innerHTML = soOrders.map(order => {
         const date = formatDate(order.order_date);
-        const meal = order.meal.charAt(0).toUpperCase() + order.meal.slice(1);
-        const isActionable = ['pending', 'reviewing', 'approved', 'partial'].includes(order.status);
+        const isNew = order.status === 'pending';
 
         return `
-            <div onclick="openOrderDetail(${order.id})"
-                 class="bg-white rounded-xl border ${isActionable ? 'border-green-200 shadow-sm' : 'border-gray-100'} p-4 active:bg-gray-50 cursor-pointer transition">
+            <div onclick="soOpenDetail(${order.id})"
+                 class="bg-white rounded-xl border ${isNew ? 'border-green-200 shadow-sm' : 'border-gray-100'} p-4 active:bg-gray-50 cursor-pointer transition">
                 <div class="flex items-start justify-between mb-2">
                     <div>
                         <p class="font-semibold text-sm text-gray-800">${date}</p>
-                        <p class="text-xs text-gray-500 mt-0.5">${meal} &middot; ${order.total_items} item${order.total_items !== 1 ? 's' : ''}</p>
+                        <p class="text-xs text-gray-500 mt-0.5">${order.total_items} item${order.total_items !== 1 ? 's' : ''}</p>
                     </div>
-                    ${statusBadge(order.status)}
+                    ${soStatusBadge(order.status)}
                 </div>
                 <div class="flex items-center justify-between">
-                    <p class="text-[11px] text-gray-400">By ${order.chef_name || 'Unknown'}</p>
+                    <p class="text-[11px] text-gray-400">From ${order.chef_name || 'Chef'}</p>
                     <span class="text-[11px] text-gray-400">#${order.id}</span>
                 </div>
             </div>`;
     }).join('');
 }
 
-// ── Order Detail ──
-async function openOrderDetail(orderId) {
+// ── Order Detail (bottom sheet) ──
+async function soOpenDetail(orderId) {
     try {
         const res = await api(`api/store-orders.php?action=get&id=${orderId}`);
         const order = res.order;
         const lines = res.lines || [];
-
-        const canReview = ['pending', 'reviewing'].includes(order.status);
-        const canFulfill = ['approved', 'partial'].includes(order.status);
-        const meal = order.meal.charAt(0).toUpperCase() + order.meal.slice(1);
+        const canSend = order.status === 'pending';
 
         let html = `
-            <div class="p-4">
-                <!-- Header -->
-                <div class="flex items-center justify-between mb-4">
-                    <div>
-                        <h3 class="text-lg font-bold text-gray-800">Order #${order.id}</h3>
-                        <p class="text-xs text-gray-500">${formatDate(order.order_date)} &middot; ${meal}</p>
-                    </div>
-                    ${statusBadge(order.status)}
+            <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
+            <div class="flex items-center justify-between px-5 py-3 border-b border-gray-100">
+                <div>
+                    <h3 class="text-sm font-bold text-gray-900">Order #${order.id}</h3>
+                    <p class="text-[10px] text-gray-500">${formatDate(order.order_date)} &middot; From ${order.chef_name || 'Chef'}</p>
                 </div>
-
-                <div class="text-xs text-gray-500 mb-4">Submitted by <span class="font-medium text-gray-700">${order.chef_name || 'Unknown'}</span></div>
-
+                <div class="flex items-center gap-2">
+                    ${soStatusBadge(order.status)}
+                    <button onclick="closeSheet()" class="p-1 compact-btn"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto px-5 py-4 scroll-touch">
                 <!-- Line Items -->
-                <div class="space-y-2" id="orderLines">`;
+                <div class="space-y-2">`;
 
-        lines.forEach((line, i) => {
-            const lineStatusCls = {
-                pending: 'border-l-amber-400',
-                approved: 'border-l-green-400',
-                adjusted: 'border-l-blue-400',
-                rejected: 'border-l-red-400',
-            };
-            const borderCls = lineStatusCls[line.status] || 'border-l-gray-200';
+        lines.forEach(line => {
+            const reqQty = parseFloat(line.requested_qty) || 0;
+            const sentQty = line.fulfilled_qty !== null ? parseFloat(line.fulfilled_qty) : reqQty;
 
             html += `
-                    <div class="bg-gray-50 rounded-lg border-l-4 ${borderCls} p-3" id="line-${line.id}">
-                        <div class="flex items-start justify-between mb-1.5">
-                            <div class="flex-1 min-w-0">
-                                <p class="font-medium text-sm text-gray-800 truncate">${line.item_name}</p>
-                                <p class="text-[11px] text-gray-500">Requested: <span class="font-semibold text-gray-700">${parseFloat(line.requested_qty)} ${line.uom}</span></p>
-                            </div>
-                            ${statusBadge(line.status)}
+                <div class="bg-gray-50 rounded-lg px-3 py-2.5">
+                    <div class="flex items-center justify-between">
+                        <div class="flex-1 min-w-0">
+                            <p class="font-medium text-sm text-gray-800 truncate">${line.item_name}</p>
+                            <p class="text-[10px] text-gray-400">Requested: ${reqQty} ${line.uom}</p>
                         </div>`;
 
-            // Show approved/fulfilled qty if set
-            if (line.approved_qty !== null && line.status !== 'pending') {
-                html += `<p class="text-[11px] text-gray-500 mt-1">Approved: <span class="font-semibold">${parseFloat(line.approved_qty)} ${line.uom}</span></p>`;
-            }
-            if (line.fulfilled_qty !== null) {
-                html += `<p class="text-[11px] text-gray-500">Fulfilled: <span class="font-semibold">${parseFloat(line.fulfilled_qty)} ${line.uom}</span></p>`;
-            }
-            if (line.store_notes) {
-                html += `<p class="text-[11px] text-gray-400 italic mt-1">"${line.store_notes}"</p>`;
-            }
-
-            // Review actions (only if pending)
-            if (canReview && line.status === 'pending') {
+            if (canSend) {
+                // Editable qty for store to fill
                 html += `
-                        <div class="flex items-center gap-2 mt-3 pt-2 border-t border-gray-200">
-                            <button onclick="reviewLine(${line.id}, 'approved')"
-                                class="flex-1 py-2 bg-green-600 text-white text-xs font-medium rounded-lg active:bg-green-700">
-                                Approve
-                            </button>
-                            <button onclick="showAdjustForm(${line.id}, ${parseFloat(line.requested_qty)}, '${line.uom}')"
-                                class="flex-1 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg active:bg-blue-700">
-                                Adjust
-                            </button>
-                            <button onclick="reviewLine(${line.id}, 'rejected')"
-                                class="px-3 py-2 bg-red-100 text-red-600 text-xs font-medium rounded-lg active:bg-red-200">
-                                Reject
-                            </button>
+                        <div class="flex items-center gap-1">
+                            <input type="number" value="${reqQty}" step="0.1" min="0" id="send_${line.id}"
+                                class="w-20 text-center text-sm font-semibold border border-gray-200 rounded-lg px-1 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn">
+                            <span class="text-[10px] text-gray-400">${line.uom}</span>
                         </div>`;
-            }
-
-            // Fulfill input (approved/partial orders)
-            if (canFulfill && line.status !== 'rejected') {
-                const fulfilledVal = line.fulfilled_qty !== null ? parseFloat(line.fulfilled_qty) : (line.approved_qty !== null ? parseFloat(line.approved_qty) : parseFloat(line.requested_qty));
+            } else {
+                // Read-only sent qty
                 html += `
-                        <div class="flex items-center gap-2 mt-3 pt-2 border-t border-gray-200">
-                            <label class="text-[11px] text-gray-500 whitespace-nowrap">Fulfilled qty:</label>
-                            <input type="number" step="0.1" min="0" value="${fulfilledVal}"
-                                class="flex-1 px-2 py-1.5 border border-gray-200 rounded-lg text-sm text-center"
-                                id="fulfill-${line.id}">
-                            <span class="text-xs text-gray-400">${line.uom}</span>
-                        </div>`;
+                        <span class="text-sm font-semibold text-green-700">${sentQty} ${line.uom}</span>`;
             }
 
-            html += `</div>`;
+            html += `
+                    </div>
+                </div>`;
         });
 
         html += `</div>`;
 
-        // Bottom actions
-        if (canReview) {
-            const pendingLines = lines.filter(l => l.status === 'pending').length;
-            if (pendingLines > 0) {
-                html += `
-                <div class="mt-4 pt-4 border-t border-gray-100">
-                    <button onclick="approveAllLines(${order.id})"
-                        class="w-full py-3 bg-green-600 text-white text-sm font-semibold rounded-xl active:bg-green-700">
-                        Approve All (${pendingLines} items)
-                    </button>
-                </div>`;
-            }
-        }
-
-        if (canFulfill) {
+        // Send button (only for pending orders)
+        if (canSend) {
             html += `
-                <div class="mt-4 pt-4 border-t border-gray-100">
-                    <button onclick="fulfillOrder(${order.id})" id="fulfillBtn"
-                        class="w-full py-3 bg-emerald-600 text-white text-sm font-semibold rounded-xl active:bg-emerald-700">
-                        Mark as Fulfilled
-                    </button>
+                <button onclick="soMarkSent(${order.id})" id="soSendBtn"
+                    class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition mt-4 flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+                    Mark as Sent to Kitchen
+                </button>`;
+        }
+
+        // Status info for sent/received orders
+        if (order.status === 'fulfilled') {
+            html += `
+                <div class="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 mt-4 text-center">
+                    <p class="text-xs text-emerald-700 font-medium">Items sent to kitchen. Waiting for chef to confirm receipt.</p>
+                </div>`;
+        }
+        if (order.status === 'received') {
+            html += `
+                <div class="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mt-4 text-center">
+                    <p class="text-xs text-green-700 font-medium">Chef confirmed receipt. Order complete.</p>
                 </div>`;
         }
 
-        // Notes section
-        html += `
-                <div class="mt-4 pt-4 border-t border-gray-100">
-                    <label class="text-xs font-medium text-gray-600 mb-1.5 block">Order Notes</label>
-                    <textarea id="orderNotes" rows="2" placeholder="Add notes..."
-                        class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm resize-none">${order.notes || ''}</textarea>
-                    <button onclick="saveNotes(${order.id})" class="mt-2 px-4 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200">
-                        Save Notes
-                    </button>
-                </div>
-            </div>`;
+        html += `</div>`;
 
         openSheet(html);
     } catch (err) {
@@ -257,132 +222,37 @@ async function openOrderDetail(orderId) {
     }
 }
 
-// ── Adjust form (inline) ──
-function showAdjustForm(lineId, requestedQty, uom) {
-    const lineEl = document.getElementById('line-' + lineId);
-    if (!lineEl) return;
-
-    // Remove existing actions and add adjust form
-    const existingActions = lineEl.querySelector('.flex.items-center.gap-2.mt-3.pt-2.border-t');
-    if (existingActions) {
-        existingActions.innerHTML = `
-            <div class="w-full space-y-2">
-                <div class="flex items-center gap-2">
-                    <label class="text-[11px] text-gray-500 whitespace-nowrap">New qty:</label>
-                    <input type="number" step="0.1" min="0" value="${requestedQty}" id="adjustQty-${lineId}"
-                        class="flex-1 px-2 py-1.5 border border-blue-300 rounded-lg text-sm text-center focus:ring-1 focus:ring-blue-400">
-                    <span class="text-xs text-gray-400">${uom}</span>
-                </div>
-                <input type="text" placeholder="Reason for adjustment..." id="adjustNote-${lineId}"
-                    class="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs">
-                <div class="flex gap-2">
-                    <button onclick="submitAdjust(${lineId})"
-                        class="flex-1 py-2 bg-blue-600 text-white text-xs font-medium rounded-lg">Confirm</button>
-                    <button onclick="openOrderDetail(currentDetailOrderId)"
-                        class="px-3 py-2 bg-gray-100 text-gray-600 text-xs font-medium rounded-lg">Cancel</button>
-                </div>
-            </div>`;
-    }
-}
-
-let currentDetailOrderId = null;
-
-// Wrap openOrderDetail to track current order
-const _origOpenOrderDetail = openOrderDetail;
-openOrderDetail = async function(orderId) {
-    currentDetailOrderId = orderId;
-    await _origOpenOrderDetail(orderId);
-};
-
-async function reviewLine(lineId, status) {
-    try {
-        await api('api/store-orders.php?action=review_line', {
-            method: 'POST',
-            body: { line_id: lineId, status }
-        });
-        showToast(status === 'approved' ? 'Item approved' : status === 'rejected' ? 'Item rejected' : 'Updated', 'success');
-        if (currentDetailOrderId) openOrderDetail(currentDetailOrderId);
-        loadOrders();
-    } catch (err) {
-        showToast(err.message, 'error');
-    }
-}
-
-async function submitAdjust(lineId) {
-    const qty = document.getElementById('adjustQty-' + lineId)?.value;
-    const notes = document.getElementById('adjustNote-' + lineId)?.value;
-
-    if (!qty || parseFloat(qty) <= 0) {
-        showToast('Enter a valid quantity', 'warning');
-        return;
-    }
-
-    try {
-        await api('api/store-orders.php?action=review_line', {
-            method: 'POST',
-            body: { line_id: lineId, status: 'adjusted', approved_qty: parseFloat(qty), notes }
-        });
-        showToast('Quantity adjusted', 'success');
-        if (currentDetailOrderId) openOrderDetail(currentDetailOrderId);
-        loadOrders();
-    } catch (err) {
-        showToast(err.message, 'error');
-    }
-}
-
-async function approveAllLines(orderId) {
-    try {
-        await api('api/store-orders.php?action=approve_all', {
-            method: 'POST',
-            body: { order_id: orderId }
-        });
-        showToast('All items approved!', 'success');
-        openOrderDetail(orderId);
-        loadOrders();
-    } catch (err) {
-        showToast(err.message, 'error');
-    }
-}
-
-async function fulfillOrder(orderId) {
-    // Collect fulfilled qtys from inputs
-    const inputs = document.querySelectorAll('[id^="fulfill-"]');
+// ── Mark order as sent ──
+async function soMarkSent(orderId) {
+    const inputs = document.querySelectorAll('[id^="send_"]');
     const lines = [];
     inputs.forEach(input => {
-        const id = parseInt(input.id.replace('fulfill-', ''));
+        const id = parseInt(input.id.replace('send_', ''));
         lines.push({ id, fulfilled_qty: parseFloat(input.value) || 0 });
     });
 
-    const btn = document.getElementById('fulfillBtn');
-    if (btn) setLoading(btn, true);
+    if (!confirm(`Mark ${lines.length} items as sent to kitchen?`)) return;
+
+    const btn = document.getElementById('soSendBtn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<svg class="animate-spin inline-block mr-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Sending...';
+    }
 
     try {
-        await api('api/store-orders.php?action=fulfill', {
+        await api('api/store-orders.php?action=mark_sent', {
             method: 'POST',
             body: { order_id: orderId, lines }
         });
-        showToast('Order fulfilled!', 'success');
         closeSheet();
-        loadOrders();
+        showToast('Items sent to kitchen!');
+        soLoad();
     } catch (err) {
         showToast(err.message, 'error');
-        if (btn) setLoading(btn, false);
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Mark as Sent to Kitchen';
+        }
     }
 }
-
-async function saveNotes(orderId) {
-    const notes = document.getElementById('orderNotes')?.value || '';
-    try {
-        await api('api/store-orders.php?action=add_notes', {
-            method: 'POST',
-            body: { order_id: orderId, notes }
-        });
-        showToast('Notes saved', 'success');
-    } catch (err) {
-        showToast(err.message, 'error');
-    }
-}
-
-// ── Init ──
-loadOrders();
 </script>

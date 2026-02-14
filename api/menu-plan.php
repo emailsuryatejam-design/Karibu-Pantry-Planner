@@ -6,6 +6,16 @@ $db = getDB();
 $action = $_GET['action'] ?? ($_POST['action'] ?? '');
 $input = $_SERVER['REQUEST_METHOD'] === 'POST' ? getJsonInput() : [];
 
+// Ensure weekly_menu table exists
+$db->exec("CREATE TABLE IF NOT EXISTS weekly_menu (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    day_of_week TINYINT NOT NULL COMMENT '0=Sunday,1=Monday...6=Saturday',
+    meal ENUM('lunch','dinner') NOT NULL,
+    recipe_id INT NOT NULL,
+    sort_order INT DEFAULT 0,
+    FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+)");
+
 switch ($action) {
 
     // ── Get plan by date + meal ──
@@ -23,15 +33,13 @@ switch ($action) {
             $stmt->execute([$plan['id']]);
             $dishes = $stmt->fetchAll();
 
-            // Single query for all ingredients across all dishes
             if (!empty($dishes)) {
                 $dishIds = array_column($dishes, 'id');
                 $placeholders = implode(',', array_fill(0, count($dishIds), '?'));
-                $ingStmt = $db->prepare("SELECT * FROM dish_ingredients WHERE dish_id IN ($placeholders) ORDER BY id");
+                $ingStmt = $db->prepare("SELECT * FROM dish_ingredients WHERE dish_id IN ($placeholders) AND is_removed = 0 ORDER BY id");
                 $ingStmt->execute($dishIds);
                 $allIngredients = $ingStmt->fetchAll();
 
-                // Group by dish_id
                 $ingByDish = [];
                 foreach ($allIngredients as $ing) {
                     $ingByDish[$ing['dish_id']][] = $ing;
@@ -43,24 +51,86 @@ switch ($action) {
             }
         }
 
-        // Get all recipes for dropdown — simple fast query
+        // Get fixed menu for this day of week (for auto-loading)
+        $dayOfWeek = (int)date('w', strtotime($date));
+        $fixedMenu = $db->prepare('SELECT wm.*, r.name as recipe_name, r.category, r.servings as recipe_servings FROM weekly_menu wm JOIN recipes r ON wm.recipe_id = r.id WHERE wm.day_of_week = ? AND wm.meal = ? ORDER BY wm.sort_order, r.category');
+        $fixedMenu->execute([$dayOfWeek, $meal]);
+        $fixedMenu = $fixedMenu->fetchAll();
+
+        // Get all recipes for add-dish dropdown
         $recipes = $db->query('SELECT id, name, category FROM recipes ORDER BY name')->fetchAll();
 
         jsonResponse([
             'plan' => $plan,
             'dishes' => $dishes,
+            'fixed_menu' => $fixedMenu,
             'recipes' => $recipes,
         ]);
         break;
 
-    // ── Create plan ──
+    // ── Create plan from fixed menu (auto-load weekly rotation) ──
+    case 'create_from_fixed':
+        requireMethod('POST');
+        $date = $input['date'] ?? todayStr();
+        $meal = $input['meal'] ?? 'lunch';
+        $pax = (int)($input['pax'] ?? 20);
+
+        // Check exists
+        $existing = $db->prepare('SELECT id FROM menu_plans WHERE plan_date = ? AND meal = ?');
+        $existing->execute([$date, $meal]);
+        if ($existing->fetch()) {
+            jsonError('Plan already exists for this date and meal');
+        }
+
+        // Create plan
+        $stmt = $db->prepare('INSERT INTO menu_plans (plan_date, meal, portions, created_by) VALUES (?, ?, ?, ?)');
+        $stmt->execute([$date, $meal, $pax, $user['id']]);
+        $planId = $db->lastInsertId();
+
+        // Load fixed menu for this day
+        $dayOfWeek = (int)date('w', strtotime($date));
+        $fixed = $db->prepare('SELECT wm.recipe_id, r.name, r.category, r.servings FROM weekly_menu wm JOIN recipes r ON wm.recipe_id = r.id WHERE wm.day_of_week = ? AND wm.meal = ? ORDER BY wm.sort_order');
+        $fixed->execute([$dayOfWeek, $meal]);
+        $fixedItems = $fixed->fetchAll();
+
+        // Map recipe category to course
+        $catToCourse = [
+            'appetizer' => 'appetizer', 'soup' => 'soup', 'salad' => 'salad',
+            'main_course' => 'main_course', 'side' => 'side', 'dessert' => 'dessert',
+            'beverage' => 'beverage',
+        ];
+
+        $dishStmt = $db->prepare('INSERT INTO menu_dishes (plan_id, dish_name, course, portions, recipe_id, is_default) VALUES (?, ?, ?, ?, ?, 1)');
+        $ingStmt = $db->prepare('INSERT INTO dish_ingredients (dish_id, item_id, item_name, qty, final_qty, uom, is_primary) VALUES (?, ?, ?, ?, ?, ?, ?)');
+
+        foreach ($fixedItems as $item) {
+            $course = $catToCourse[$item['category']] ?? 'main_course';
+            $dishStmt->execute([$planId, $item['name'], $course, $pax, $item['recipe_id']]);
+            $dishId = $db->lastInsertId();
+
+            // Load recipe ingredients scaled to pax
+            $recipeServings = $item['servings'] ?: 4;
+            $scale = $pax / $recipeServings;
+
+            $ings = $db->prepare('SELECT * FROM recipe_ingredients WHERE recipe_id = ?');
+            $ings->execute([$item['recipe_id']]);
+            foreach ($ings->fetchAll() as $ing) {
+                $scaledQty = round($ing['qty'] * $scale, 3);
+                $ingStmt->execute([$dishId, $ing['item_id'], $ing['item_name'], $ing['qty'], $scaledQty, $ing['uom'], $ing['is_primary']]);
+            }
+        }
+
+        auditLog('create_plan_fixed', 'menu_plans', $planId, null, ['date' => $date, 'meal' => $meal, 'pax' => $pax, 'dishes' => count($fixedItems)]);
+        jsonResponse(['plan_id' => $planId]);
+        break;
+
+    // ── Create blank plan ──
     case 'create_plan':
         requireMethod('POST');
         $date = $input['date'] ?? todayStr();
         $meal = $input['meal'] ?? 'lunch';
         $portions = (int)($input['portions'] ?? 20);
 
-        // Check if already exists
         $existing = $db->prepare('SELECT id FROM menu_plans WHERE plan_date = ? AND meal = ?');
         $existing->execute([$date, $meal]);
         if ($existing->fetch()) {
@@ -75,7 +145,7 @@ switch ($action) {
         jsonResponse(['plan_id' => $planId]);
         break;
 
-    // ── Add dish ──
+    // ── Add dish (with ingredients form) ──
     case 'add_dish':
         requireMethod('POST');
         $planId = (int)($input['plan_id'] ?? 0);
@@ -83,6 +153,7 @@ switch ($action) {
         $dishName = trim($input['dish_name'] ?? '');
         $portions = (int)($input['portions'] ?? 20);
         $recipeId = $input['recipe_id'] ?? null;
+        $ingredients = $input['ingredients'] ?? [];
 
         if (!$planId || !$dishName) jsonError('Plan ID and dish name required');
 
@@ -90,51 +161,39 @@ switch ($action) {
         $stmt->execute([$planId, $dishName, $course, $portions, $recipeId]);
         $dishId = $db->lastInsertId();
 
-        auditLog('add_dish', 'menu_dishes', $dishId, null, ['dish_name' => $dishName, 'course' => $course]);
-        jsonResponse(['dish_id' => $dishId]);
-        break;
+        // If recipe selected, load recipe ingredients
+        if ($recipeId) {
+            $recipe = $db->prepare('SELECT servings FROM recipes WHERE id = ?');
+            $recipe->execute([$recipeId]);
+            $recipeData = $recipe->fetch();
+            $scale = $portions / ($recipeData['servings'] ?: 4);
 
-    // ── Load recipe ingredients into dish ──
-    case 'load_recipe':
-        requireMethod('POST');
-        $dishId = (int)($input['dish_id'] ?? 0);
-        $recipeId = (int)($input['recipe_id'] ?? 0);
-        $portions = (int)($input['portions'] ?? 20);
-
-        if (!$dishId || !$recipeId) jsonError('Dish ID and recipe ID required');
-
-        // Get recipe servings for scaling
-        $recipe = $db->prepare('SELECT servings FROM recipes WHERE id = ?');
-        $recipe->execute([$recipeId]);
-        $recipe = $recipe->fetch();
-        $servings = $recipe['servings'] ?: 4;
-        $scale = $portions / $servings;
-
-        // Get recipe ingredients
-        $ings = $db->prepare('SELECT * FROM recipe_ingredients WHERE recipe_id = ?');
-        $ings->execute([$recipeId]);
-        $ingredients = $ings->fetchAll();
-
-        // Clear existing ingredients for this dish
-        $db->prepare('DELETE FROM dish_ingredients WHERE dish_id = ?')->execute([$dishId]);
-
-        // Insert scaled ingredients
-        $stmt = $db->prepare('INSERT INTO dish_ingredients (dish_id, item_id, item_name, qty, final_qty, uom, is_primary) VALUES (?, ?, ?, ?, ?, ?, ?)');
-        foreach ($ingredients as $ing) {
-            $scaledQty = round($ing['qty'] * $scale, 3);
-            $stmt->execute([
-                $dishId,
-                $ing['item_id'],
-                $ing['item_name'],
-                $ing['qty'],
-                $scaledQty,
-                $ing['uom'],
-                $ing['is_primary'],
-            ]);
+            $ings = $db->prepare('SELECT * FROM recipe_ingredients WHERE recipe_id = ?');
+            $ings->execute([$recipeId]);
+            $ingStmt = $db->prepare('INSERT INTO dish_ingredients (dish_id, item_id, item_name, qty, final_qty, uom, is_primary) VALUES (?, ?, ?, ?, ?, ?, ?)');
+            foreach ($ings->fetchAll() as $ing) {
+                $scaledQty = round($ing['qty'] * $scale, 3);
+                $ingStmt->execute([$dishId, $ing['item_id'], $ing['item_name'], $ing['qty'], $scaledQty, $ing['uom'], $ing['is_primary']]);
+            }
         }
 
-        auditLog('load_recipe', 'menu_dishes', $dishId, null, ['recipe_id' => $recipeId, 'portions' => $portions, 'scale' => $scale]);
-        jsonResponse(['loaded' => count($ingredients)]);
+        // If custom ingredients provided (for non-recipe dishes)
+        if (!$recipeId && !empty($ingredients)) {
+            $ingStmt = $db->prepare('INSERT INTO dish_ingredients (dish_id, item_id, item_name, qty, final_qty, uom, is_primary) VALUES (?, ?, ?, ?, ?, ?, 1)');
+            foreach ($ingredients as $ing) {
+                $ingStmt->execute([
+                    $dishId,
+                    $ing['item_id'] ?? null,
+                    $ing['item_name'] ?? 'Unknown',
+                    (float)($ing['qty'] ?? 0),
+                    (float)($ing['qty'] ?? 0),
+                    $ing['uom'] ?? 'kg',
+                ]);
+            }
+        }
+
+        auditLog('add_dish', 'menu_dishes', $dishId, null, ['dish_name' => $dishName, 'course' => $course]);
+        jsonResponse(['dish_id' => $dishId]);
         break;
 
     // ── Remove dish ──
@@ -184,7 +243,7 @@ switch ($action) {
         jsonResponse(['updated' => true]);
         break;
 
-    // ── Update plan pax (total covers) ──
+    // ── Update plan pax ──
     case 'update_plan_pax':
         requireMethod('POST');
         $planId = (int)($input['plan_id'] ?? 0);
@@ -218,32 +277,7 @@ switch ($action) {
         jsonResponse(['reopened' => true]);
         break;
 
-    // ── Add ingredient manually ──
-    case 'add_ingredient':
-        requireMethod('POST');
-        $dishId = (int)($input['dish_id'] ?? 0);
-        $itemId = $input['item_id'] ?? null;
-        $qty = (float)($input['qty'] ?? 0);
-        $uom = $input['uom'] ?? 'kg';
-
-        if (!$dishId || $qty <= 0) jsonError('Dish ID and quantity required');
-
-        // Get item name
-        $itemName = $input['item_name'] ?? '';
-        if ($itemId && !$itemName) {
-            $item = $db->prepare('SELECT name FROM items WHERE id = ?');
-            $item->execute([$itemId]);
-            $itemData = $item->fetch();
-            $itemName = $itemData['name'] ?? 'Unknown';
-        }
-
-        $stmt = $db->prepare('INSERT INTO dish_ingredients (dish_id, item_id, item_name, qty, final_qty, uom, is_primary) VALUES (?, ?, ?, ?, ?, ?, 1)');
-        $stmt->execute([$dishId, $itemId, $itemName, $qty, $qty, $uom]);
-
-        jsonResponse(['ingredient_id' => $db->lastInsertId()]);
-        break;
-
-    // ── Search items ──
+    // ── Search items (for add ingredient) ──
     case 'search_items':
         $q = $_GET['q'] ?? '';
         if (strlen($q) < 2) jsonResponse(['items' => []]);
@@ -251,6 +285,33 @@ switch ($action) {
         $stmt = $db->prepare('SELECT id, name, code, category, uom, stock_qty FROM items WHERE is_active = 1 AND (name LIKE ? OR code LIKE ?) ORDER BY name LIMIT 20');
         $stmt->execute(["%$q%", "%$q%"]);
         jsonResponse(['items' => $stmt->fetchAll()]);
+        break;
+
+    // ── Get weekly menu config ──
+    case 'get_weekly':
+        $weeklyMenu = $db->query('SELECT wm.*, r.name as recipe_name, r.category FROM weekly_menu wm JOIN recipes r ON wm.recipe_id = r.id ORDER BY wm.day_of_week, wm.meal, wm.sort_order')->fetchAll();
+        $recipes = $db->query('SELECT id, name, category FROM recipes ORDER BY category, name')->fetchAll();
+        jsonResponse(['weekly_menu' => $weeklyMenu, 'recipes' => $recipes]);
+        break;
+
+    // ── Save weekly menu config ──
+    case 'save_weekly':
+        requireMethod('POST');
+        $day = (int)($input['day_of_week'] ?? 0);
+        $meal = $input['meal'] ?? 'lunch';
+        $recipeIds = $input['recipe_ids'] ?? [];
+
+        // Clear existing for this day+meal
+        $db->prepare('DELETE FROM weekly_menu WHERE day_of_week = ? AND meal = ?')->execute([$day, $meal]);
+
+        // Insert new
+        $stmt = $db->prepare('INSERT INTO weekly_menu (day_of_week, meal, recipe_id, sort_order) VALUES (?, ?, ?, ?)');
+        foreach ($recipeIds as $i => $rid) {
+            $stmt->execute([$day, $meal, (int)$rid, $i]);
+        }
+
+        auditLog('save_weekly_menu', 'weekly_menu', null, null, ['day' => $day, 'meal' => $meal, 'count' => count($recipeIds)]);
+        jsonResponse(['saved' => true]);
         break;
 
     // ── Audit log ──

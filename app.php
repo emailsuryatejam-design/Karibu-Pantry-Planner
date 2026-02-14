@@ -6,9 +6,9 @@ $user = currentUser();
 $page = $_GET['page'] ?? (isStorekeeper() ? 'store-orders' : 'menu-plan');
 
 // Valid pages per role
-$chefPages = ['menu-plan', 'daily-groceries', 'daily-overview', 'recipes', 'settings'];
+$chefPages = ['menu-plan', 'daily-groceries', 'recipes', 'settings'];
 $storePages = ['store-orders', 'settings'];
-$adminPages = ['menu-plan', 'daily-groceries', 'daily-overview', 'recipes', 'store-orders', 'settings'];
+$adminPages = ['menu-plan', 'daily-groceries', 'recipes', 'store-orders', 'settings'];
 
 $allowedPages = isAdmin() ? $adminPages : (isChef() ? $chefPages : $storePages);
 if (!in_array($page, $allowedPages)) {
@@ -19,7 +19,6 @@ if (!in_array($page, $allowedPages)) {
 $pageTitles = [
     'menu-plan' => 'Menu Plan',
     'daily-groceries' => 'Daily Groceries',
-    'daily-overview' => 'Daily Overview',
     'recipes' => 'Recipes',
     'store-orders' => 'Store Orders',
     'settings' => 'Settings',
@@ -101,12 +100,7 @@ $pageTitle = $pageTitles[$page] ?? 'Pantry Planner';
                     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
                     <span class="text-[10px] font-medium">Groceries</span>
                 </a>
-                <a href="app.php?page=daily-overview"
-                   class="flex flex-col items-center justify-center gap-0.5 px-2 py-1 rounded-lg min-w-[52px] <?= $page === 'daily-overview' ? 'text-orange-600' : 'text-gray-400' ?>">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M16 2v4"/><path d="M8 2v4"/><path d="M3 10h18"/></svg>
-                    <span class="text-[10px] font-medium">Overview</span>
-                </a>
-                <a href="app.php?page=recipes"
+<a href="app.php?page=recipes"
                    class="flex flex-col items-center justify-center gap-0.5 px-2 py-1 rounded-lg min-w-[52px] <?= $page === 'recipes' ? 'text-orange-600' : 'text-gray-400' ?>">
                     <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
                     <span class="text-[10px] font-medium">Recipes</span>
