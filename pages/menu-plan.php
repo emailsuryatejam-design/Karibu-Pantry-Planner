@@ -33,10 +33,10 @@
     <!-- Meal Toggle -->
     <div class="flex gap-2 mb-3">
         <button onclick="setMeal('lunch')" id="mealLunch" class="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all">
-            ☀️ Lunch
+            Lunch
         </button>
         <button onclick="setMeal('dinner')" id="mealDinner" class="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all">
-            🌙 Dinner
+            Dinner
         </button>
     </div>
 
@@ -55,6 +55,20 @@
                 <span id="planInfo" class="text-[10px] text-gray-400"></span>
             </div>
             <div id="planActions"></div>
+        </div>
+    </div>
+
+    <!-- Pax Edit Inline (hidden) -->
+    <div id="paxEditRow" class="hidden bg-orange-50 rounded-xl border border-orange-200 px-4 py-3 mb-3">
+        <div class="flex items-center gap-3">
+            <span class="text-xs font-semibold text-orange-800">Pax:</span>
+            <div class="flex items-center border border-orange-200 rounded-lg overflow-hidden bg-white">
+                <button onclick="adjPax(-5)" class="px-3 py-1.5 text-orange-600 hover:bg-orange-50 compact-btn font-bold">-</button>
+                <input type="number" id="paxEditInput" value="20" min="1" class="w-16 text-center text-sm font-bold bg-transparent border-0 focus:outline-none py-1.5 compact-btn">
+                <button onclick="adjPax(5)" class="px-3 py-1.5 text-orange-600 hover:bg-orange-50 compact-btn font-bold">+</button>
+            </div>
+            <button onclick="savePax()" class="bg-orange-500 text-white px-3 py-1.5 rounded-lg text-xs font-semibold compact-btn">Save</button>
+            <button onclick="cancelPax()" class="text-gray-400 text-xs compact-btn">Cancel</button>
         </div>
     </div>
 
@@ -146,6 +160,7 @@ let currentMeal = 'lunch';
 let planData = null;
 let dishesData = [];
 let recipesData = [];
+let expandedDishes = {};
 
 // ── Init ──
 loadPlan();
@@ -153,19 +168,16 @@ loadPlan();
 // ── Date Navigation ──
 function navDate(days) {
     currentDate = changeDate(currentDate, days);
-    renderDateDisplay();
     loadPlan();
 }
 
 function goToday() {
     currentDate = todayStr();
-    renderDateDisplay();
     loadPlan();
 }
 
 function setMeal(meal) {
     currentMeal = meal;
-    renderMealToggle();
     loadPlan();
 }
 
@@ -198,6 +210,7 @@ async function loadPlan() {
     document.getElementById('planBar').classList.add('hidden');
     document.getElementById('addDishArea').classList.add('hidden');
     document.getElementById('errorBox').classList.add('hidden');
+    document.getElementById('paxEditRow').classList.add('hidden');
 
     try {
         const data = await api(`api/menu-plan.php?action=get&date=${currentDate}&meal=${currentMeal}`);
@@ -228,21 +241,22 @@ function renderPlan() {
         document.getElementById('auditBtn').classList.add('flex');
         document.getElementById('planPaxBtn').textContent = planData.portions;
         document.getElementById('planPaxBtn').onclick = isConfirmed ? null : () => editPax();
+        document.getElementById('planPaxBtn').style.cursor = isConfirmed ? 'default' : 'pointer';
 
         const badge = document.getElementById('planStatusBadge');
-        badge.textContent = planData.status;
+        badge.textContent = isConfirmed ? 'Confirmed' : 'Draft';
         badge.className = 'text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ' +
             (isConfirmed ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700');
 
-        const totalIng = dishesData.reduce((sum, d) => sum + d.ingredients.filter(i => !i.is_removed).length, 0);
-        document.getElementById('planInfo').textContent = `${dishesData.length} dish${dishesData.length !== 1 ? 'es' : ''}${totalIng > 0 ? ` · ${totalIng} ingredients` : ''}`;
+        const totalIng = dishesData.reduce((sum, d) => sum + (d.ingredients || []).filter(i => !i.is_removed).length, 0);
+        document.getElementById('planInfo').textContent = `${dishesData.length} dish${dishesData.length !== 1 ? 'es' : ''}${totalIng > 0 ? ` \u00b7 ${totalIng} ingredients` : ''}`;
 
         // Actions
         let actionsHtml = '';
         if (planData.status === 'draft') {
-            actionsHtml = `<button onclick="confirmPlan()" class="text-xs text-green-700 font-semibold bg-green-50 px-2.5 py-1 rounded-lg compact-btn ${dishesData.length === 0 ? 'opacity-40 pointer-events-none' : ''}">✓ Confirm</button>`;
+            actionsHtml = `<button onclick="confirmPlan()" class="text-xs text-green-700 font-semibold bg-green-50 px-2.5 py-1 rounded-lg compact-btn ${dishesData.length === 0 ? 'opacity-40 pointer-events-none' : ''}">Confirm</button>`;
         } else {
-            actionsHtml = `<button onclick="reopenPlan()" class="text-xs text-amber-700 font-medium bg-amber-50 px-2.5 py-1 rounded-lg compact-btn">↩ Reopen</button>`;
+            actionsHtml = `<button onclick="reopenPlan()" class="text-xs text-amber-700 font-medium bg-amber-50 px-2.5 py-1 rounded-lg compact-btn">Reopen</button>`;
         }
         document.getElementById('planActions').innerHTML = actionsHtml;
     } else {
@@ -258,7 +272,7 @@ function renderPlan() {
         document.getElementById('emptyState').classList.remove('hidden');
     }
 
-    // Add dish area (only if draft)
+    // Add dish area (only if not confirmed)
     if (!isConfirmed) {
         document.getElementById('addDishArea').classList.remove('hidden');
         populateRecipePicker();
@@ -266,25 +280,112 @@ function renderPlan() {
 }
 
 function renderDishCard(dish, isConfirmed) {
-    const ingCount = dish.ingredients.filter(i => !i.is_removed).length;
-    const primaryCount = dish.ingredients.filter(i => !i.is_removed && i.is_primary).length;
+    const ings = (dish.ingredients || []).filter(i => !i.is_removed);
+    const ingCount = ings.length;
+    const primaryCount = ings.filter(i => i.is_primary).length;
     const weeklyCount = ingCount - primaryCount;
     const courseLabels = { appetizer: 'Appetizer', soup: 'Soup', salad: 'Salad', main_course: 'Main', side: 'Side', dessert: 'Dessert', beverage: 'Beverage' };
+    const isExpanded = expandedDishes[dish.id];
+
+    // Ingredients section (shown when expanded)
+    let ingredientsHtml = '';
+    if (isExpanded && ingCount > 0) {
+        ingredientsHtml = `
+        <div class="border-t border-gray-100 px-3 py-2 bg-gray-50/50">
+            <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-semibold text-gray-500 uppercase">Ingredients (${ingCount})</span>
+                ${primaryCount > 0 ? `<span class="text-[9px] text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full">${primaryCount} daily</span>` : ''}
+            </div>
+            <div class="space-y-1">
+                ${ings.map(ing => `
+                    <div class="flex items-center justify-between py-1">
+                        <div class="flex items-center gap-2 min-w-0 flex-1">
+                            <span class="w-1.5 h-1.5 rounded-full shrink-0 ${ing.is_primary ? 'bg-orange-400' : 'bg-gray-300'}"></span>
+                            <span class="text-xs text-gray-800 truncate">${ing.item_name}</span>
+                        </div>
+                        <span class="text-xs text-gray-500 shrink-0 ml-2">${ing.final_qty || ing.qty} ${ing.uom}</span>
+                    </div>
+                `).join('')}
+            </div>
+        </div>`;
+    } else if (isExpanded && ingCount === 0) {
+        ingredientsHtml = `
+        <div class="border-t border-gray-100 px-3 py-3 bg-gray-50/50">
+            <p class="text-xs text-gray-400 text-center">No ingredients loaded</p>
+        </div>`;
+    }
+
+    // Portions edit row (inline stepper instead of prompt)
+    let portionsEditHtml = '';
+    if (expandedDishes[dish.id] === 'editPortions') {
+        portionsEditHtml = `
+        <div class="border-t border-orange-100 px-3 py-2 bg-orange-50/50">
+            <div class="flex items-center gap-2">
+                <span class="text-[10px] font-semibold text-orange-700">Portions:</span>
+                <div class="flex items-center border border-orange-200 rounded-lg overflow-hidden bg-white">
+                    <button onclick="adjDishPortions(${dish.id}, -5)" class="px-2 py-1 text-orange-600 hover:bg-orange-50 compact-btn font-bold text-sm">-</button>
+                    <input type="number" id="dishPortions_${dish.id}" value="${dish.portions}" min="1" class="w-14 text-center text-xs font-bold bg-transparent border-0 focus:outline-none py-1 compact-btn">
+                    <button onclick="adjDishPortions(${dish.id}, 5)" class="px-2 py-1 text-orange-600 hover:bg-orange-50 compact-btn font-bold text-sm">+</button>
+                </div>
+                <button onclick="saveDishPortions(${dish.id})" class="bg-orange-500 text-white px-2.5 py-1 rounded-lg text-[10px] font-semibold compact-btn">Save</button>
+                <button onclick="toggleDish(${dish.id})" class="text-gray-400 text-[10px] compact-btn">Cancel</button>
+            </div>
+        </div>`;
+    }
 
     return `
     <div class="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
-        <div class="flex items-center gap-2 px-3 py-3">
+        <div class="flex items-center gap-2 px-3 py-3 cursor-pointer" onclick="toggleDish(${dish.id})">
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-orange-500 shrink-0"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 0 0 2-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 0 0-5 5v6c0 1.1.9 2 2 2h3Zm0 0v7"/></svg>
             <div class="flex-1 min-w-0">
                 <span class="font-semibold text-sm text-gray-900 truncate block">${dish.dish_name}</span>
-                <span class="text-[10px] text-gray-400">${courseLabels[dish.course] || dish.course}${ingCount > 0 ? ` · ${primaryCount} daily · ${weeklyCount} weekly` : ''}</span>
+                <span class="text-[10px] text-gray-400">${courseLabels[dish.course] || dish.course}${ingCount > 0 ? ` \u00b7 ${primaryCount} daily \u00b7 ${weeklyCount} weekly` : ''}</span>
             </div>
-            ${dish.recipe_id ? '<span class="text-[9px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded-full shrink-0">📖</span>' : ''}
-            ${dish.presentation_score > 0 ? `<span class="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full shrink-0">⭐ ${dish.presentation_score}</span>` : ''}
-            <span class="text-[10px] font-medium text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded-full shrink-0">👥 ${dish.portions}</span>
-            ${!isConfirmed && !dish.is_default ? `<button onclick="removeDish(${dish.id})" class="text-red-400 p-0.5 shrink-0 compact-btn"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>` : ''}
+            ${dish.recipe_id ? '<span class="text-[9px] bg-orange-50 text-orange-600 px-1.5 py-0.5 rounded-full shrink-0">Recipe</span>' : ''}
+            ${dish.presentation_score > 0 ? `<span class="text-[10px] font-medium text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full shrink-0">${dish.presentation_score}</span>` : ''}
+            <button onclick="event.stopPropagation(); showEditPortions(${dish.id})" class="text-[10px] font-medium text-orange-700 bg-orange-50 px-1.5 py-0.5 rounded-full shrink-0 ${isConfirmed ? 'pointer-events-none' : 'hover:bg-orange-100'}">${dish.portions} pax</button>
+            ${!isConfirmed && !dish.is_default ? `<button onclick="event.stopPropagation(); removeDish(${dish.id})" class="text-red-400 p-0.5 shrink-0 compact-btn"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></button>` : ''}
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-300 shrink-0 transition-transform ${isExpanded ? 'rotate-180' : ''}"><path d="m6 9 6 6 6-6"/></svg>
         </div>
+        ${ingredientsHtml}
+        ${portionsEditHtml}
     </div>`;
+}
+
+// ── Toggle dish expand/collapse ──
+function toggleDish(dishId) {
+    if (expandedDishes[dishId]) {
+        delete expandedDishes[dishId];
+    } else {
+        expandedDishes[dishId] = true;
+    }
+    const list = document.getElementById('dishList');
+    const isConfirmed = planData?.status === 'confirmed';
+    list.innerHTML = dishesData.map(d => renderDishCard(d, isConfirmed)).join('');
+}
+
+// ── Edit dish portions (inline) ──
+function showEditPortions(dishId) {
+    expandedDishes[dishId] = 'editPortions';
+    const list = document.getElementById('dishList');
+    const isConfirmed = planData?.status === 'confirmed';
+    list.innerHTML = dishesData.map(d => renderDishCard(d, isConfirmed)).join('');
+}
+
+function adjDishPortions(dishId, delta) {
+    const input = document.getElementById(`dishPortions_${dishId}`);
+    if (input) input.value = Math.max(1, parseInt(input.value || 20) + delta);
+}
+
+async function saveDishPortions(dishId) {
+    const input = document.getElementById(`dishPortions_${dishId}`);
+    const portions = parseInt(input?.value) || 20;
+    try {
+        await api('api/menu-plan.php', { method: 'POST', body: { action: 'update_portions', dish_id: dishId, portions } });
+        showToast('Portions updated');
+        expandedDishes[dishId] = true;
+        loadPlan();
+    } catch (err) { showToast(err.message, 'error'); }
 }
 
 // ── Recipe Picker ──
@@ -387,6 +488,7 @@ async function removeDish(dishId) {
     try {
         await api('api/menu-plan.php', { method: 'POST', body: { action: 'remove_dish', dish_id: dishId } });
         showToast('Dish removed');
+        delete expandedDishes[dishId];
         loadPlan();
     } catch (err) {
         showToast(err.message, 'error');
@@ -395,7 +497,7 @@ async function removeDish(dishId) {
 
 // ── Confirm / Reopen ──
 async function confirmPlan() {
-    if (!confirm('Confirm this menu plan?')) return;
+    if (!confirm('Confirm this menu plan? It will be set as the fixed menu for this day.')) return;
     try {
         await api('api/menu-plan.php', { method: 'POST', body: { action: 'confirm_plan', plan_id: planData.id } });
         showToast('Plan confirmed!');
@@ -411,14 +513,31 @@ async function reopenPlan() {
     } catch (err) { showToast(err.message, 'error'); }
 }
 
-// ── Edit Pax ──
+// ── Inline Pax Edit ──
 function editPax() {
-    const newPax = prompt('Total Pax (covers):', planData.portions);
-    if (newPax && parseInt(newPax) > 0 && parseInt(newPax) !== planData.portions) {
-        api('api/menu-plan.php', { method: 'POST', body: { action: 'update_plan_pax', plan_id: planData.id, pax: parseInt(newPax) } })
-            .then(() => { showToast('Pax updated'); loadPlan(); })
-            .catch(err => showToast(err.message, 'error'));
-    }
+    document.getElementById('paxEditInput').value = planData.portions;
+    document.getElementById('paxEditRow').classList.remove('hidden');
+    document.getElementById('planBar').classList.add('hidden');
+}
+
+function cancelPax() {
+    document.getElementById('paxEditRow').classList.add('hidden');
+    document.getElementById('planBar').classList.remove('hidden');
+}
+
+function adjPax(delta) {
+    const input = document.getElementById('paxEditInput');
+    input.value = Math.max(1, parseInt(input.value || 20) + delta);
+}
+
+async function savePax() {
+    const pax = parseInt(document.getElementById('paxEditInput').value) || 20;
+    try {
+        await api('api/menu-plan.php', { method: 'POST', body: { action: 'update_plan_pax', plan_id: planData.id, pax } });
+        showToast('Pax updated');
+        cancelPax();
+        loadPlan();
+    } catch (err) { showToast(err.message, 'error'); }
 }
 
 // ── Audit Log ──

@@ -7,7 +7,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-orange-600"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
                 Recipes
             </h1>
-            <p class="text-xs text-gray-500 mt-0.5">Manage kitchen recipes</p>
+            <p class="text-xs text-gray-500 mt-0.5" id="rCount">Manage kitchen recipes</p>
         </div>
         <button onclick="rShowCreate()" class="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5 transition compact-btn">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
@@ -53,6 +53,7 @@
 let rRecipes = [];
 let rCategory = '';
 let rSearchTimer = null;
+let rExpandedId = null;
 
 rLoadRecipes();
 
@@ -63,7 +64,6 @@ function rSearch() {
 
 function rFilterCat(cat) {
     rCategory = cat;
-    // Update tab styles
     document.querySelectorAll('[id^="rCat"]').forEach(btn => {
         btn.className = 'px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600 compact-btn';
     });
@@ -86,6 +86,7 @@ async function rLoadRecipes() {
     try {
         const data = await api(url);
         rRecipes = data.recipes || [];
+        document.getElementById('rCount').textContent = `${rRecipes.length} recipe${rRecipes.length !== 1 ? 's' : ''}`;
         rRenderList();
     } catch (err) { showToast(err.message, 'error'); }
     finally { document.getElementById('rLoading').classList.add('hidden'); }
@@ -101,193 +102,184 @@ function rRenderList() {
 
     list.innerHTML = rRecipes.map(r => `
         <div class="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
-            <div class="flex items-center gap-3 px-4 py-3 cursor-pointer" onclick="rViewRecipe(${r.id})">
+            <div class="flex items-center gap-3 px-4 py-3 cursor-pointer" onclick="rToggleExpand(${r.id})">
                 <div class="flex-1 min-w-0">
                     <p class="font-semibold text-sm text-gray-900 truncate">${r.name}</p>
-                    <div class="flex items-center gap-2 mt-0.5">
-                        <span class="text-[10px] text-gray-400">${catLabels[r.category] || r.category}</span>
-                        ${r.cuisine ? `<span class="text-[10px] text-gray-400">· ${r.cuisine}</span>` : ''}
-                        <span class="text-[10px] text-gray-400">· ${r.ingredient_count || 0} ingredients</span>
+                    <div class="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span class="text-[10px] text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full">${catLabels[r.category] || r.category}</span>
+                        ${r.cuisine ? `<span class="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">${r.cuisine}</span>` : ''}
+                        <span class="text-[10px] text-gray-400">${r.ingredient_count || 0} ing</span>
                     </div>
                 </div>
-                <span class="text-[10px] font-medium px-2 py-0.5 rounded-full ${diffColors[r.difficulty] || 'bg-gray-100 text-gray-600'}">${r.difficulty}</span>
-                ${r.servings ? `<span class="text-[10px] text-gray-400">${r.servings} srv</span>` : ''}
-                <button onclick="event.stopPropagation(); rDeleteRecipe(${r.id}, '${r.name.replace(/'/g, "\\'")}')" class="text-red-400 p-1 compact-btn">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                </button>
+                <div class="flex items-center gap-2 shrink-0">
+                    <span class="text-[10px] font-medium px-2 py-0.5 rounded-full ${diffColors[r.difficulty] || 'bg-gray-100 text-gray-600'}">${r.difficulty || 'medium'}</span>
+                    ${r.servings ? `<span class="text-[10px] text-gray-400">${r.servings} srv</span>` : ''}
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-300 transition-transform ${rExpandedId === r.id ? 'rotate-180' : ''}"><path d="m6 9 6 6 6-6"/></svg>
+                </div>
             </div>
+            ${rExpandedId === r.id ? `<div id="rDetail_${r.id}"><div class="border-t border-gray-100 px-4 py-3 text-center"><svg class="animate-spin text-orange-400 mx-auto" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></div></div>` : ''}
         </div>
     `).join('');
+
+    // Load detail if expanded
+    if (rExpandedId) rLoadDetail(rExpandedId);
 }
 
-// View recipe detail
-async function rViewRecipe(id) {
+async function rToggleExpand(id) {
+    if (rExpandedId === id) {
+        rExpandedId = null;
+        rRenderList();
+        return;
+    }
+    rExpandedId = id;
+    rRenderList();
+}
+
+async function rLoadDetail(id) {
     try {
         const data = await api(`api/recipes.php?action=get&id=${id}`);
         const r = data.recipe;
         const ings = r.ingredients || [];
+        const diffColors = { easy: 'text-green-700', medium: 'text-amber-700', hard: 'text-red-700' };
 
-        let html = `
-            <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
-            <div class="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-                <div>
-                    <h3 class="text-sm font-bold text-gray-900">${r.name}</h3>
-                    <p class="text-[10px] text-gray-400">${r.category} ${r.cuisine ? '· ' + r.cuisine : ''} · ${r.servings} servings</p>
-                </div>
-                <button onclick="closeSheet()" class="p-1 compact-btn"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
-            </div>
-            <div class="flex-1 overflow-y-auto px-5 py-3 scroll-touch">
-                <h4 class="text-xs font-semibold text-gray-500 uppercase mb-2">Ingredients (${ings.length})</h4>
-                ${ings.length === 0 ? '<p class="text-xs text-gray-400">No ingredients added yet</p>' : ''}
-                ${ings.map(ing => `
-                    <div class="flex items-center justify-between py-2 border-b border-gray-50">
-                        <div>
-                            <p class="text-sm text-gray-800">${ing.item_name}</p>
-                            <p class="text-[10px] text-gray-400">${ing.is_primary ? 'Daily' : 'Weekly'}</p>
-                        </div>
-                        <div class="text-right">
-                            <span class="text-sm font-medium text-gray-900">${ing.qty} ${ing.uom}</span>
-                            <button onclick="rRemoveIngredient(${ing.id}, ${id})" class="ml-2 text-red-400 compact-btn"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
-                        </div>
-                    </div>
-                `).join('')}
+        let html = '<div class="border-t border-gray-100">';
 
-                <!-- Add ingredient form -->
-                <div class="mt-3 p-3 bg-orange-50 rounded-xl">
-                    <h4 class="text-xs font-semibold text-orange-700 mb-2">Add Ingredient</h4>
-                    <div class="relative mb-2">
-                        <input type="text" id="rIngSearch" oninput="rSearchIngItems()" placeholder="Search item..."
-                            class="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-200 compact-btn">
-                        <div id="rIngResults" class="hidden absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg max-h-40 overflow-y-auto z-50"></div>
-                    </div>
-                    <div id="rIngFields" class="hidden">
-                        <div class="flex items-center gap-2">
-                            <input type="number" id="rIngQty" placeholder="Qty" class="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm compact-btn">
-                            <span id="rIngUom" class="text-xs text-gray-500">kg</span>
-                            <select id="rIngPrimary" class="text-xs border border-gray-200 rounded-lg px-2 py-1.5 compact-btn">
-                                <option value="1">Daily</option>
-                                <option value="0">Weekly</option>
-                            </select>
-                            <button onclick="rAddIngredient(${id})" class="bg-orange-500 text-white px-3 py-1.5 rounded-lg text-sm font-medium compact-btn">Add</button>
-                        </div>
-                    </div>
-                </div>
+        // Meta row (prep, cook, difficulty, servings)
+        html += `<div class="flex items-center gap-3 px-4 py-2 bg-gray-50/50 text-[10px] text-gray-500 flex-wrap">`;
+        if (r.servings) html += `<span class="flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> ${r.servings} servings</span>`;
+        if (r.prep_time) html += `<span>Prep: ${r.prep_time}min</span>`;
+        if (r.cook_time) html += `<span>Cook: ${r.cook_time}min</span>`;
+        html += `<span class="${diffColors[r.difficulty] || ''} font-medium">${(r.difficulty || 'medium').charAt(0).toUpperCase() + (r.difficulty || 'medium').slice(1)}</span>`;
+        html += `</div>`;
 
-                ${r.instructions ? `<h4 class="text-xs font-semibold text-gray-500 uppercase mt-4 mb-2">Instructions</h4><p class="text-sm text-gray-700 whitespace-pre-line">${r.instructions}</p>` : ''}
-            </div>`;
-        openSheet(html);
+        // Description
+        if (r.notes) {
+            html += `<div class="px-4 py-2 border-t border-gray-50"><p class="text-xs text-gray-600 italic">${r.notes}</p></div>`;
+        }
+
+        // Ingredients
+        html += `<div class="px-4 py-2 border-t border-gray-50">`;
+        html += `<h4 class="text-[10px] font-semibold text-gray-500 uppercase mb-2">Ingredients (${ings.length})</h4>`;
+        if (ings.length === 0) {
+            html += `<p class="text-xs text-gray-400">No ingredients yet</p>`;
+        } else {
+            html += `<div class="grid grid-cols-2 gap-x-4 gap-y-1">`;
+            ings.forEach(ing => {
+                html += `<div class="flex items-center gap-2 py-1">
+                    <span class="w-1.5 h-1.5 rounded-full shrink-0 ${ing.is_primary ? 'bg-orange-400' : 'bg-gray-300'}"></span>
+                    <span class="text-xs text-gray-800 truncate flex-1">${ing.item_name}</span>
+                    <span class="text-[10px] text-gray-500 shrink-0">${ing.qty} ${ing.uom}</span>
+                </div>`;
+            });
+            html += `</div>`;
+        }
+        html += `</div>`;
+
+        // Instructions
+        if (r.instructions) {
+            html += `<div class="px-4 py-2 border-t border-gray-50">`;
+            html += `<h4 class="text-[10px] font-semibold text-gray-500 uppercase mb-2">Instructions</h4>`;
+            const steps = r.instructions.split('\n').filter(s => s.trim());
+            steps.forEach((step, i) => {
+                html += `<div class="flex gap-2 mb-2">
+                    <span class="w-5 h-5 rounded-full bg-orange-100 text-orange-700 text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">${i + 1}</span>
+                    <p class="text-xs text-gray-700 flex-1">${step.trim()}</p>
+                </div>`;
+            });
+            html += `</div>`;
+        }
+
+        // Actions
+        html += `<div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 bg-gray-50/50">
+            <button onclick="rShowEdit(${id})" class="flex-1 text-xs text-orange-700 font-semibold bg-orange-50 py-2 rounded-lg compact-btn">Edit</button>
+            <button onclick="rDeleteRecipe(${id}, '${r.name.replace(/'/g, "\\'")}')" class="text-xs text-red-600 font-medium bg-red-50 px-4 py-2 rounded-lg compact-btn">Delete</button>
+        </div>`;
+
+        html += '</div>';
+
+        const detail = document.getElementById(`rDetail_${id}`);
+        if (detail) detail.innerHTML = html;
     } catch (err) { showToast(err.message, 'error'); }
 }
 
-// Ingredient search within recipe detail sheet
-let rIngTimer = null;
-let rIngSelected = null;
+// ── Create / Edit Recipe (bottom sheet) ──
+function rShowCreate() { rOpenForm(null); }
 
-function rSearchIngItems() {
-    clearTimeout(rIngTimer);
-    const q = document.getElementById('rIngSearch').value.trim();
-    if (q.length < 2) { document.getElementById('rIngResults').classList.add('hidden'); return; }
-    rIngTimer = setTimeout(async () => {
-        try {
-            const data = await api(`api/recipes.php?action=search_items&q=${encodeURIComponent(q)}`);
-            const results = document.getElementById('rIngResults');
-            if (data.items.length === 0) { results.classList.add('hidden'); return; }
-            results.classList.remove('hidden');
-            results.innerHTML = data.items.map(item => `
-                <button onclick='rSelectIngItem(${JSON.stringify(item).replace(/'/g, "&#39;")})' class="w-full text-left px-3 py-2 text-sm hover:bg-orange-50 border-b border-gray-50 compact-btn">${item.name} <span class="text-xs text-gray-400">${item.uom}</span></button>
-            `).join('');
-        } catch {}
-    }, 300);
-}
-
-function rSelectIngItem(item) {
-    rIngSelected = item;
-    document.getElementById('rIngSearch').value = item.name;
-    document.getElementById('rIngResults').classList.add('hidden');
-    document.getElementById('rIngFields').classList.remove('hidden');
-    document.getElementById('rIngUom').textContent = item.uom;
-}
-
-async function rAddIngredient(recipeId) {
-    if (!rIngSelected) return;
-    const qty = parseFloat(document.getElementById('rIngQty').value);
-    if (!qty || qty <= 0) return showToast('Enter quantity', 'warning');
-    const isPrimary = parseInt(document.getElementById('rIngPrimary').value);
-
+async function rShowEdit(id) {
     try {
-        await api('api/recipes.php', { method: 'POST', body: { action: 'add_ingredient', recipe_id: recipeId, item_id: rIngSelected.id, item_name: rIngSelected.name, qty, uom: rIngSelected.uom, is_primary: isPrimary } });
-        showToast('Ingredient added');
-        closeSheet();
-        rViewRecipe(recipeId);
+        const data = await api(`api/recipes.php?action=get&id=${id}`);
+        rOpenForm(data.recipe);
     } catch (err) { showToast(err.message, 'error'); }
 }
 
-async function rRemoveIngredient(ingId, recipeId) {
-    if (!confirm('Remove this ingredient?')) return;
-    try {
-        await api('api/recipes.php', { method: 'POST', body: { action: 'remove_ingredient', id: ingId } });
-        showToast('Removed');
-        closeSheet();
-        rViewRecipe(recipeId);
-    } catch (err) { showToast(err.message, 'error'); }
-}
-
-// Create recipe
-function rShowCreate() {
+function rOpenForm(recipe) {
+    const isEdit = !!recipe;
     const categories = ['appetizer','soup','salad','main_course','side','dessert','beverage','breakfast','lunch','dinner','snack','sauce','bread'];
+
     let html = `
         <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
         <div class="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-            <h3 class="text-sm font-bold text-gray-900">New Recipe</h3>
+            <h3 class="text-sm font-bold text-gray-900">${isEdit ? 'Edit Recipe' : 'New Recipe'}</h3>
             <button onclick="closeSheet()" class="p-1 compact-btn"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
         <div class="flex-1 overflow-y-auto px-5 py-4 scroll-touch space-y-3">
-            <input type="text" id="rNewName" placeholder="Recipe name" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
+            <input type="text" id="rFormName" value="${isEdit ? recipe.name : ''}" placeholder="Recipe name" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
             <div class="flex gap-2">
-                <select id="rNewCategory" class="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm compact-btn">
-                    ${categories.map(c => `<option value="${c}" ${c === 'main_course' ? 'selected' : ''}>${c.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>`).join('')}
+                <select id="rFormCategory" class="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm compact-btn">
+                    ${categories.map(c => `<option value="${c}" ${(isEdit ? recipe.category : 'main_course') === c ? 'selected' : ''}>${c.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>`).join('')}
                 </select>
-                <select id="rNewDifficulty" class="w-28 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm compact-btn">
-                    <option value="easy">Easy</option>
-                    <option value="medium" selected>Medium</option>
-                    <option value="hard">Hard</option>
+                <select id="rFormDifficulty" class="w-28 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm compact-btn">
+                    <option value="easy" ${(isEdit && recipe.difficulty === 'easy') ? 'selected' : ''}>Easy</option>
+                    <option value="medium" ${(!isEdit || recipe.difficulty === 'medium') ? 'selected' : ''}>Medium</option>
+                    <option value="hard" ${(isEdit && recipe.difficulty === 'hard') ? 'selected' : ''}>Hard</option>
                 </select>
             </div>
             <div class="flex gap-2">
-                <input type="text" id="rNewCuisine" placeholder="Cuisine (optional)" class="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
-                <input type="number" id="rNewServings" value="4" placeholder="Servings" class="w-24 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 compact-btn">
+                <input type="text" id="rFormCuisine" value="${isEdit && recipe.cuisine ? recipe.cuisine : ''}" placeholder="Cuisine (optional)" class="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
+                <input type="number" id="rFormServings" value="${isEdit ? recipe.servings || 4 : 4}" placeholder="Servings" class="w-24 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 compact-btn">
             </div>
-            <textarea id="rNewInstructions" placeholder="Instructions (optional)" rows="3" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200"></textarea>
-            <button onclick="rSaveRecipe()" class="w-full bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-lg text-sm font-semibold transition">Save Recipe</button>
+            <div class="flex gap-2">
+                <input type="number" id="rFormPrep" value="${isEdit && recipe.prep_time ? recipe.prep_time : ''}" placeholder="Prep min" class="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 compact-btn">
+                <input type="number" id="rFormCook" value="${isEdit && recipe.cook_time ? recipe.cook_time : ''}" placeholder="Cook min" class="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 compact-btn">
+            </div>
+            <textarea id="rFormNotes" placeholder="Description / notes (optional)" rows="2" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">${isEdit && recipe.notes ? recipe.notes : ''}</textarea>
+            <textarea id="rFormInstructions" placeholder="Instructions (one step per line)" rows="4" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">${isEdit && recipe.instructions ? recipe.instructions : ''}</textarea>
+            <button onclick="rSaveRecipe(${isEdit ? recipe.id : 'null'})" class="w-full bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-lg text-sm font-semibold transition">Save Recipe</button>
         </div>`;
     openSheet(html);
 }
 
-async function rSaveRecipe() {
-    const name = document.getElementById('rNewName').value.trim();
+async function rSaveRecipe(editId) {
+    const name = document.getElementById('rFormName').value.trim();
     if (!name) return showToast('Enter recipe name', 'warning');
 
     try {
         await api('api/recipes.php', { method: 'POST', body: {
             action: 'save',
+            id: editId,
             name,
-            category: document.getElementById('rNewCategory').value,
-            difficulty: document.getElementById('rNewDifficulty').value,
-            cuisine: document.getElementById('rNewCuisine').value || null,
-            servings: parseInt(document.getElementById('rNewServings').value) || 4,
-            instructions: document.getElementById('rNewInstructions').value || null,
+            category: document.getElementById('rFormCategory').value,
+            difficulty: document.getElementById('rFormDifficulty').value,
+            cuisine: document.getElementById('rFormCuisine').value || null,
+            servings: parseInt(document.getElementById('rFormServings').value) || 4,
+            prep_time: parseInt(document.getElementById('rFormPrep').value) || null,
+            cook_time: parseInt(document.getElementById('rFormCook').value) || null,
+            notes: document.getElementById('rFormNotes').value || null,
+            instructions: document.getElementById('rFormInstructions').value || null,
         }});
         closeSheet();
         showToast('Recipe saved!');
+        rExpandedId = null;
         rLoadRecipes();
     } catch (err) { showToast(err.message, 'error'); }
 }
 
 async function rDeleteRecipe(id, name) {
-    if (!confirm(`Delete "${name}"?`)) return;
+    if (!confirm(`Delete "${name}"? Existing menu plans won't be affected.`)) return;
     try {
         await api('api/recipes.php', { method: 'POST', body: { action: 'delete', id } });
         showToast('Recipe deleted');
+        rExpandedId = null;
         rLoadRecipes();
     } catch (err) { showToast(err.message, 'error'); }
 }
