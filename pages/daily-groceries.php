@@ -64,7 +64,7 @@
 
         <!-- Column Headers -->
         <div class="bg-white rounded-t-xl border border-gray-100 border-b-0">
-            <div class="grid grid-cols-[1fr_70px_70px] gap-1 px-3 py-2 bg-gray-50 rounded-t-xl text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+            <div class="grid grid-cols-[1fr_70px_80px] gap-1 px-3 py-2 bg-gray-50 rounded-t-xl text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                 <span>Item</span>
                 <span class="text-center">Need</span>
                 <span class="text-center">Order</span>
@@ -186,38 +186,40 @@ function gRender() {
     gOrderLines.forEach(l => { orderMap[l.item_name] = l; });
 
     container.innerHTML = gItems.map(item => {
-        const needed = parseFloat(item.total_qty) || 0;
-        const stock = item.current_stock !== null ? parseFloat(item.current_stock) : null;
+        const needed = Math.round((parseFloat(item.total_qty) || 0) * 100) / 100;
         const orderLine = orderMap[item.item_name];
 
-        // Order qty: from order line if exists, otherwise same as needed
-        let orderQty = needed;
+        // Order qty: from order line if exists, else default to ceiling of needed
+        let orderQty = Math.ceil(needed);
         if (orderLine) {
-            orderQty = parseFloat(orderLine.requested_qty) || needed;
+            orderQty = parseFloat(orderLine.requested_qty) || orderQty;
         }
         if (gEditedQtys[item.item_name] !== undefined) {
             orderQty = gEditedQtys[item.item_name];
         }
 
-        const stockDisplay = stock !== null ? `<span class="text-[10px] text-gray-400">${stock} in stock</span>` : '';
+        // Show which dishes need this item
+        const dishesLabel = item.dishes || '';
 
         return `
-        <div class="grid grid-cols-[1fr_70px_70px] gap-1 px-3 py-2.5 border-b border-gray-50 items-center">
+        <div class="grid grid-cols-[1fr_70px_80px] gap-1 px-3 py-2.5 border-b border-gray-50 items-center">
             <div class="min-w-0">
                 <p class="text-sm font-medium text-gray-900 truncate">${item.item_name}</p>
-                <p class="text-[10px] text-gray-400 truncate">${item.dishes} \u00b7 ${item.uom}</p>
-                ${stockDisplay}
+                <p class="text-[10px] text-gray-400 truncate">${dishesLabel}</p>
             </div>
             <div class="text-center">
-                <span class="text-sm font-semibold text-gray-700">${needed}</span>
+                <span class="text-sm text-gray-500">${needed}</span>
                 <span class="text-[10px] text-gray-400 block">${item.uom}</span>
             </div>
             <div class="text-center">
                 ${hasOrder
-                    ? `<span class="text-sm font-semibold text-orange-700">${orderQty}</span><span class="text-[10px] text-gray-400 block">${item.uom}</span>`
-                    : `<input type="number" value="${orderQty}" step="0.1" min="0"
-                        onchange="gEditQty('${item.item_name.replace(/'/g, "\\'")}', this.value)"
-                        class="w-full text-center text-sm font-semibold border border-gray-200 rounded-lg px-1 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-200 compact-btn">`
+                    ? `<span class="text-sm font-bold text-orange-700">${orderQty}</span><span class="text-[10px] text-gray-400 block">${item.uom}</span>`
+                    : `<div class="flex items-center justify-center gap-0.5">
+                        <button onclick="gAdjQty('${item.item_name.replace(/'/g, "\\'")}', -1)" class="w-7 h-7 rounded bg-gray-100 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn active:bg-gray-200">-</button>
+                        <span class="w-9 text-center text-sm font-bold text-orange-700" id="oq_${CSS.escape(item.item_name)}">${orderQty}</span>
+                        <button onclick="gAdjQty('${item.item_name.replace(/'/g, "\\'")}', 1)" class="w-7 h-7 rounded bg-gray-100 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn active:bg-gray-200">+</button>
+                      </div>
+                      <span class="text-[10px] text-gray-400">${item.uom}</span>`
                 }
             </div>
         </div>`;
@@ -233,14 +235,31 @@ function gRender() {
     receiptBtn.classList.add('hidden');
 
     if (!gOrder && gItems.length > 0) {
-        // No order yet — show submit
         submitBtn.classList.remove('hidden');
         submitBtn.classList.add('flex');
     } else if (gOrder && gOrder.status === 'fulfilled') {
-        // Store sent items — chef can confirm receipt
         receiptBtn.classList.remove('hidden');
         receiptBtn.classList.add('flex');
     }
+}
+
+function gAdjQty(itemName, delta) {
+    const item = gItems.find(i => i.item_name === itemName);
+    if (!item) return;
+
+    const needed = Math.round((parseFloat(item.total_qty) || 0) * 100) / 100;
+    let current = gEditedQtys[itemName] !== undefined ? gEditedQtys[itemName] : Math.ceil(needed);
+    current = Math.max(0, current + delta);
+    gEditedQtys[itemName] = current;
+
+    // Update display using a safe selector
+    const spans = document.querySelectorAll(`[id^="oq_"]`);
+    spans.forEach(span => {
+        // Match by finding the item name
+        if (span.closest('.grid')?.querySelector('.text-sm.font-medium')?.textContent === itemName) {
+            span.textContent = current;
+        }
+    });
 }
 
 function gEditQty(itemName, value) {
@@ -250,7 +269,8 @@ function gEditQty(itemName, value) {
 // Submit order
 async function gSubmitOrder() {
     const items = gItems.map(item => {
-        let qty = parseFloat(item.total_qty) || 0;
+        const needed = Math.round((parseFloat(item.total_qty) || 0) * 100) / 100;
+        let qty = Math.ceil(needed); // default: round up
         if (gEditedQtys[item.item_name] !== undefined) {
             qty = gEditedQtys[item.item_name];
         }
@@ -301,9 +321,13 @@ function gShowReceiptSheet() {
                     <p class="text-sm font-medium text-gray-800 truncate">${line.item_name}</p>
                     <p class="text-[10px] text-gray-400">Sent: ${qty} ${line.uom}</p>
                 </div>
-                <input type="number" value="${qty}" step="0.1" min="0" id="recv_${line.id}"
-                    class="w-20 text-center text-sm font-semibold border border-gray-200 rounded-lg px-1 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn">
-                <span class="text-[10px] text-gray-400">${line.uom}</span>
+                <div class="flex items-center gap-1">
+                    <button onclick="gAdjRecv(${line.id}, -1)" class="w-7 h-7 rounded bg-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">-</button>
+                    <input type="number" value="${qty}" step="0.5" min="0" id="recv_${line.id}"
+                        class="w-14 text-center text-sm font-semibold border border-gray-200 rounded-lg px-1 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn">
+                    <button onclick="gAdjRecv(${line.id}, 1)" class="w-7 h-7 rounded bg-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">+</button>
+                </div>
+                <span class="text-[10px] text-gray-400 shrink-0">${line.uom}</span>
             </div>`;
     });
 
@@ -315,6 +339,13 @@ function gShowReceiptSheet() {
         </div>`;
 
     openSheet(html);
+}
+
+function gAdjRecv(lineId, delta) {
+    const input = document.getElementById(`recv_${lineId}`);
+    if (input) {
+        input.value = Math.max(0, (parseFloat(input.value) || 0) + delta);
+    }
 }
 
 async function gConfirmReceipt() {
