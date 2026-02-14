@@ -4,6 +4,9 @@
  * Database connection, session, helpers
  */
 
+// ── Timezone ──
+date_default_timezone_set('Africa/Dar_es_Salaam');
+
 // ── Session ──
 session_set_cookie_params([
     'lifetime' => 86400,
