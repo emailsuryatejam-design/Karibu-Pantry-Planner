@@ -61,10 +61,15 @@ switch ($action) {
         $lines = $input['lines'] ?? [];
         if (!$orderId) jsonError('Order ID required');
 
-        // Update fulfilled qty per line
-        $stmt = $db->prepare('UPDATE grocery_order_lines SET fulfilled_qty = ? WHERE id = ? AND order_id = ?');
+        // Update fulfilled qty + unit_size per line
+        $stmt = $db->prepare('UPDATE grocery_order_lines SET fulfilled_qty = ?, unit_size = ? WHERE id = ? AND order_id = ?');
         foreach ($lines as $line) {
-            $stmt->execute([(float)($line['fulfilled_qty'] ?? 0), (int)$line['id'], $orderId]);
+            $stmt->execute([
+                (float)($line['fulfilled_qty'] ?? 0),
+                !empty($line['unit_size']) ? (float)$line['unit_size'] : null,
+                (int)$line['id'],
+                $orderId
+            ]);
         }
 
         // Mark order as fulfilled (sent to kitchen)

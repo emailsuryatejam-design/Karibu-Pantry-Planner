@@ -7,7 +7,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-green-600"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
                 Store Orders
             </h1>
-            <p class="text-xs text-gray-500 mt-0.5">Orders from kitchen</p>
+            <p class="text-xs text-gray-500 mt-0.5">Requisitions from kitchen</p>
         </div>
     </div>
 
@@ -55,7 +55,6 @@ soLoad();
 
 function soFilter(status) {
     soStatus = status;
-    // Update tabs
     document.querySelectorAll('.so-tab').forEach(btn => {
         btn.className = btn.className.replace(/bg-green-600 text-white/g, 'bg-gray-100 text-gray-600');
     });
@@ -85,7 +84,6 @@ async function soLoad() {
         const res = await api(`api/store-orders.php?action=list&status=${soStatus}`);
         soOrders = res.orders || [];
 
-        // Update tab counts
         const counts = res.counts || {};
         ['all', 'pending', 'fulfilled', 'received'].forEach(s => {
             const el = document.getElementById('so-count-' + s);
@@ -153,39 +151,64 @@ async function soOpenDetail(orderId) {
                     <button onclick="closeSheet()" class="p-1 compact-btn"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
                 </div>
             </div>
-            <div class="flex-1 overflow-y-auto px-5 py-4 scroll-touch">
-                <!-- Line Items -->
-                <div class="space-y-2">`;
+            <div class="flex-1 overflow-y-auto px-5 py-4 scroll-touch">`;
+
+        if (canSend) {
+            html += `<p class="text-xs text-gray-500 mb-3">Enter the quantity you are issuing. If it differs from requested (e.g. pack sizes), adjust accordingly.</p>`;
+        }
+
+        html += `<div class="space-y-2">`;
 
         lines.forEach(line => {
             const reqQty = parseFloat(line.requested_qty) || 0;
             const sentQty = line.fulfilled_qty !== null ? parseFloat(line.fulfilled_qty) : reqQty;
+            const unitSize = line.unit_size ? parseFloat(line.unit_size) : null;
 
             html += `
-                <div class="bg-gray-50 rounded-lg px-3 py-2.5">
-                    <div class="flex items-center justify-between">
-                        <div class="flex-1 min-w-0">
-                            <p class="font-medium text-sm text-gray-800 truncate">${line.item_name}</p>
-                            <p class="text-[10px] text-gray-400">Requested: ${reqQty} ${line.uom}</p>
-                        </div>`;
+                <div class="bg-gray-50 rounded-xl px-3 py-3">
+                    <div class="flex items-center justify-between mb-1.5">
+                        <p class="font-semibold text-sm text-gray-800 truncate flex-1">${line.item_name}</p>
+                        <span class="text-xs text-gray-400 ml-2 shrink-0">Req: ${reqQty} ${line.uom}</span>
+                    </div>`;
 
             if (canSend) {
-                // Editable qty for store to fill
+                // Editable: Qty Issued + Unit Size
                 html += `
-                        <div class="flex items-center gap-1">
-                            <input type="number" value="${reqQty}" step="0.1" min="0" id="send_${line.id}"
-                                class="w-20 text-center text-sm font-semibold border border-gray-200 rounded-lg px-1 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn">
-                            <span class="text-[10px] text-gray-400">${line.uom}</span>
-                        </div>`;
+                    <div class="flex items-center gap-2 mt-2">
+                        <div class="flex-1">
+                            <label class="text-[10px] text-gray-500 font-medium block mb-0.5">Qty Issued</label>
+                            <div class="flex items-center gap-1">
+                                <button onclick="soAdjLine(${line.id}, 'qty', -1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">-</button>
+                                <input type="number" value="${reqQty}" step="0.5" min="0" id="send_${line.id}"
+                                    class="w-16 text-center text-sm font-semibold border border-gray-200 rounded-lg px-1 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-white">
+                                <button onclick="soAdjLine(${line.id}, 'qty', 1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">+</button>
+                                <span class="text-[10px] text-gray-400">${line.uom}</span>
+                            </div>
+                        </div>
+                        <div class="w-28">
+                            <label class="text-[10px] text-gray-500 font-medium block mb-0.5">Pack Size</label>
+                            <div class="flex items-center gap-1">
+                                <input type="number" value="1" step="0.5" min="0.1" id="unit_${line.id}"
+                                    class="w-14 text-center text-sm border border-gray-200 rounded-lg px-1 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-white">
+                                <span class="text-[10px] text-gray-400">${line.uom}</span>
+                            </div>
+                        </div>
+                    </div>`;
             } else {
-                // Read-only sent qty
+                // Read-only: show issued vs requested
+                const diff = sentQty - reqQty;
+                const diffLabel = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '';
+                const diffColor = diff > 0 ? 'text-blue-600' : diff < 0 ? 'text-red-600' : 'text-gray-500';
+
                 html += `
-                        <span class="text-sm font-semibold text-green-700">${sentQty} ${line.uom}</span>`;
+                    <div class="flex items-center gap-3 mt-1">
+                        <span class="text-sm font-bold text-green-700">Issued: ${sentQty} ${line.uom}</span>
+                        ${diffLabel ? `<span class="text-[10px] font-medium ${diffColor}">(${diffLabel} ${line.uom})</span>` : ''}
+                        ${unitSize ? `<span class="text-[10px] text-gray-400">\u00b7 ${unitSize} ${line.uom} packs</span>` : ''}
+                    </div>`;
             }
 
-            html += `
-                    </div>
-                </div>`;
+            html += `</div>`;
         });
 
         html += `</div>`;
@@ -196,7 +219,7 @@ async function soOpenDetail(orderId) {
                 <button onclick="soMarkSent(${order.id})" id="soSendBtn"
                     class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition mt-4 flex items-center justify-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
-                    Mark as Sent to Kitchen
+                    Issue to Kitchen
                 </button>`;
         }
 
@@ -204,7 +227,7 @@ async function soOpenDetail(orderId) {
         if (order.status === 'fulfilled') {
             html += `
                 <div class="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 mt-4 text-center">
-                    <p class="text-xs text-emerald-700 font-medium">Items sent to kitchen. Waiting for chef to confirm receipt.</p>
+                    <p class="text-xs text-emerald-700 font-medium">Items issued. Waiting for chef to confirm receipt.</p>
                 </div>`;
         }
         if (order.status === 'received') {
@@ -222,21 +245,35 @@ async function soOpenDetail(orderId) {
     }
 }
 
+function soAdjLine(lineId, field, delta) {
+    const inputId = field === 'qty' ? `send_${lineId}` : `unit_${lineId}`;
+    const input = document.getElementById(inputId);
+    if (input) {
+        const step = field === 'qty' ? 1 : 0.5;
+        input.value = Math.max(field === 'qty' ? 0 : 0.1, (parseFloat(input.value) || 0) + delta * step);
+    }
+}
+
 // ── Mark order as sent ──
 async function soMarkSent(orderId) {
-    const inputs = document.querySelectorAll('[id^="send_"]');
+    const sendInputs = document.querySelectorAll('[id^="send_"]');
     const lines = [];
-    inputs.forEach(input => {
+    sendInputs.forEach(input => {
         const id = parseInt(input.id.replace('send_', ''));
-        lines.push({ id, fulfilled_qty: parseFloat(input.value) || 0 });
+        const unitInput = document.getElementById(`unit_${id}`);
+        lines.push({
+            id,
+            fulfilled_qty: parseFloat(input.value) || 0,
+            unit_size: unitInput ? parseFloat(unitInput.value) || null : null
+        });
     });
 
-    if (!confirm(`Mark ${lines.length} items as sent to kitchen?`)) return;
+    if (!confirm(`Issue ${lines.length} items to kitchen?`)) return;
 
     const btn = document.getElementById('soSendBtn');
     if (btn) {
         btn.disabled = true;
-        btn.innerHTML = '<svg class="animate-spin inline-block mr-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Sending...';
+        btn.innerHTML = '<svg class="animate-spin inline-block mr-2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Issuing...';
     }
 
     try {
@@ -245,13 +282,13 @@ async function soMarkSent(orderId) {
             body: { order_id: orderId, lines }
         });
         closeSheet();
-        showToast('Items sent to kitchen!');
+        showToast('Items issued to kitchen!');
         soLoad();
     } catch (err) {
         showToast(err.message, 'error');
         if (btn) {
             btn.disabled = false;
-            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Mark as Sent to Kitchen';
+            btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg> Issue to Kitchen';
         }
     }
 }
