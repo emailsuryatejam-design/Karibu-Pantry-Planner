@@ -126,7 +126,14 @@ $pageTitle = $pageTitles[$page] ?? 'Pantry Planner';
     <!-- Page transition script -->
     <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Intercept bottom nav clicks for smooth transition
+        const pageNames = {
+            'menu-plan': 'Menu Plan',
+            'daily-groceries': 'Groceries',
+            'recipes': 'Recipes',
+            'store-orders': 'Orders',
+            'settings': 'Settings'
+        };
+
         document.querySelectorAll('nav a').forEach(link => {
             link.addEventListener('click', function(e) {
                 const href = this.getAttribute('href');
@@ -134,16 +141,32 @@ $pageTitle = $pageTitles[$page] ?? 'Pantry Planner';
                 if (window.location.href.endsWith(href) || window.location.search === href.replace('app.php', '')) return;
 
                 e.preventDefault();
+
+                // Highlight tapped tab immediately
+                const isStore = href.includes('store-orders');
+                document.querySelectorAll('nav a').forEach(a => a.style.color = '');
+                this.style.color = isStore ? '#16a34a' : '#ea580c';
+
+                // Fade out content
                 const main = document.querySelector('main');
                 main.classList.remove('page-enter');
                 main.classList.add('page-exit');
 
-                // Brief active state on the tapped icon
-                this.style.color = this.href.includes('store-orders') ? '#16a34a' : '#ea580c';
-
+                // Show loading spinner after content fades
                 setTimeout(() => {
-                    window.location.href = href;
-                }, 150);
+                    const pageName = href.match(/page=([^&]+)/);
+                    const label = pageName ? (pageNames[pageName[1]] || 'Loading') : 'Loading';
+
+                    const loader = document.createElement('div');
+                    loader.className = 'page-loader' + (isStore ? ' store' : '');
+                    loader.innerHTML = '<div class="spinner"></div><div class="label">Loading ' + label + '...</div>';
+                    document.body.appendChild(loader);
+
+                    // Navigate after spinner is visible
+                    setTimeout(() => {
+                        window.location.href = href;
+                    }, 50);
+                }, 140);
             });
         });
     });

@@ -105,3 +105,40 @@ nav a:active {
     transform: scale(0.92);
     transition: transform 0.1s;
 }
+
+/* Page loading spinner overlay */
+@keyframes spinLoader {
+    to { transform: rotate(360deg); }
+}
+@keyframes pulseIn {
+    from { opacity: 0; transform: scale(0.8); }
+    to { opacity: 1; transform: scale(1); }
+}
+.page-loader {
+    position: fixed;
+    inset: 56px 0 64px 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: #f9fafb;
+    z-index: 30;
+    animation: pulseIn 0.15s ease-out;
+}
+.page-loader .spinner {
+    width: 28px;
+    height: 28px;
+    border: 3px solid #e5e7eb;
+    border-top-color: #ea580c;
+    border-radius: 50%;
+    animation: spinLoader 0.6s linear infinite;
+}
+.page-loader.store .spinner {
+    border-top-color: #16a34a;
+}
+.page-loader .label {
+    font-size: 12px;
+    color: #9ca3af;
+    font-weight: 500;
+}
