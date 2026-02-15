@@ -342,50 +342,93 @@ async function gSubmitOrder() {
     }
 }
 
-// Confirm Receipt — show bottom sheet with line items
+// Confirm Receipt — show bottom sheet with clear Sent vs Receiving layout
 function gShowReceiptSheet() {
     let html = `
         <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
         <div class="flex items-center justify-between px-5 py-3 border-b border-gray-100">
-            <h3 class="text-sm font-bold text-gray-900">Confirm Receipt</h3>
+            <div>
+                <h3 class="text-sm font-bold text-gray-900">Confirm Receipt</h3>
+                <p class="text-[10px] text-gray-400">Check quantities and adjust if different</p>
+            </div>
             <button onclick="closeSheet()" class="p-1 compact-btn"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
         <div class="flex-1 overflow-y-auto px-5 py-4 scroll-touch">
-            <p class="text-xs text-gray-500 mb-3">Confirm the quantities you received from the store:</p>
-            <div class="space-y-2" id="receiptLines">`;
+            <div class="grid grid-cols-[1fr_70px_100px] gap-2 px-1 mb-1">
+                <span class="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Item</span>
+                <span class="text-[9px] text-green-600 uppercase tracking-wider font-semibold text-center">Store Sent</span>
+                <span class="text-[9px] text-orange-600 uppercase tracking-wider font-semibold text-center">I Received</span>
+            </div>
+            <div class="space-y-1.5" id="receiptLines">`;
 
     gOrderLines.forEach(line => {
-        const qty = parseFloat(line.fulfilled_qty || line.requested_qty) || 0;
+        const sentQty = parseFloat(line.fulfilled_qty || line.requested_qty) || 0;
         html += `
-            <div class="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2.5">
-                <div class="flex-1 min-w-0">
-                    <p class="text-sm font-medium text-gray-800 truncate">${line.item_name}</p>
-                    <p class="text-[10px] text-gray-400">Sent: ${qty} ${line.uom}</p>
+            <div class="bg-gray-50 rounded-xl px-3 py-2.5">
+                <div class="grid grid-cols-[1fr_70px_100px] gap-2 items-center">
+                    <div class="min-w-0">
+                        <p class="text-sm font-medium text-gray-800 truncate">${line.item_name}</p>
+                        <p class="text-[10px] text-gray-400">${line.uom}</p>
+                    </div>
+                    <div class="bg-green-50 border border-green-200 rounded-lg py-1.5 text-center">
+                        <span class="text-sm font-bold text-green-700">${sentQty}</span>
+                        <span class="text-[10px] text-green-500 ml-0.5">${line.uom}</span>
+                    </div>
+                    <div class="flex items-center justify-center gap-0.5">
+                        <button onclick="gAdjRecv(${line.id}, -1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">-</button>
+                        <input type="number" value="${sentQty}" step="0.5" min="0" id="recv_${line.id}" data-sent="${sentQty}"
+                            onchange="gHighlightRecvDiff(${line.id})"
+                            class="w-14 text-center text-sm font-semibold border border-orange-300 rounded-lg px-0.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-200 compact-btn bg-orange-50">
+                        <button onclick="gAdjRecv(${line.id}, 1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">+</button>
+                    </div>
                 </div>
-                <div class="flex items-center gap-1">
-                    <button onclick="gAdjRecv(${line.id}, -1)" class="w-7 h-7 rounded bg-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">-</button>
-                    <input type="number" value="${qty}" step="0.5" min="0" id="recv_${line.id}"
-                        class="w-14 text-center text-sm font-semibold border border-gray-200 rounded-lg px-1 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn">
-                    <button onclick="gAdjRecv(${line.id}, 1)" class="w-7 h-7 rounded bg-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">+</button>
-                </div>
-                <span class="text-[10px] text-gray-400 shrink-0">${line.uom}</span>
             </div>`;
     });
 
     html += `
             </div>
-            <button onclick="gConfirmReceipt()" id="confirmReceiptBtn" class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition mt-4">
-                Confirm All Received
+            <div id="receiptDisputeWarning" class="hidden bg-red-50 border border-red-200 rounded-xl px-4 py-3 mt-3">
+                <p class="text-xs text-red-700 font-medium">⚠ Some quantities differ from what store sent. These will be flagged as disputes.</p>
+            </div>
+            <button onclick="gConfirmReceipt()" id="confirmReceiptBtn" class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition mt-4 flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+                Confirm Receipt
             </button>
         </div>`;
 
     openSheet(html);
 }
 
+// Highlight when received differs from sent
+function gHighlightRecvDiff(lineId) {
+    const input = document.getElementById(`recv_${lineId}`);
+    if (!input) return;
+    const sent = parseFloat(input.dataset.sent) || 0;
+    const recv = parseFloat(input.value) || 0;
+    const differs = Math.abs(sent - recv) > 0.01;
+    input.className = differs
+        ? 'w-14 text-center text-sm font-semibold border-2 border-red-400 rounded-lg px-0.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-red-200 compact-btn bg-red-50'
+        : 'w-14 text-center text-sm font-semibold border border-orange-300 rounded-lg px-0.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-orange-200 compact-btn bg-orange-50';
+
+    // Check all lines for disputes
+    let anyDispute = false;
+    gOrderLines.forEach(l => {
+        const inp = document.getElementById(`recv_${l.id}`);
+        if (inp) {
+            const s = parseFloat(inp.dataset.sent) || 0;
+            const r = parseFloat(inp.value) || 0;
+            if (Math.abs(s - r) > 0.01) anyDispute = true;
+        }
+    });
+    const warning = document.getElementById('receiptDisputeWarning');
+    if (warning) warning.classList.toggle('hidden', !anyDispute);
+}
+
 function gAdjRecv(lineId, delta) {
     const input = document.getElementById(`recv_${lineId}`);
     if (input) {
         input.value = Math.max(0, (parseFloat(input.value) || 0) + delta);
+        gHighlightRecvDiff(lineId);
     }
 }
 

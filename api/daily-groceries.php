@@ -114,16 +114,24 @@ switch ($action) {
         if (!$orderId) jsonError('Order ID required');
 
         // Update received qty per line
-        $stmt = $db->prepare('UPDATE grocery_order_lines SET fulfilled_qty = ? WHERE id = ? AND order_id = ?');
+        $stmt = $db->prepare('UPDATE grocery_order_lines SET received_qty = ? WHERE id = ? AND order_id = ?');
+        $hasDispute = false;
+
         foreach ($lines as $line) {
-            $stmt->execute([(float)($line['received_qty'] ?? 0), (int)$line['id'], $orderId]);
+            $receivedQty = (float)($line['received_qty'] ?? 0);
+            $stmt->execute([$receivedQty, (int)$line['id'], $orderId]);
         }
 
-        // Mark order as received by chef
-        $db->prepare("UPDATE grocery_orders SET status = 'received', updated_at = NOW() WHERE id = ?")->execute([$orderId]);
+        // Check for disputes: any line where fulfilled_qty != received_qty
+        $disputeCheck = $db->prepare('SELECT COUNT(*) FROM grocery_order_lines WHERE order_id = ? AND received_qty IS NOT NULL AND fulfilled_qty IS NOT NULL AND ROUND(fulfilled_qty, 2) != ROUND(received_qty, 2)');
+        $disputeCheck->execute([$orderId]);
+        $hasDispute = (int)$disputeCheck->fetchColumn() > 0;
 
-        auditLog('confirm_receipt', 'grocery_orders', $orderId);
-        jsonResponse(['confirmed' => true]);
+        // Mark order as received, flag dispute if any
+        $db->prepare("UPDATE grocery_orders SET status = 'received', has_dispute = ?, updated_at = NOW() WHERE id = ?")->execute([$hasDispute ? 1 : 0, $orderId]);
+
+        auditLog('confirm_receipt', 'grocery_orders', $orderId, null, ['has_dispute' => $hasDispute]);
+        jsonResponse(['confirmed' => true, 'has_dispute' => $hasDispute]);
         break;
 
     // ── Search items for manual add ──

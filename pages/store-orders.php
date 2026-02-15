@@ -65,14 +65,18 @@ function soFilter(status) {
     soLoad();
 }
 
-function soStatusBadge(status) {
+function soStatusBadge(status, hasDispute) {
     const map = {
         pending: { cls: 'bg-amber-100 text-amber-700', label: 'New' },
         fulfilled: { cls: 'bg-emerald-100 text-emerald-700', label: 'Sent' },
         received: { cls: 'bg-green-100 text-green-700', label: 'Received' },
     };
     const s = map[status] || { cls: 'bg-gray-100 text-gray-600', label: status };
-    return `<span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${s.cls}">${s.label}</span>`;
+    let badge = `<span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${s.cls}">${s.label}</span>`;
+    if (hasDispute) {
+        badge += ` <span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold bg-red-100 text-red-700">⚠ Dispute</span>`;
+    }
+    return badge;
 }
 
 async function soLoad() {
@@ -112,16 +116,18 @@ function soRender() {
     list.innerHTML = soOrders.map(order => {
         const date = formatDate(order.order_date);
         const isNew = order.status === 'pending';
+        const hasDispute = parseInt(order.has_dispute) === 1;
+        const borderCls = hasDispute ? 'border-red-200 shadow-sm' : isNew ? 'border-green-200 shadow-sm' : 'border-gray-100';
 
         return `
             <div onclick="soOpenDetail(${order.id})"
-                 class="bg-white rounded-xl border ${isNew ? 'border-green-200 shadow-sm' : 'border-gray-100'} p-4 active:bg-gray-50 cursor-pointer transition">
+                 class="bg-white rounded-xl border ${borderCls} p-4 active:bg-gray-50 cursor-pointer transition">
                 <div class="flex items-start justify-between mb-2">
                     <div>
                         <p class="font-semibold text-sm text-gray-800">${date}</p>
                         <p class="text-xs text-gray-500 mt-0.5">${order.total_items} item${order.total_items !== 1 ? 's' : ''}</p>
                     </div>
-                    ${soStatusBadge(order.status)}
+                    <div class="flex flex-wrap gap-1 justify-end">${soStatusBadge(order.status, hasDispute)}</div>
                 </div>
                 <div class="flex items-center justify-between">
                     <p class="text-[11px] text-gray-400">From ${order.chef_name || 'Chef'}</p>
@@ -147,7 +153,7 @@ async function soOpenDetail(orderId) {
                     <p class="text-[10px] text-gray-500">${formatDate(order.order_date)} &middot; From ${order.chef_name || 'Chef'}</p>
                 </div>
                 <div class="flex items-center gap-2">
-                    ${soStatusBadge(order.status)}
+                    <div class="flex flex-wrap gap-1">${soStatusBadge(order.status, parseInt(order.has_dispute) === 1)}</div>
                     <button onclick="closeSheet()" class="p-1 compact-btn"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
                 </div>
             </div>
@@ -199,8 +205,37 @@ async function soOpenDetail(orderId) {
                             <span class="text-[10px] text-gray-400">${line.uom}</span>
                         </div>
                     </div>`;
+            } else if (order.status === 'received') {
+                // ── Received: show Sent vs Chef Received vs Diff (dispute view) ──
+                const recvQty = line.received_qty !== null ? parseFloat(line.received_qty) : sentQty;
+                const diff = recvQty - sentQty;
+                const diffLabel = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '—';
+                const diffColor = diff > 0 ? 'text-blue-600' : diff < 0 ? 'text-red-600' : 'text-gray-400';
+                const diffBg = diff !== 0 ? 'bg-red-50' : 'bg-gray-50';
+                const isDispute = Math.abs(diff) > 0.01;
+
+                html += `
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="font-semibold text-sm text-gray-800 truncate flex-1">${line.item_name}</p>
+                        ${isDispute ? '<span class="text-[10px] text-red-600 font-semibold">⚠ Dispute</span>' : ''}
+                        ${unitSize ? `<span class="text-[10px] text-gray-400 ml-1">${unitSize} ${line.uom} packs</span>` : ''}
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-green-50 rounded-lg py-1.5">
+                            <p class="text-[9px] text-gray-500 uppercase tracking-wider font-medium">I Sent</p>
+                            <p class="text-sm font-bold text-green-700">${sentQty} <span class="text-[10px] font-normal text-green-500">${line.uom}</span></p>
+                        </div>
+                        <div class="${isDispute ? 'bg-red-50 border border-red-200' : 'bg-orange-50'} rounded-lg py-1.5">
+                            <p class="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Chef Got</p>
+                            <p class="text-sm font-bold ${isDispute ? 'text-red-700' : 'text-orange-700'}">${recvQty} <span class="text-[10px] font-normal ${isDispute ? 'text-red-500' : 'text-orange-500'}">${line.uom}</span></p>
+                        </div>
+                        <div class="${diffBg} rounded-lg py-1.5">
+                            <p class="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Diff</p>
+                            <p class="text-sm font-bold ${diffColor}">${diffLabel}</p>
+                        </div>
+                    </div>`;
             } else {
-                // ── Sent/Received: clear comparison layout ──
+                // ── Fulfilled (sent but not yet received): show Asked vs Issued vs Diff ──
                 const diff = sentQty - reqQty;
                 const diffLabel = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '—';
                 const diffColor = diff > 0 ? 'text-blue-600' : diff < 0 ? 'text-red-600' : 'text-gray-400';
@@ -250,10 +285,24 @@ async function soOpenDetail(orderId) {
                 </div>`;
         }
         if (order.status === 'received') {
-            html += `
-                <div class="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mt-4 text-center">
-                    <p class="text-xs text-green-700 font-medium">Chef confirmed receipt. Order complete.</p>
-                </div>`;
+            const hasDispute = parseInt(order.has_dispute) === 1;
+            if (hasDispute) {
+                // Count disputed lines
+                const disputeCount = lines.filter(l => {
+                    const sent = l.fulfilled_qty !== null ? parseFloat(l.fulfilled_qty) : parseFloat(l.requested_qty);
+                    const recv = l.received_qty !== null ? parseFloat(l.received_qty) : sent;
+                    return Math.abs(sent - recv) > 0.01;
+                }).length;
+                html += `
+                    <div class="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mt-4 text-center">
+                        <p class="text-xs text-red-700 font-semibold">⚠ ${disputeCount} item${disputeCount > 1 ? 's' : ''} disputed — Chef received different quantities than sent</p>
+                    </div>`;
+            } else {
+                html += `
+                    <div class="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mt-4 text-center">
+                        <p class="text-xs text-green-700 font-medium">✓ Chef confirmed receipt. All quantities match.</p>
+                    </div>`;
+            }
         }
 
         html += `</div>`;
