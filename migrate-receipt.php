@@ -49,5 +49,21 @@ try {
     }
 }
 
+// 4. Add 'received' to status ENUM on grocery_orders
+try {
+    $db->exec("ALTER TABLE grocery_orders MODIFY COLUMN status ENUM('pending', 'reviewing', 'approved', 'partial', 'rejected', 'fulfilled', 'received') DEFAULT 'pending'");
+    echo "✓ Added 'received' to grocery_orders status ENUM\n";
+} catch (Exception $e) {
+    echo "✗ Error updating ENUM: " . $e->getMessage() . "\n";
+}
+
+// 5. Fix any orders that had empty status (from before ENUM was updated)
+try {
+    $count = $db->exec("UPDATE grocery_orders SET status = 'received' WHERE status = '' AND has_dispute IS NOT NULL AND has_dispute >= 0 AND updated_at > created_at AND id IN (SELECT DISTINCT order_id FROM grocery_order_lines WHERE received_qty IS NOT NULL)");
+    echo "✓ Fixed {$count} orders with empty status → received\n";
+} catch (Exception $e) {
+    echo "✗ Error fixing status: " . $e->getMessage() . "\n";
+}
+
 echo "\n=== Migration complete ===\n";
 echo "</pre>\n";
