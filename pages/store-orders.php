@@ -164,47 +164,69 @@ async function soOpenDetail(orderId) {
             const sentQty = line.fulfilled_qty !== null ? parseFloat(line.fulfilled_qty) : reqQty;
             const unitSize = line.unit_size ? parseFloat(line.unit_size) : null;
 
-            html += `
-                <div class="bg-gray-50 rounded-xl px-3 py-3">
-                    <div class="flex items-center justify-between mb-1.5">
-                        <p class="font-semibold text-sm text-gray-800 truncate flex-1">${line.item_name}</p>
-                        <span class="text-xs text-gray-400 ml-2 shrink-0">Req: ${reqQty} ${line.uom}</span>
-                    </div>`;
+            html += `<div class="bg-gray-50 rounded-xl px-3 py-3">`;
 
             if (canSend) {
-                // Editable: Qty Issued + Unit Size
+                // ── Pending: clear requested vs issuing layout ──
                 html += `
-                    <div class="flex items-center gap-2 mt-2">
-                        <div class="flex-1">
-                            <label class="text-[10px] text-gray-500 font-medium block mb-0.5">Qty Issued</label>
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="font-semibold text-sm text-gray-800 truncate flex-1">${line.item_name}</p>
+                    </div>
+                    <div class="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
+                        <div>
+                            <label class="text-[10px] text-gray-500 font-medium block mb-0.5">Requested</label>
+                            <div class="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-center">
+                                <span class="text-sm font-bold text-orange-700">${reqQty}</span>
+                                <span class="text-[10px] text-orange-500 ml-1">${line.uom}</span>
+                            </div>
+                        </div>
+                        <div class="pb-2">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-300"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                        </div>
+                        <div>
+                            <label class="text-[10px] text-green-600 font-medium block mb-0.5">Issuing</label>
                             <div class="flex items-center gap-1">
                                 <button onclick="soAdjLine(${line.id}, 'qty', -1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">-</button>
                                 <input type="number" value="${reqQty}" step="0.5" min="0" id="send_${line.id}"
-                                    class="w-16 text-center text-sm font-semibold border border-gray-200 rounded-lg px-1 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-white">
+                                    class="w-16 text-center text-sm font-semibold border border-green-300 rounded-lg px-1 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-green-50">
                                 <button onclick="soAdjLine(${line.id}, 'qty', 1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">+</button>
                                 <span class="text-[10px] text-gray-400">${line.uom}</span>
                             </div>
                         </div>
-                        <div class="w-28">
-                            <label class="text-[10px] text-gray-500 font-medium block mb-0.5">Pack Size</label>
-                            <div class="flex items-center gap-1">
-                                <input type="number" value="1" step="0.5" min="0.1" id="unit_${line.id}"
-                                    class="w-14 text-center text-sm border border-gray-200 rounded-lg px-1 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-white">
-                                <span class="text-[10px] text-gray-400">${line.uom}</span>
-                            </div>
+                    </div>
+                    <div class="mt-2">
+                        <label class="text-[10px] text-gray-500 font-medium">Pack Size</label>
+                        <div class="flex items-center gap-1 mt-0.5">
+                            <input type="number" value="1" step="0.5" min="0.1" id="unit_${line.id}"
+                                class="w-14 text-center text-xs border border-gray-200 rounded-lg px-1 py-1 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-white">
+                            <span class="text-[10px] text-gray-400">${line.uom} per pack</span>
                         </div>
                     </div>`;
             } else {
-                // Read-only: show issued vs requested
+                // ── Sent/Received: clear comparison layout ──
                 const diff = sentQty - reqQty;
-                const diffLabel = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '';
-                const diffColor = diff > 0 ? 'text-blue-600' : diff < 0 ? 'text-red-600' : 'text-gray-500';
+                const diffLabel = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '—';
+                const diffColor = diff > 0 ? 'text-blue-600' : diff < 0 ? 'text-red-600' : 'text-gray-400';
+                const diffBg = diff > 0 ? 'bg-blue-50' : diff < 0 ? 'bg-red-50' : 'bg-gray-50';
 
                 html += `
-                    <div class="flex items-center gap-3 mt-1">
-                        <span class="text-sm font-bold text-green-700">Issued: ${sentQty} ${line.uom}</span>
-                        ${diffLabel ? `<span class="text-[10px] font-medium ${diffColor}">(${diffLabel} ${line.uom})</span>` : ''}
-                        ${unitSize ? `<span class="text-[10px] text-gray-400">\u00b7 ${unitSize} ${line.uom} packs</span>` : ''}
+                    <div class="flex items-center justify-between mb-2">
+                        <p class="font-semibold text-sm text-gray-800 truncate flex-1">${line.item_name}</p>
+                        ${unitSize ? `<span class="text-[10px] text-gray-400">${unitSize} ${line.uom} packs</span>` : ''}
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 text-center">
+                        <div class="bg-orange-50 rounded-lg py-1.5">
+                            <p class="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Asked</p>
+                            <p class="text-sm font-bold text-orange-700">${reqQty} <span class="text-[10px] font-normal text-orange-500">${line.uom}</span></p>
+                        </div>
+                        <div class="bg-green-50 rounded-lg py-1.5">
+                            <p class="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Issued</p>
+                            <p class="text-sm font-bold text-green-700">${sentQty} <span class="text-[10px] font-normal text-green-500">${line.uom}</span></p>
+                        </div>
+                        <div class="${diffBg} rounded-lg py-1.5">
+                            <p class="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Diff</p>
+                            <p class="text-sm font-bold ${diffColor}">${diffLabel}</p>
+                        </div>
                     </div>`;
             }
 
