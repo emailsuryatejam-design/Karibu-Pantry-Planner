@@ -82,3 +82,26 @@ input[type="number"] { -moz-appearance: textfield; }
 .badge-draft { background: #f3f4f6; color: #4b5563; }
 .badge-confirmed { background: #dcfce7; color: #166534; }
 .badge-reviewing { background: #fef3c7; color: #92400e; }
+
+/* Page transition */
+@keyframes pageEnter {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+@keyframes pageExit {
+    from { opacity: 1; transform: translateY(0); }
+    to { opacity: 0; transform: translateY(-8px); }
+}
+
+main.page-enter {
+    animation: pageEnter 0.25s ease-out;
+}
+main.page-exit {
+    animation: pageExit 0.15s ease-in forwards;
+}
+
+/* Active tab tap feedback */
+nav a:active {
+    transform: scale(0.92);
+    transition: transform 0.1s;
+}
