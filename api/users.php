@@ -3,8 +3,8 @@ require_once __DIR__ . '/../auth.php';
 $user = requireRole(['admin']);
 $db = getDB();
 
-$action = $_GET['action'] ?? ($_POST['action'] ?? '');
 $input = $_SERVER['REQUEST_METHOD'] === 'POST' ? getJsonInput() : [];
+$action = $_GET['action'] ?? ($input['action'] ?? ($_POST['action'] ?? ''));
 
 switch ($action) {
 

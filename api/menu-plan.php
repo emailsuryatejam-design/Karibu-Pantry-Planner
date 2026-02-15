@@ -3,8 +3,8 @@ require_once __DIR__ . '/../auth.php';
 $user = requireAuth();
 $db = getDB();
 
-$action = $_GET['action'] ?? ($_POST['action'] ?? '');
 $input = $_SERVER['REQUEST_METHOD'] === 'POST' ? getJsonInput() : [];
+$action = $_GET['action'] ?? ($input['action'] ?? ($_POST['action'] ?? ''));
 
 // Ensure weekly_menu table exists
 $db->exec("CREATE TABLE IF NOT EXISTS weekly_menu (
