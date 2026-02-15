@@ -74,8 +74,14 @@
         <!-- Ingredient Rows -->
         <div id="gIngredients" class="bg-white border border-gray-100 border-t-0 rounded-b-xl overflow-hidden"></div>
 
-        <!-- Total items count -->
-        <p class="text-[10px] text-gray-400 text-right mt-1 mr-1" id="gItemCount"></p>
+        <!-- Total items count + Download -->
+        <div class="flex items-center justify-between mt-1 mx-1">
+            <button onclick="gDownloadOrder()" id="gDownloadBtn" class="hidden text-[11px] text-orange-600 font-medium flex items-center gap-1 hover:underline">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download / Print
+            </button>
+            <p class="text-[10px] text-gray-400" id="gItemCount"></p>
+        </div>
 
         <!-- Submit Order Button -->
         <button onclick="gSubmitOrder()" id="gSubmitBtn"
@@ -271,9 +277,11 @@ function gRender() {
     // Show/hide buttons
     const submitBtn = document.getElementById('gSubmitBtn');
     const receiptBtn = document.getElementById('gReceiptBtn');
+    const downloadBtn = document.getElementById('gDownloadBtn');
 
     submitBtn.classList.add('hidden');
     receiptBtn.classList.add('hidden');
+    downloadBtn.classList.add('hidden');
 
     if (!gOrder && gItems.length > 0) {
         submitBtn.classList.remove('hidden');
@@ -281,6 +289,12 @@ function gRender() {
     } else if (gOrder && gOrder.status === 'fulfilled') {
         receiptBtn.classList.remove('hidden');
         receiptBtn.classList.add('flex');
+    }
+
+    // Show download when there's an order or items
+    if (gOrder || gItems.length > 0) {
+        downloadBtn.classList.remove('hidden');
+        downloadBtn.classList.add('flex');
     }
 }
 
@@ -430,6 +444,72 @@ function gAdjRecv(lineId, delta) {
         input.value = Math.max(0, (parseFloat(input.value) || 0) + delta);
         gHighlightRecvDiff(lineId);
     }
+}
+
+// Download / Print order
+function gDownloadOrder() {
+    const date = formatDate(gDate);
+    const isFulfilled = gOrder && (gOrder.status === 'fulfilled' || gOrder.status === 'received');
+    const orderMap = {};
+    gOrderLines.forEach(l => { orderMap[l.item_name] = l; });
+
+    let title = 'Grocery Order';
+    let subtitle = date;
+    if (gOrder) {
+        title = `Grocery Order #${gOrder.id}`;
+        subtitle = `${date} · Status: ${gOrder.status.charAt(0).toUpperCase() + gOrder.status.slice(1)}`;
+    }
+
+    // Build table rows
+    let headerRow = '';
+    let bodyRows = '';
+
+    if (isFulfilled) {
+        headerRow = '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd">Item</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">UOM</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Asked</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Got</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Diff</th>';
+        gItems.forEach(item => {
+            const ol = orderMap[item.item_name];
+            if (!ol) return;
+            const req = parseFloat(ol.requested_qty) || 0;
+            const got = parseFloat(ol.fulfilled_qty) || 0;
+            const diff = got - req;
+            const diffStr = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '—';
+            const diffStyle = diff !== 0 ? (diff > 0 ? 'color:#2563eb' : 'color:#dc2626') : 'color:#999';
+            bodyRows += `<tr><td style="padding:5px 8px;border-bottom:1px solid #eee">${item.item_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${item.uom}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${req}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-weight:600">${got}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-weight:600;${diffStyle}">${diffStr}</td></tr>`;
+        });
+    } else {
+        headerRow = '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd">Item</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">UOM</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Need</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Order</th>';
+        gItems.forEach(item => {
+            const needed = Math.round((parseFloat(item.total_qty) || 0) * 100) / 100;
+            const ol = orderMap[item.item_name];
+            let orderQty = Math.ceil(needed);
+            if (ol) orderQty = parseFloat(ol.requested_qty) || orderQty;
+            if (gEditedQtys[item.item_name] !== undefined) orderQty = gEditedQtys[item.item_name];
+            bodyRows += `<tr><td style="padding:5px 8px;border-bottom:1px solid #eee">${item.item_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${item.uom}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${needed}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-weight:600">${orderQty}</td></tr>`;
+        });
+    }
+
+    const meals = gPlans.map(p => p.meal.charAt(0).toUpperCase() + p.meal.slice(1)).join(' + ');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${title}</title><style>
+        body{font-family:Arial,sans-serif;margin:20px;color:#333}
+        h1{font-size:18px;margin:0 0 4px}
+        .sub{font-size:12px;color:#666;margin-bottom:16px}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        th{background:#f9fafb;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#666}
+        .footer{margin-top:20px;font-size:11px;color:#999;border-top:1px solid #eee;padding-top:10px}
+        @media print{body{margin:10px}button{display:none!important}}
+    </style></head><body>
+        <div style="display:flex;justify-content:space-between;align-items:start">
+            <div><h1>${title}</h1><div class="sub">${subtitle} · ${meals} · ${gItems.length} items</div></div>
+            <button onclick="window.print()" style="padding:8px 16px;background:#ea580c;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer">Print</button>
+        </div>
+        <table><thead><tr>${headerRow}</tr></thead><tbody>${bodyRows}</tbody></table>
+        <div class="footer">Karibu Pantry Planner · Printed ${new Date().toLocaleString()}</div>
+    </body></html>`;
+
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
 }
 
 async function gConfirmReceipt() {

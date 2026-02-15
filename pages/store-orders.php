@@ -305,6 +305,13 @@ async function soOpenDetail(orderId) {
             }
         }
 
+        // Download/Print button for all statuses
+        html += `
+            <button onclick="soDownloadOrder(${order.id})" class="w-full bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 py-2.5 rounded-xl text-xs font-medium transition mt-3 flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Download / Print
+            </button>`;
+
         html += `</div>`;
 
         openSheet(html);
@@ -319,6 +326,76 @@ function soAdjLine(lineId, field, delta) {
     if (input) {
         const step = field === 'qty' ? 1 : 0.5;
         input.value = Math.max(field === 'qty' ? 0 : 0.1, (parseFloat(input.value) || 0) + delta * step);
+    }
+}
+
+// ── Download / Print order ──
+async function soDownloadOrder(orderId) {
+    try {
+        const res = await api(`api/store-orders.php?action=get&id=${orderId}`);
+        const order = res.order;
+        const lines = res.lines || [];
+        const date = formatDate(order.order_date);
+        const hasDispute = parseInt(order.has_dispute) === 1;
+        const statusLabel = order.status.charAt(0).toUpperCase() + order.status.slice(1);
+
+        let headerRow = '';
+        let bodyRows = '';
+
+        if (order.status === 'received') {
+            // Received: show Sent vs Chef Got vs Diff
+            headerRow = '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd">Item</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">UOM</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Sent</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Chef Got</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Diff</th>';
+            lines.forEach(l => {
+                const sent = l.fulfilled_qty !== null ? parseFloat(l.fulfilled_qty) : parseFloat(l.requested_qty);
+                const recv = l.received_qty !== null ? parseFloat(l.received_qty) : sent;
+                const diff = recv - sent;
+                const diffStr = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '—';
+                const diffStyle = Math.abs(diff) > 0.01 ? (diff > 0 ? 'color:#2563eb;font-weight:700' : 'color:#dc2626;font-weight:700') : 'color:#999';
+                const rowBg = Math.abs(diff) > 0.01 ? 'background:#fef2f2' : '';
+                bodyRows += `<tr style="${rowBg}"><td style="padding:5px 8px;border-bottom:1px solid #eee">${l.item_name}${Math.abs(diff) > 0.01 ? ' ⚠' : ''}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${l.uom}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${sent}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-weight:600">${recv}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;${diffStyle}">${diffStr}</td></tr>`;
+            });
+        } else if (order.status === 'fulfilled') {
+            // Fulfilled: show Requested vs Issued
+            headerRow = '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd">Item</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">UOM</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Requested</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Issued</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Pack Size</th>';
+            lines.forEach(l => {
+                const req = parseFloat(l.requested_qty) || 0;
+                const sent = l.fulfilled_qty !== null ? parseFloat(l.fulfilled_qty) : req;
+                const pack = l.unit_size ? parseFloat(l.unit_size) : '';
+                bodyRows += `<tr><td style="padding:5px 8px;border-bottom:1px solid #eee">${l.item_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${l.uom}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${req}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-weight:600">${sent}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${pack ? pack + ' ' + l.uom : ''}</td></tr>`;
+            });
+        } else {
+            // Pending: show requested items
+            headerRow = '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd">Item</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">UOM</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Requested Qty</th>';
+            lines.forEach(l => {
+                bodyRows += `<tr><td style="padding:5px 8px;border-bottom:1px solid #eee">${l.item_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${l.uom}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-weight:600">${parseFloat(l.requested_qty) || 0}</td></tr>`;
+            });
+        }
+
+        const disputeNote = hasDispute ? '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-top:16px;font-size:12px;color:#b91c1c;font-weight:600">⚠ This order has disputed items — Chef received different quantities than sent</div>' : '';
+
+        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Order #${order.id}</title><style>
+            body{font-family:Arial,sans-serif;margin:20px;color:#333}
+            h1{font-size:18px;margin:0 0 4px}
+            .sub{font-size:12px;color:#666;margin-bottom:16px}
+            table{width:100%;border-collapse:collapse;font-size:13px}
+            th{background:#f9fafb;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#666}
+            .footer{margin-top:20px;font-size:11px;color:#999;border-top:1px solid #eee;padding-top:10px}
+            @media print{body{margin:10px}button{display:none!important}}
+        </style></head><body>
+            <div style="display:flex;justify-content:space-between;align-items:start">
+                <div><h1>Store Order #${order.id}</h1><div class="sub">${date} · ${statusLabel} · ${lines.length} items · From ${order.chef_name || 'Chef'}</div></div>
+                <button onclick="window.print()" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer">Print</button>
+            </div>
+            <table><thead><tr>${headerRow}</tr></thead><tbody>${bodyRows}</tbody></table>
+            ${disputeNote}
+            <div class="footer">Karibu Pantry Planner · Printed ${new Date().toLocaleString()}</div>
+        </body></html>`;
+
+        const win = window.open('', '_blank');
+        win.document.write(html);
+        win.document.close();
+    } catch (err) {
+        showToast('Failed to generate printout', 'error');
     }
 }
 
