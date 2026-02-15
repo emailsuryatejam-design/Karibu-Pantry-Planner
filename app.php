@@ -75,7 +75,7 @@ $pageTitle = $pageTitles[$page] ?? 'Pantry Planner';
     </header>
 
     <!-- Content -->
-    <main class="pb-20 max-w-2xl mx-auto px-4 py-4">
+    <main class="pb-20 max-w-2xl mx-auto px-4 py-4 page-enter">
         <?php
         $pageFile = __DIR__ . '/pages/' . $page . '.php';
         if (file_exists($pageFile)) {
@@ -123,5 +123,30 @@ $pageTitle = $pageTitles[$page] ?? 'Pantry Planner';
         </div>
     </nav>
 
+    <!-- Page transition script -->
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Intercept bottom nav clicks for smooth transition
+        document.querySelectorAll('nav a').forEach(link => {
+            link.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                // Skip if already on this page
+                if (window.location.href.endsWith(href) || window.location.search === href.replace('app.php', '')) return;
+
+                e.preventDefault();
+                const main = document.querySelector('main');
+                main.classList.remove('page-enter');
+                main.classList.add('page-exit');
+
+                // Brief active state on the tapped icon
+                this.style.color = this.href.includes('store-orders') ? '#16a34a' : '#ea580c';
+
+                setTimeout(() => {
+                    window.location.href = href;
+                }, 150);
+            });
+        });
+    });
+    </script>
 </body>
 </html>
