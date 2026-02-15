@@ -154,52 +154,49 @@ async function soOpenDetail(orderId) {
             <div class="flex-1 overflow-y-auto px-5 py-4 scroll-touch">`;
 
         if (canSend) {
-            html += `<p class="text-xs text-gray-500 mb-3">Enter the quantity you are issuing. If it differs from requested (e.g. pack sizes), adjust accordingly.</p>`;
+            // Column header for pending orders
+            html += `
+                <div class="grid grid-cols-[1fr_80px_100px] gap-2 px-1 mb-1">
+                    <span class="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Item</span>
+                    <span class="text-[9px] text-orange-500 uppercase tracking-wider font-semibold text-center">Requested</span>
+                    <span class="text-[9px] text-green-600 uppercase tracking-wider font-semibold text-center">Issuing</span>
+                </div>`;
         }
 
-        html += `<div class="space-y-2">`;
+        html += `<div class="space-y-1.5">`;
 
         lines.forEach(line => {
             const reqQty = parseFloat(line.requested_qty) || 0;
             const sentQty = line.fulfilled_qty !== null ? parseFloat(line.fulfilled_qty) : reqQty;
             const unitSize = line.unit_size ? parseFloat(line.unit_size) : null;
 
-            html += `<div class="bg-gray-50 rounded-xl px-3 py-3">`;
+            html += `<div class="bg-gray-50 rounded-xl px-3 py-2.5">`;
 
             if (canSend) {
-                // ── Pending: clear requested vs issuing layout ──
+                // ── Pending: table-like layout — Requested (locked) → Issuing (editable) ──
                 html += `
-                    <div class="flex items-center justify-between mb-2">
-                        <p class="font-semibold text-sm text-gray-800 truncate flex-1">${line.item_name}</p>
-                    </div>
-                    <div class="grid grid-cols-[1fr_auto_1fr] gap-2 items-end">
-                        <div>
-                            <label class="text-[10px] text-gray-500 font-medium block mb-0.5">Requested</label>
-                            <div class="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-center">
-                                <span class="text-sm font-bold text-orange-700">${reqQty}</span>
-                                <span class="text-[10px] text-orange-500 ml-1">${line.uom}</span>
-                            </div>
+                    <div class="grid grid-cols-[1fr_80px_100px] gap-2 items-center">
+                        <div class="min-w-0">
+                            <p class="font-semibold text-sm text-gray-800 truncate">${line.item_name}</p>
+                            <p class="text-[10px] text-gray-400">${line.uom}</p>
                         </div>
-                        <div class="pb-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-300"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+                        <div class="bg-orange-50 border border-orange-200 rounded-lg py-1.5 text-center">
+                            <span class="text-sm font-bold text-orange-700">${reqQty}</span>
+                            <span class="text-[10px] text-orange-500 ml-0.5">${line.uom}</span>
                         </div>
-                        <div>
-                            <label class="text-[10px] text-green-600 font-medium block mb-0.5">Issuing</label>
-                            <div class="flex items-center gap-1">
-                                <button onclick="soAdjLine(${line.id}, 'qty', -1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">-</button>
-                                <input type="number" value="${reqQty}" step="0.5" min="0" id="send_${line.id}"
-                                    class="w-16 text-center text-sm font-semibold border border-green-300 rounded-lg px-1 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-green-50">
-                                <button onclick="soAdjLine(${line.id}, 'qty', 1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">+</button>
-                                <span class="text-[10px] text-gray-400">${line.uom}</span>
-                            </div>
+                        <div class="flex items-center justify-center gap-0.5">
+                            <button onclick="soAdjLine(${line.id}, 'qty', -1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">-</button>
+                            <input type="number" value="${reqQty}" step="0.5" min="0" id="send_${line.id}"
+                                class="w-14 text-center text-sm font-semibold border border-green-300 rounded-lg px-0.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-green-50">
+                            <button onclick="soAdjLine(${line.id}, 'qty', 1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">+</button>
                         </div>
                     </div>
-                    <div class="mt-2">
-                        <label class="text-[10px] text-gray-500 font-medium">Pack Size</label>
-                        <div class="flex items-center gap-1 mt-0.5">
+                    <div class="flex items-center gap-3 mt-1.5 pl-0">
+                        <div class="flex items-center gap-1">
+                            <span class="text-[10px] text-gray-400">Pack:</span>
                             <input type="number" value="1" step="0.5" min="0.1" id="unit_${line.id}"
-                                class="w-14 text-center text-xs border border-gray-200 rounded-lg px-1 py-1 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-white">
-                            <span class="text-[10px] text-gray-400">${line.uom} per pack</span>
+                                class="w-12 text-center text-[11px] border border-gray-200 rounded px-0.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-green-200 compact-btn bg-white">
+                            <span class="text-[10px] text-gray-400">${line.uom}</span>
                         </div>
                     </div>`;
             } else {
