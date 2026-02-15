@@ -64,7 +64,7 @@
 
         <!-- Column Headers -->
         <div class="bg-white rounded-t-xl border border-gray-100 border-b-0">
-            <div class="grid grid-cols-[1fr_70px_80px] gap-1 px-3 py-2 bg-gray-50 rounded-t-xl text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+            <div id="gColHeaders" class="grid grid-cols-[1fr_70px_80px] gap-1 px-3 py-2 bg-gray-50 rounded-t-xl text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                 <span>Item</span>
                 <span class="text-center">Need</span>
                 <span class="text-center">Order</span>
@@ -181,9 +181,20 @@ function gRender() {
 
     // Build items table
     const container = document.getElementById('gIngredients');
+    const colHeaders = document.getElementById('gColHeaders');
     const hasOrder = !!gOrder;
+    const isFulfilled = gOrder && (gOrder.status === 'fulfilled' || gOrder.status === 'received');
     const orderMap = {};
     gOrderLines.forEach(l => { orderMap[l.item_name] = l; });
+
+    // Switch column headers based on state
+    if (isFulfilled) {
+        colHeaders.className = 'grid grid-cols-[1fr_60px_70px_50px] gap-1 px-3 py-2 bg-gray-50 rounded-t-xl text-[10px] font-semibold text-gray-500 uppercase tracking-wider';
+        colHeaders.innerHTML = '<span>Item</span><span class="text-center">Asked</span><span class="text-center">Got</span><span class="text-center">Diff</span>';
+    } else {
+        colHeaders.className = 'grid grid-cols-[1fr_70px_80px] gap-1 px-3 py-2 bg-gray-50 rounded-t-xl text-[10px] font-semibold text-gray-500 uppercase tracking-wider';
+        colHeaders.innerHTML = '<span>Item</span><span class="text-center">Need</span><span class="text-center">Order</span>';
+    }
 
     container.innerHTML = gItems.map(item => {
         const needed = Math.round((parseFloat(item.total_qty) || 0) * 100) / 100;
@@ -201,6 +212,36 @@ function gRender() {
         // Show which dishes need this item
         const dishesLabel = item.dishes || '';
 
+        // ── Fulfilled/Received: Show Requested vs Received comparison ──
+        if (isFulfilled && orderLine) {
+            const reqQty = parseFloat(orderLine.requested_qty) || 0;
+            const gotQty = parseFloat(orderLine.fulfilled_qty) || 0;
+            const diff = gotQty - reqQty;
+            const diffLabel = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '—';
+            const diffColor = diff > 0 ? 'text-blue-600' : diff < 0 ? 'text-red-600' : 'text-gray-400';
+            const unitSize = orderLine.unit_size ? parseFloat(orderLine.unit_size) : null;
+
+            return `
+            <div class="grid grid-cols-[1fr_60px_70px_50px] gap-1 px-3 py-2.5 border-b border-gray-50 items-center">
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-900 truncate">${item.item_name}</p>
+                    <p class="text-[10px] text-gray-400 truncate">${dishesLabel}${unitSize ? ` · ${unitSize} ${item.uom} packs` : ''}</p>
+                </div>
+                <div class="text-center">
+                    <span class="text-sm text-gray-500">${reqQty}</span>
+                    <span class="text-[10px] text-gray-400 block">${item.uom}</span>
+                </div>
+                <div class="text-center">
+                    <span class="text-sm font-bold text-green-700">${gotQty}</span>
+                    <span class="text-[10px] text-gray-400 block">${item.uom}</span>
+                </div>
+                <div class="text-center">
+                    <span class="text-xs font-semibold ${diffColor}">${diffLabel}</span>
+                </div>
+            </div>`;
+        }
+
+        // ── Normal view: Need + Order ──
         return `
         <div class="grid grid-cols-[1fr_70px_80px] gap-1 px-3 py-2.5 border-b border-gray-50 items-center">
             <div class="min-w-0">

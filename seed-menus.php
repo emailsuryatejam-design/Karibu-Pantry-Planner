@@ -147,7 +147,7 @@ function addRecipeWithIngredients($db, $name, $category, $description, $ingredie
     }
 
     $stmt = $db->prepare('INSERT INTO recipes (name, category, cuisine, difficulty, prep_time, cook_time, servings, instructions, notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
-    $stmt->execute([$name, $category, 'International', 'medium', 20, 30, 20, trim($description) ?: null, null]);
+    $stmt->execute([$name, $category, 'International', 'medium', 20, 30, 4, trim($description) ?: null, null]);
     $recipeId = $db->lastInsertId();
     $added++;
 
