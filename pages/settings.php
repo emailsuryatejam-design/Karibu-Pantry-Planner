@@ -25,6 +25,12 @@
                 <span class="text-gray-500">Role</span>
                 <span class="font-medium text-gray-800"><?= ucfirst($user['role']) ?></span>
             </div>
+            <?php if (!empty($user['kitchen_name'])): ?>
+            <div class="flex justify-between py-2 border-b border-gray-50">
+                <span class="text-gray-500">Kitchen</span>
+                <span class="font-medium text-gray-800"><?= htmlspecialchars($user['kitchen_name']) ?></span>
+            </div>
+            <?php endif; ?>
             <?php if (!empty($user['camp_name'])): ?>
             <div class="flex justify-between py-2 border-b border-gray-50">
                 <span class="text-gray-500">Camp</span>
@@ -32,6 +38,34 @@
             </div>
             <?php endif; ?>
         </div>
+    </div>
+
+    <!-- Notifications & Voice -->
+    <div class="bg-white rounded-xl border border-gray-100 p-5">
+        <h3 class="font-semibold text-sm text-gray-800 mb-3">Notifications & Audio</h3>
+        <div class="flex items-center justify-between mb-3">
+            <div>
+                <p class="text-sm text-gray-700">Push Notifications</p>
+                <p class="text-[10px] text-gray-400" id="pushStatus">Checking...</p>
+            </div>
+            <label class="relative inline-flex cursor-pointer">
+                <input type="checkbox" id="pushToggle" class="sr-only peer" onchange="togglePush(this.checked)">
+                <div class="w-9 h-5 bg-gray-200 peer-checked:bg-green-500 rounded-full peer-focus:ring-2 peer-focus:ring-green-300 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>
+            </label>
+        </div>
+        <div class="border-t border-gray-100 pt-3 flex items-center justify-between">
+            <div>
+                <p class="text-sm text-gray-700">Voice Announcements</p>
+                <p class="text-[10px] text-gray-400" id="voiceStatus">Speaks order events aloud</p>
+            </div>
+            <label class="relative inline-flex cursor-pointer">
+                <input type="checkbox" id="voiceToggle" class="sr-only peer" onchange="toggleVoice(this.checked)">
+                <div class="w-9 h-5 bg-gray-200 peer-checked:bg-green-500 rounded-full peer-focus:ring-2 peer-focus:ring-green-300 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>
+            </label>
+        </div>
+        <button onclick="testVoice()" class="mt-3 w-full py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition">
+            Test Voice Announcement
+        </button>
     </div>
 
     <?php if (isAdmin()): ?>
@@ -60,7 +94,7 @@
             </div>
             <div class="flex justify-between">
                 <span class="text-gray-500">Version</span>
-                <span class="font-medium text-gray-800">1.0.0</span>
+                <span class="font-medium text-gray-800">2.0.0</span>
             </div>
         </div>
     </div>
@@ -73,14 +107,91 @@
 
 </div>
 
+<script>
+// ── Push Notification Toggle ──
+async function initPushToggle() {
+    const toggle = document.getElementById('pushToggle');
+    const status = document.getElementById('pushStatus');
+
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        status.textContent = 'Not supported on this device';
+        toggle.disabled = true;
+        return;
+    }
+
+    const subscribed = await isPushSubscribed();
+    toggle.checked = subscribed;
+    status.textContent = subscribed ? 'Enabled — you will receive alerts' : 'Disabled — enable to get order alerts';
+}
+
+async function togglePush(enabled) {
+    const status = document.getElementById('pushStatus');
+    const toggle = document.getElementById('pushToggle');
+
+    if (enabled) {
+        status.textContent = 'Subscribing...';
+        const ok = await pushSubscribe();
+        toggle.checked = ok;
+        status.textContent = ok ? 'Enabled — you will receive alerts' : 'Failed to enable';
+    } else {
+        status.textContent = 'Unsubscribing...';
+        const ok = await pushUnsubscribe();
+        toggle.checked = !ok;
+        status.textContent = ok ? 'Disabled — enable to get order alerts' : 'Failed to disable';
+    }
+}
+
+initPushToggle();
+
+// ── Voice Announcement Toggle ──
+function initVoiceToggle() {
+    const toggle = document.getElementById('voiceToggle');
+    const status = document.getElementById('voiceStatus');
+
+    if (!('speechSynthesis' in window)) {
+        status.textContent = 'Not supported on this device';
+        toggle.disabled = true;
+        return;
+    }
+
+    toggle.checked = voice.enabled;
+    status.textContent = voice.enabled ? 'Enabled — speaks order events aloud' : 'Disabled';
+}
+
+function toggleVoice(enabled) {
+    voice.toggle(enabled);
+    const status = document.getElementById('voiceStatus');
+    status.textContent = enabled ? 'Enabled — speaks order events aloud' : 'Disabled';
+    if (enabled) {
+        voice.say('Voice announcements are now enabled.');
+    }
+}
+
+function testVoice() {
+    const wasEnabled = voice.enabled;
+    if (!wasEnabled) voice.enabled = true;
+    voice.say('This is a test announcement from Karibu Pantry Planner. Order submitted, session 1 for Test Kitchen.', 'high');
+    if (!wasEnabled) {
+        setTimeout(() => { voice.enabled = false; }, 5000);
+    }
+}
+
+initVoiceToggle();
+</script>
+
 <?php if (isAdmin()): ?>
 <script>
 let usersData = [];
+let kitchensList = [];
 
 async function loadUsers() {
     try {
-        const res = await api('api/users.php?action=list');
-        usersData = res.users || [];
+        const [usersRes, kitchensRes] = await Promise.all([
+            api('api/users.php?action=list'),
+            api('api/kitchens.php?action=list')
+        ]);
+        usersData = usersRes.users || [];
+        kitchensList = kitchensRes.kitchens || [];
         renderUsers();
     } catch (err) {
         document.getElementById('usersList').innerHTML =
@@ -112,7 +223,7 @@ function renderUsers() {
                 </div>
                 <div class="min-w-0">
                     <p class="text-sm font-medium text-gray-800 truncate">${u.name}</p>
-                    <p class="text-[10px] text-gray-400">${u.username}</p>
+                    <p class="text-[10px] text-gray-400">${u.username}${u.kitchen_name ? ' · ' + u.kitchen_name : ''}</p>
                 </div>
             </div>
             <div class="flex items-center gap-2">
@@ -125,9 +236,17 @@ function renderUsers() {
     `).join('');
 }
 
+function kitchenOptions(selectedId) {
+    let html = '<option value="">No Kitchen</option>';
+    kitchensList.forEach(k => {
+        html += `<option value="${k.id}" ${k.id == selectedId ? 'selected' : ''}>${k.name} (${k.code})</option>`;
+    });
+    return html;
+}
+
 function showCreateUser() {
     openSheet(`
-        <div class="p-4">
+        <div class="p-4 overflow-y-auto max-h-[75dvh]">
             <h3 class="text-lg font-bold text-gray-800 mb-4">Add New User</h3>
             <div class="space-y-3">
                 <div>
@@ -153,6 +272,12 @@ function showCreateUser() {
                         <option value="admin">Admin</option>
                     </select>
                 </div>
+                <div>
+                    <label class="text-xs font-medium text-gray-600 mb-1 block">Kitchen</label>
+                    <select id="newKitchen" class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white">
+                        ${kitchenOptions('')}
+                    </select>
+                </div>
                 <button onclick="createUser()" id="createBtn"
                     class="w-full py-3 bg-blue-600 text-white text-sm font-semibold rounded-xl active:bg-blue-700 mt-2">
                     Create User
@@ -167,6 +292,7 @@ async function createUser() {
     const username = document.getElementById('newUsername')?.value.trim();
     const pin = document.getElementById('newPin')?.value.trim();
     const role = document.getElementById('newRole')?.value;
+    const kitchenId = document.getElementById('newKitchen')?.value || null;
 
     if (!name || !username || !pin) {
         showToast('Fill in all fields', 'warning');
@@ -183,7 +309,7 @@ async function createUser() {
     try {
         await api('api/users.php?action=create', {
             method: 'POST',
-            body: { name, username, pin, role }
+            body: { name, username, pin, role, kitchen_id: kitchenId ? parseInt(kitchenId) : null }
         });
         showToast('User created!', 'success');
         closeSheet();
@@ -199,7 +325,7 @@ function showEditUser(id) {
     if (!u) return;
 
     openSheet(`
-        <div class="p-4">
+        <div class="p-4 overflow-y-auto max-h-[75dvh]">
             <h3 class="text-lg font-bold text-gray-800 mb-4">Edit User</h3>
             <div class="space-y-3">
                 <div>
@@ -218,6 +344,12 @@ function showEditUser(id) {
                         <option value="chef" ${u.role === 'chef' ? 'selected' : ''}>Chef</option>
                         <option value="storekeeper" ${u.role === 'storekeeper' ? 'selected' : ''}>Storekeeper</option>
                         <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>Admin</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="text-xs font-medium text-gray-600 mb-1 block">Kitchen</label>
+                    <select id="editKitchen" class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white">
+                        ${kitchenOptions(u.kitchen_id)}
                     </select>
                 </div>
                 <div class="flex items-center justify-between py-2">
@@ -245,8 +377,9 @@ async function updateUser(id) {
     const pin = document.getElementById('editPin')?.value.trim();
     const role = document.getElementById('editRole')?.value;
     const isActive = document.getElementById('editActive')?.checked;
+    const kitchenId = document.getElementById('editKitchen')?.value || null;
 
-    const body = { id, role, is_active: isActive };
+    const body = { id, role, is_active: isActive, kitchen_id: kitchenId ? parseInt(kitchenId) : null };
     if (name) body.name = name;
     if (pin) body.pin = pin;
 

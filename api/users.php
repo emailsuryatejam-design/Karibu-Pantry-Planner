@@ -10,7 +10,7 @@ switch ($action) {
 
     // ── List all users ──
     case 'list':
-        $stmt = $db->query('SELECT id, name, username, role, camp_name, is_active, created_at FROM users ORDER BY is_active DESC, name');
+        $stmt = $db->query('SELECT u.id, u.name, u.username, u.role, u.camp_name, u.kitchen_id, u.is_active, u.created_at, k.name AS kitchen_name FROM users u LEFT JOIN kitchens k ON k.id = u.kitchen_id ORDER BY u.is_active DESC, u.name');
         jsonResponse(['users' => $stmt->fetchAll()]);
         break;
 
@@ -39,8 +39,10 @@ switch ($action) {
             jsonError('Username already exists');
         }
 
-        $stmt = $db->prepare('INSERT INTO users (name, username, pin, role) VALUES (?, ?, ?, ?)');
-        $stmt->execute([$name, $username, $pin, $role]);
+        $kitchenId = isset($input['kitchen_id']) ? (int)$input['kitchen_id'] : null;
+
+        $stmt = $db->prepare('INSERT INTO users (name, username, pin, role, kitchen_id) VALUES (?, ?, ?, ?, ?)');
+        $stmt->execute([$name, $username, $pin, $role, $kitchenId]);
 
         auditLog('create_user', 'users', $db->lastInsertId(), null, ['name' => $name, 'role' => $role]);
         jsonResponse(['id' => $db->lastInsertId()]);
@@ -71,6 +73,10 @@ switch ($action) {
         if (isset($input['is_active'])) {
             $fields[] = 'is_active = ?';
             $params[] = $input['is_active'] ? 1 : 0;
+        }
+        if (array_key_exists('kitchen_id', $input)) {
+            $fields[] = 'kitchen_id = ?';
+            $params[] = $input['kitchen_id'] ? (int)$input['kitchen_id'] : null;
         }
 
         if (empty($fields)) jsonError('Nothing to update');

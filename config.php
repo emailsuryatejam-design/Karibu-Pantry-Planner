@@ -16,6 +16,11 @@ session_set_cookie_params([
 ]);
 session_start();
 
+// ── VAPID Keys (Push Notifications) ──
+define('VAPID_PUBLIC_KEY', 'BPp5G-UF9ehoRSuEkjJ2gG-8Fy7FwN5z0_SNfNn40N9uS8YFqpPbK8BkXGR4l5x72nxxfUOGEa7848wIQZF1oiA');
+define('VAPID_PRIVATE_KEY', 'MCfLFGa0KvCVsp868ywlHiwSiBoh83kod1bcZ5cQD9w');
+define('VAPID_SUBJECT', 'mailto:admin@karibupantry.com');
+
 // ── Database ──
 define('DB_HOST', 'auth-db960.hstgr.io');
 define('DB_NAME', 'u929828006_Pantryplanner');
@@ -31,9 +36,10 @@ function getDB() {
                 DB_USER,
                 DB_PASS,
                 [
-                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    PDO::ATTR_EMULATE_PREPARES => false,
+                    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE  => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES    => false,
+                    PDO::ATTR_PERSISTENT          => true,
                 ]
             );
         } catch (PDOException $e) {
@@ -43,6 +49,69 @@ function getDB() {
     }
     return $pdo;
 }
+
+// ── File Cache (reduces remote DB round-trips) ──
+define('CACHE_DIR', __DIR__ . '/.cache');
+
+function cacheGet(string $key, int $ttlSeconds = 300) {
+    $file = CACHE_DIR . '/' . md5($key) . '.json';
+    if (!file_exists($file)) return null;
+    if (time() - filemtime($file) > $ttlSeconds) { @unlink($file); return null; }
+    $data = @file_get_contents($file);
+    return $data ? json_decode($data, true) : null;
+}
+
+function cacheSet(string $key, $data): void {
+    if (!is_dir(CACHE_DIR)) @mkdir(CACHE_DIR, 0755, true);
+    $file = CACHE_DIR . '/' . md5($key) . '.json';
+    @file_put_contents($file, json_encode($data), LOCK_EX);
+}
+
+function cacheClear(string $key = ''): void {
+    if ($key) {
+        @unlink(CACHE_DIR . '/' . md5($key) . '.json');
+    } else {
+        // Clear all cache
+        $files = glob(CACHE_DIR . '/*.json');
+        if ($files) foreach ($files as $f) @unlink($f);
+    }
+}
+
+/**
+ * Get active items list (cached for 5 min, most expensive query)
+ */
+function getCachedItems(): array {
+    $cached = cacheGet('active_items', 300);
+    if ($cached !== null) return $cached;
+
+    $db = getDB();
+    $items = $db->query("SELECT id, name, code, category, uom, stock_qty, portion_weight, order_mode FROM items WHERE is_active = 1 ORDER BY category, name")->fetchAll();
+
+    $grouped = [];
+    foreach ($items as $item) {
+        $c = $item['category'] ?: 'Uncategorized';
+        $grouped[$c][] = $item;
+    }
+
+    $result = ['items' => $items, 'grouped' => $grouped];
+    cacheSet('active_items', $result);
+    return $result;
+}
+
+/**
+ * Get kitchens list (cached for 10 min)
+ */
+function getCachedKitchens(): array {
+    $cached = cacheGet('kitchens', 600);
+    if ($cached !== null) return $cached;
+
+    $db = getDB();
+    $kitchens = $db->query("SELECT k.*, (SELECT COUNT(*) FROM users WHERE kitchen_id = k.id) AS user_count FROM kitchens k ORDER BY k.name")->fetchAll();
+
+    cacheSet('kitchens', $kitchens);
+    return $kitchens;
+}
+
 
 // ── JSON Helpers ──
 function jsonResponse($data, $code = 200) {
@@ -92,6 +161,17 @@ function isStorekeeper() {
 function isAdmin() {
     $user = currentUser();
     return $user && $user['role'] === 'admin';
+}
+
+// ── Kitchen Helpers ──
+function currentKitchenId() {
+    $user = currentUser();
+    return $user['kitchen_id'] ?? null;
+}
+
+function currentKitchenName() {
+    $user = currentUser();
+    return $user['kitchen_name'] ?? '';
 }
 
 // ── Date Helpers ──
