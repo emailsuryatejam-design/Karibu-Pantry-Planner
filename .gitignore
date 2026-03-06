@@ -2,3 +2,19 @@ node_modules/
 android/
 .DS_Store
 *.log
+
+# Server cache
+.cache/
+
+# VAPID key generator (contains secrets)
+vapid-keys.php
+
+# Environment
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
