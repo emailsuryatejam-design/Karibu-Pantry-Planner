@@ -1,0 +1,414 @@
+<?php
+/**
+ * Karibu Pantry Planner — Requisitions API
+ * Core ordering system: portions-based + direct KG
+ */
+
+require_once __DIR__ . '/../auth.php';
+require_once __DIR__ . '/../lib/push-sender.php';
+
+$user = requireAuth();
+$action = $_GET['action'] ?? 'list';
+$db = getDB();
+$kitchenId = $user['kitchen_id'] ?? null;
+
+switch ($action) {
+
+    // ── List requisitions for a date/kitchen ──
+    case 'list':
+        $date = $_GET['date'] ?? date('Y-m-d');
+        $status = $_GET['status'] ?? '';
+        $kid = (int)($_GET['kitchen_id'] ?? $kitchenId);
+
+        $sql = "SELECT r.*, u.name AS chef_name,
+                (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
+                FROM requisitions r
+                LEFT JOIN users u ON u.id = r.created_by
+                WHERE r.req_date = ? AND r.kitchen_id = ?";
+        $params = [$date, $kid];
+
+        if ($status) {
+            $sql .= " AND r.status = ?";
+            $params[] = $status;
+        }
+        $sql .= " ORDER BY r.session_number ASC";
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        $reqs = $stmt->fetchAll();
+
+        jsonResponse(['requisitions' => $reqs]);
+
+    // ── Get single requisition with lines ──
+    case 'get':
+        $id = (int)($_GET['id'] ?? 0);
+        if (!$id) jsonError('Requisition ID required');
+
+        $stmt = $db->prepare("SELECT r.*, u.name AS chef_name FROM requisitions r LEFT JOIN users u ON u.id = r.created_by WHERE r.id = ?");
+        $stmt->execute([$id]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Requisition not found', 404);
+
+        $lines = $db->prepare("SELECT rl.*, i.stock_qty AS current_stock FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? ORDER BY rl.item_name");
+        $lines->execute([$id]);
+        $lineData = $lines->fetchAll();
+
+        jsonResponse(['requisition' => $req, 'lines' => $lineData]);
+
+    // ── Create new draft requisition ──
+    case 'create':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+
+        $reqDate = $data['req_date'] ?? date('Y-m-d');
+        $kid = (int)($data['kitchen_id'] ?? $kitchenId);
+        $guestCount = (int)($data['guest_count'] ?? 20);
+        $meals = $data['meals'] ?? 'lunch';
+        if (is_array($meals)) $meals = implode(',', $meals);
+
+        if (!$kid) jsonError('Kitchen ID required');
+
+        // Auto session number
+        $stmt = $db->prepare("SELECT COALESCE(MAX(session_number), 0) + 1 AS next_session FROM requisitions WHERE req_date = ? AND kitchen_id = ?");
+        $stmt->execute([$reqDate, $kid]);
+        $sessionNum = (int)$stmt->fetch()['next_session'];
+
+        $stmt = $db->prepare("INSERT INTO requisitions (kitchen_id, req_date, session_number, guest_count, meals, status, created_by) VALUES (?, ?, ?, ?, ?, 'draft', ?)");
+        $stmt->execute([$kid, $reqDate, $sessionNum, $guestCount, $meals, $user['id']]);
+        $reqId = $db->lastInsertId();
+
+        auditLog('requisition_create', 'requisition', $reqId, null, [
+            'date' => $reqDate, 'kitchen_id' => $kid, 'session' => $sessionNum, 'guests' => $guestCount, 'meals' => $meals
+        ]);
+
+        jsonResponse(['requisition_id' => $reqId, 'session_number' => $sessionNum]);
+
+    // ── Save/update lines (bulk) ──
+    case 'save_lines':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        $lines = $data['lines'] ?? [];
+        if (!$reqId) jsonError('Requisition ID required');
+
+        // Verify requisition is draft
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'draft'");
+        $stmt->execute([$reqId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Requisition not found or not in draft status');
+
+        // Delete existing lines and re-insert
+        $db->prepare("DELETE FROM requisition_lines WHERE requisition_id = ?")->execute([$reqId]);
+
+        // Batch-load all referenced items in one query to avoid N+1
+        $itemIds = array_filter(array_map(fn($l) => (int)($l['item_id'] ?? 0), $lines));
+        $itemMap = [];
+        if ($itemIds) {
+            $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
+            $batchStmt = $db->prepare("SELECT id, name, stock_qty, portion_weight, order_mode, uom FROM items WHERE id IN ($placeholders)");
+            $batchStmt->execute(array_values($itemIds));
+            foreach ($batchStmt->fetchAll() as $it) {
+                $itemMap[(int)$it['id']] = $it;
+            }
+        }
+
+        $insertStmt = $db->prepare("INSERT INTO requisition_lines
+            (requisition_id, item_id, item_name, meal, order_mode, portions, portion_weight, required_kg, stock_qty, order_qty, uom)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+
+        $totalItems = 0;
+        $totalKg = 0;
+
+        foreach ($lines as $line) {
+            $itemId = (int)$line['item_id'];
+            $item = $itemMap[$itemId] ?? null;
+            if (!$item) continue;
+
+            $orderMode = $item['order_mode'];
+            $portionWeight = (float)$item['portion_weight'];
+            $stockQty = (float)$item['stock_qty'];
+            $meal = $line['meal'] ?? 'lunch';
+
+            if ($orderMode === 'direct_kg') {
+                $requiredKg = (float)($line['direct_kg'] ?? 0);
+                $portions = 0;
+            } else {
+                $portions = (int)($line['portions'] ?? 0);
+                $requiredKg = $portions * $portionWeight;
+            }
+
+            // Round up to nearest 0.5
+            $requiredKg = ceil($requiredKg * 2) / 2;
+
+            // Order qty = required - stock (min 0), rounded up to 0.5
+            $orderQty = max(0, $requiredKg - $stockQty);
+            $orderQty = ceil($orderQty * 2) / 2;
+
+            if ($requiredKg <= 0) continue;
+
+            $insertStmt->execute([
+                $reqId, $itemId, $item['name'], $meal, $orderMode,
+                $portions, $portionWeight, $requiredKg, $stockQty, $orderQty, $item['uom']
+            ]);
+
+            $totalItems++;
+            $totalKg += $orderQty;
+        }
+
+        auditLog('requisition_save_lines', 'requisition', $reqId, null, ['items' => $totalItems, 'total_kg' => $totalKg]);
+        jsonResponse(['saved' => true, 'total_items' => $totalItems, 'total_kg' => round($totalKg, 2)]);
+
+    // ── Submit requisition (draft → submitted) ──
+    case 'submit':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        if (!$reqId) jsonError('Requisition ID required');
+
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'draft'");
+        $stmt->execute([$reqId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Requisition not found or already submitted');
+
+        // Check has lines
+        $lineCount = $db->prepare("SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = ?");
+        $lineCount->execute([$reqId]);
+        if ((int)$lineCount->fetchColumn() === 0) jsonError('Cannot submit empty requisition');
+
+        $db->prepare("UPDATE requisitions SET status = 'submitted', updated_at = NOW() WHERE id = ?")->execute([$reqId]);
+
+        auditLog('requisition_submit', 'requisition', $reqId);
+
+        // Push notification to storekeepers
+        $kitchenName = '';
+        $kStmt = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
+        $kStmt->execute([$req['kitchen_id']]);
+        $kRow = $kStmt->fetch();
+        if ($kRow) $kitchenName = $kRow['name'];
+
+        $pushPayload = [
+            'title' => 'New Requisition',
+            'body'  => "{$user['name']} submitted Session #{$req['session_number']} for {$kitchenName}",
+            'url'   => '/app.php?page=store-dashboard',
+            'tag'   => 'req-submitted-' . $reqId,
+        ];
+        sendPushToKitchen((int)$req['kitchen_id'], $pushPayload, 'storekeeper', $user['id']);
+        storeNotification((int)$req['kitchen_id'], null, $pushPayload['title'], $pushPayload['body'], 'requisition_submitted', $reqId);
+
+        jsonResponse(['submitted' => true]);
+
+    // ── Fulfill requisition (storekeeper) ──
+    case 'fulfill':
+        requireMethod('POST');
+        requireRole(['storekeeper', 'admin']);
+        $data = getJsonInput();
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        $fulfillLines = $data['lines'] ?? [];
+        if (!$reqId) jsonError('Requisition ID required');
+
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('submitted','processing')");
+        $stmt->execute([$reqId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Requisition not found or not in submittable status');
+
+        $updateLine = $db->prepare("UPDATE requisition_lines SET fulfilled_qty = ?, status = 'approved', store_notes = ? WHERE id = ? AND requisition_id = ?");
+        foreach ($fulfillLines as $fl) {
+            $updateLine->execute([
+                (float)($fl['fulfilled_qty'] ?? 0),
+                $fl['store_notes'] ?? null,
+                (int)$fl['id'],
+                $reqId
+            ]);
+        }
+
+        $db->prepare("UPDATE requisitions SET status = 'fulfilled', reviewed_by = ?, updated_at = NOW() WHERE id = ?")->execute([$user['id'], $reqId]);
+
+        auditLog('requisition_fulfill', 'requisition', $reqId);
+
+        // Push notification to the chef who created this requisition
+        $kitchenName = '';
+        $kStmt2 = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
+        $kStmt2->execute([$req['kitchen_id']]);
+        $kRow2 = $kStmt2->fetch();
+        if ($kRow2) $kitchenName = $kRow2['name'];
+
+        $pushPayload = [
+            'title' => 'Order Fulfilled',
+            'body'  => "Session #{$req['session_number']} for {$kitchenName} has been fulfilled by store",
+            'url'   => '/app.php?page=review-supply',
+            'tag'   => 'req-fulfilled-' . $reqId,
+        ];
+        sendPushToKitchen((int)$req['kitchen_id'], $pushPayload, 'chef', $user['id']);
+        storeNotification((int)$req['kitchen_id'], (int)$req['created_by'], $pushPayload['title'], $pushPayload['body'], 'requisition_fulfilled', $reqId);
+
+        jsonResponse(['fulfilled' => true]);
+
+    // ── Confirm receipt (chef) ──
+    case 'confirm_receipt':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        $receiptLines = $data['lines'] ?? [];
+        if (!$reqId) jsonError('Requisition ID required');
+
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'fulfilled'");
+        $stmt->execute([$reqId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Requisition not found or not fulfilled');
+
+        // Batch-load fulfilled_qty for all lines to check disputes without N+1
+        $lineIds = array_map(fn($rl) => (int)$rl['id'], $receiptLines);
+        $fulfilledMap = [];
+        if ($lineIds) {
+            $ph = implode(',', array_fill(0, count($lineIds), '?'));
+            $fStmt = $db->prepare("SELECT id, fulfilled_qty FROM requisition_lines WHERE requisition_id = ? AND id IN ($ph)");
+            $fStmt->execute(array_merge([$reqId], $lineIds));
+            foreach ($fStmt->fetchAll() as $fl) {
+                $fulfilledMap[(int)$fl['id']] = (float)$fl['fulfilled_qty'];
+            }
+        }
+
+        $hasDispute = false;
+        $updateLine = $db->prepare("UPDATE requisition_lines SET received_qty = ? WHERE id = ? AND requisition_id = ?");
+        foreach ($receiptLines as $rl) {
+            $receivedQty = (float)($rl['received_qty'] ?? 0);
+            $updateLine->execute([$receivedQty, (int)$rl['id'], $reqId]);
+
+            $fulfilledQty = $fulfilledMap[(int)$rl['id']] ?? 0;
+            if (abs($fulfilledQty - $receivedQty) > 0.01) {
+                $hasDispute = true;
+            }
+        }
+
+        $db->prepare("UPDATE requisitions SET status = 'received', has_dispute = ?, updated_at = NOW() WHERE id = ?")->execute([$hasDispute ? 1 : 0, $reqId]);
+
+        auditLog('requisition_receipt', 'requisition', $reqId, null, ['has_dispute' => $hasDispute]);
+
+        jsonResponse(['confirmed' => true, 'has_dispute' => $hasDispute]);
+
+    // ── Close day ──
+    case 'close':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $reqId = (int)($data['requisition_id'] ?? 0);
+
+        if ($reqId) {
+            // Close single
+            $db->prepare("UPDATE requisitions SET status = 'closed', updated_at = NOW() WHERE id = ? AND status = 'received'")->execute([$reqId]);
+        } else {
+            // Close all received for a date
+            $date = $data['date'] ?? date('Y-m-d');
+            $kid = (int)($data['kitchen_id'] ?? $kitchenId);
+            $db->prepare("UPDATE requisitions SET status = 'closed', updated_at = NOW() WHERE req_date = ? AND kitchen_id = ? AND status = 'received'")->execute([$date, $kid]);
+        }
+
+        auditLog('requisition_close', 'requisition', $reqId);
+        jsonResponse(['closed' => true]);
+
+    // ── Dashboard stats (chef) — single query ──
+    case 'dashboard_stats':
+        $kid = (int)($_GET['kitchen_id'] ?? $kitchenId);
+        $today = date('Y-m-d');
+
+        $stmt = $db->prepare("SELECT status, COUNT(*) AS cnt FROM requisitions WHERE req_date = ? AND kitchen_id = ? GROUP BY status");
+        $stmt->execute([$today, $kid]);
+        $rows = $stmt->fetchAll();
+
+        $counts = [];
+        $total = 0;
+        foreach ($rows as $r) {
+            $counts[$r['status']] = (int)$r['cnt'];
+            $total += (int)$r['cnt'];
+        }
+
+        $stats = [
+            'active_sessions' => ($counts['draft'] ?? 0) + ($counts['submitted'] ?? 0) + ($counts['processing'] ?? 0),
+            'awaiting_supply' => $counts['submitted'] ?? 0,
+            'ready_receive'   => $counts['fulfilled'] ?? 0,
+            'ready_close'     => $counts['received'] ?? 0,
+            'total_sessions'  => $total,
+        ];
+
+        jsonResponse(['stats' => $stats, 'date' => $today]);
+
+    // ── Store stats — single query ──
+    case 'store_stats':
+        $kid = (int)($_GET['kitchen_id'] ?? $kitchenId);
+        $today = date('Y-m-d');
+
+        $stmt = $db->prepare("SELECT status, COUNT(*) AS cnt,
+            SUM(CASE WHEN status = 'fulfilled' AND DATE(updated_at) = ? THEN 1 ELSE 0 END) AS fulfilled_today
+            FROM requisitions WHERE kitchen_id = ? AND status IN ('submitted','processing','fulfilled')
+            GROUP BY status");
+        $stmt->execute([$today, $kid]);
+        $rows = $stmt->fetchAll();
+
+        $stats = ['new_orders' => 0, 'processing' => 0, 'fulfilled_today' => 0];
+        foreach ($rows as $r) {
+            if ($r['status'] === 'submitted') $stats['new_orders'] = (int)$r['cnt'];
+            if ($r['status'] === 'processing') $stats['processing'] = (int)$r['cnt'];
+            if ($r['status'] === 'fulfilled') $stats['fulfilled_today'] = (int)$r['fulfilled_today'];
+        }
+
+        jsonResponse(['stats' => $stats]);
+
+    // ── Day summary ──
+    case 'day_summary':
+        $date = $_GET['date'] ?? date('Y-m-d');
+        $kid = (int)($_GET['kitchen_id'] ?? $kitchenId);
+
+        $stmt = $db->prepare("SELECT r.*, u.name AS chef_name,
+            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count,
+            (SELECT COALESCE(SUM(order_qty), 0) FROM requisition_lines WHERE requisition_id = r.id) AS total_kg
+            FROM requisitions r
+            LEFT JOIN users u ON u.id = r.created_by
+            WHERE r.req_date = ? AND r.kitchen_id = ?
+            ORDER BY r.session_number");
+        $stmt->execute([$date, $kid]);
+        $reqs = $stmt->fetchAll();
+
+        // Summary
+        $summary = [
+            'total_sessions' => count($reqs),
+            'draft' => 0, 'submitted' => 0, 'processing' => 0,
+            'fulfilled' => 0, 'received' => 0, 'closed' => 0
+        ];
+        foreach ($reqs as $r) {
+            $summary[$r['status']]++;
+        }
+
+        jsonResponse(['requisitions' => $reqs, 'summary' => $summary]);
+
+    // ── Get items for requisition form (cached) ──
+    case 'get_items':
+        $q = trim($_GET['q'] ?? '');
+
+        if (!$q) {
+            // Use cache for unfiltered list
+            $result = getCachedItems();
+            jsonResponse($result);
+        }
+
+        // Filtered search — query DB directly
+        $sql = "SELECT id, name, code, category, uom, stock_qty, portion_weight, order_mode FROM items WHERE is_active = 1 AND (name LIKE ? OR code LIKE ?) ORDER BY category, name";
+        $stmt = $db->prepare($sql);
+        $stmt->execute(["%$q%", "%$q%"]);
+        $items = $stmt->fetchAll();
+
+        $grouped = [];
+        foreach ($items as $item) {
+            $c = $item['category'] ?: 'Uncategorized';
+            $grouped[$c][] = $item;
+        }
+
+        jsonResponse(['items' => $items, 'grouped' => $grouped]);
+
+    default:
+        jsonError('Unknown action');
+}

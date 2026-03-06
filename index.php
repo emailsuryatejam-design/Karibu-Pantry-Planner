@@ -21,6 +21,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = $stmt->fetch();
 
         if ($user) {
+            // Get kitchen name
+            $kitchenName = '';
+            if ($user['kitchen_id']) {
+                $kStmt = $db->prepare('SELECT name FROM kitchens WHERE id = ?');
+                $kStmt->execute([$user['kitchen_id']]);
+                $kitchen = $kStmt->fetch();
+                $kitchenName = $kitchen ? $kitchen['name'] : '';
+            }
             $_SESSION['user'] = [
                 'id' => $user['id'],
                 'name' => $user['name'],
@@ -28,6 +36,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'role' => $user['role'],
                 'camp_id' => $user['camp_id'],
                 'camp_name' => $user['camp_name'],
+                'kitchen_id' => $user['kitchen_id'],
+                'kitchen_name' => $kitchenName,
             ];
             header('Location: app.php');
             exit;
@@ -52,6 +62,11 @@ try {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#ea580c">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
     <title>Karibu Pantry Planner</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">

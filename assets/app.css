@@ -142,3 +142,121 @@ nav a:active {
     color: #9ca3af;
     font-weight: 500;
 }
+
+/* Sticky submit bar — positioned above bottom nav */
+.sticky-submit {
+    position: fixed;
+    bottom: 64px;
+    left: 0;
+    right: 0;
+    background: white;
+    border-top: 1px solid #e5e7eb;
+    padding: 12px 16px;
+    z-index: 35;
+    box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* Status badges for requisition workflow */
+.badge-submitted { background: #fef3c7; color: #92400e; }
+.badge-processing { background: #dbeafe; color: #1e40af; }
+.badge-received { background: #dcfce7; color: #166534; }
+.badge-closed { background: #f3f4f6; color: #4b5563; }
+
+/* Stepper controls */
+.stepper-btn {
+    min-height: 36px;
+    min-width: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    font-weight: 600;
+    user-select: none;
+    -webkit-user-select: none;
+    transition: background-color 0.15s;
+}
+
+.stepper-btn:active {
+    transform: scale(0.95);
+}
+
+/* Accordion animation */
+.accordion-content {
+    overflow: hidden;
+    transition: max-height 0.25s ease-out, opacity 0.2s ease;
+}
+
+/* Category headers */
+.category-header {
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+/* Horizontal scroll strip (dates, meals) */
+.scroll-strip {
+    display: flex;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    gap: 6px;
+    padding-bottom: 4px;
+}
+
+.scroll-strip::-webkit-scrollbar {
+    display: none;
+}
+
+/* Pill buttons for meals, filters */
+.pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 9999px;
+    font-size: 10px;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+    min-height: auto;
+}
+
+.pill.active {
+    background: #ea580c;
+    color: white;
+}
+
+.pill:not(.active) {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+
+/* Gradient stat cards */
+.stat-card {
+    border-radius: 12px;
+    padding: 16px;
+    position: relative;
+    overflow: hidden;
+}
+
+.stat-card::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -30%;
+    width: 80%;
+    height: 150%;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Safe area padding for notched phones */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+    nav {
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+    .sticky-submit {
+        bottom: calc(64px + env(safe-area-inset-bottom));
+    }
+}

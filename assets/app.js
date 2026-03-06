@@ -11,7 +11,7 @@ async function api(endpoint, options = {}) {
         headers: { 'Content-Type': 'application/json', ...options.headers },
     };
     if (options.body && method !== 'GET') {
-        config.body = JSON.stringify(options.body);
+        config.body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);
     }
     const response = await fetch(endpoint, config);
     const text = await response.text();
@@ -24,6 +24,23 @@ async function api(endpoint, options = {}) {
     if (!response.ok) {
         throw new Error(data.error || data.message || 'Request failed');
     }
+    return data;
+}
+
+/**
+ * Cached GET — sessionStorage with TTL (ms). Only for GET requests.
+ */
+async function cachedApi(endpoint, ttlMs = 300000) {
+    const key = 'api_' + endpoint;
+    try {
+        const cached = sessionStorage.getItem(key);
+        if (cached) {
+            const { data, ts } = JSON.parse(cached);
+            if (Date.now() - ts < ttlMs) return data;
+        }
+    } catch {}
+    const data = await api(endpoint);
+    try { sessionStorage.setItem(key, JSON.stringify({ data, ts: Date.now() })); } catch {}
     return data;
 }
 
@@ -114,6 +131,180 @@ function debounce(fn, delay = 300) {
         clearTimeout(timer);
         timer = setTimeout(() => fn.apply(this, args), delay);
     };
+}
+
+// ── Push Notification Helpers ──
+async function pushSubscribe() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+        showToast('Push notifications not supported', 'warning');
+        return false;
+    }
+
+    try {
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+            showToast('Notification permission denied', 'warning');
+            return false;
+        }
+
+        const reg = await navigator.serviceWorker.ready;
+        const keyRes = await api('api/push.php?action=vapid_key');
+        const vapidKey = keyRes.key;
+
+        const sub = await reg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlBase64ToUint8Array(vapidKey)
+        });
+
+        const subJson = sub.toJSON();
+        await api('api/push.php?action=subscribe', {
+            method: 'POST',
+            body: {
+                endpoint: subJson.endpoint,
+                p256dh: subJson.keys.p256dh,
+                auth_key: subJson.keys.auth
+            }
+        });
+
+        showToast('Notifications enabled!', 'success');
+        return true;
+    } catch (err) {
+        showToast('Failed to subscribe: ' + err.message, 'error');
+        return false;
+    }
+}
+
+async function pushUnsubscribe() {
+    try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) {
+            await api('api/push.php?action=unsubscribe', {
+                method: 'POST',
+                body: { endpoint: sub.endpoint }
+            });
+            await sub.unsubscribe();
+        }
+        showToast('Notifications disabled', 'info');
+        return true;
+    } catch (err) {
+        showToast('Failed to unsubscribe: ' + err.message, 'error');
+        return false;
+    }
+}
+
+async function isPushSubscribed() {
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return false;
+    try {
+        const reg = await navigator.serviceWorker.ready;
+        const sub = await reg.pushManager.getSubscription();
+        return !!sub;
+    } catch { return false; }
+}
+
+function urlBase64ToUint8Array(base64String) {
+    const padding = '='.repeat((4 - base64String.length % 4) % 4);
+    const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const rawData = window.atob(base64);
+    const outputArray = new Uint8Array(rawData.length);
+    for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+    }
+    return outputArray;
+}
+
+// ── Voice Announcements (Text-to-Speech) ──
+const voice = {
+    enabled: localStorage.getItem('karibu_voice') !== 'off',
+    rate: 1.0,
+    pitch: 1.0,
+    _queue: [],
+    _speaking: false,
+
+    /** Speak a message aloud */
+    say(text, priority = 'normal') {
+        if (!this.enabled || !('speechSynthesis' in window)) return;
+
+        // High priority interrupts current speech
+        if (priority === 'high') {
+            speechSynthesis.cancel();
+            this._queue = [];
+        }
+
+        this._queue.push(text);
+        this._processQueue();
+    },
+
+    _processQueue() {
+        if (this._speaking || this._queue.length === 0) return;
+        this._speaking = true;
+
+        const text = this._queue.shift();
+        const utter = new SpeechSynthesisUtterance(text);
+        utter.rate = this.rate;
+        utter.pitch = this.pitch;
+        utter.volume = 1;
+
+        // Try to pick an English voice
+        const voices = speechSynthesis.getVoices();
+        const english = voices.find(v => v.lang.startsWith('en') && v.default)
+                     || voices.find(v => v.lang.startsWith('en'))
+                     || voices[0];
+        if (english) utter.voice = english;
+
+        utter.onend = () => {
+            this._speaking = false;
+            this._processQueue();
+        };
+        utter.onerror = () => {
+            this._speaking = false;
+            this._processQueue();
+        };
+
+        speechSynthesis.speak(utter);
+    },
+
+    /** Toggle voice on/off */
+    toggle(on) {
+        this.enabled = on;
+        localStorage.setItem('karibu_voice', on ? 'on' : 'off');
+        if (!on) speechSynthesis.cancel();
+    },
+
+    /** Convenience methods for common events */
+    orderSubmitted(session, kitchen) {
+        this.say(`Order submitted. Session ${session} for ${kitchen} sent to store.`, 'high');
+    },
+    orderFulfilled(session, kitchen) {
+        this.say(`Order fulfilled. Session ${session} for ${kitchen} is ready for pickup.`, 'high');
+    },
+    orderReceived(session) {
+        this.say(`Receipt confirmed for session ${session}.`);
+    },
+    newOrderAlert(chef, kitchen) {
+        this.say(`Attention store. New order from ${chef} for ${kitchen}.`, 'high');
+    },
+    itemsSaved(count, kg) {
+        this.say(`${count} items saved. Total order ${kg} kilograms.`);
+    },
+    dayClosed(date) {
+        this.say(`Day closed for ${date}. All sessions finalized.`);
+    },
+    sessionCreated(session) {
+        this.say(`Session ${session} created. Add items to continue.`);
+    },
+    error(msg) {
+        this.say(`Error. ${msg}`, 'high');
+    },
+    welcome(name, role) {
+        this.say(`Welcome ${name}. You are logged in as ${role}.`);
+    }
+};
+
+// Preload voices (needed for some browsers)
+if ('speechSynthesis' in window) {
+    speechSynthesis.getVoices();
+    speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
 }
 
 // ── Loading State ──

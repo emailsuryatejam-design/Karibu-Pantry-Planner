@@ -26,3 +26,11 @@ function requireMethod($method) {
         jsonError('Method not allowed', 405);
     }
 }
+
+function requireKitchen() {
+    $user = requireAuth();
+    if (empty($user['kitchen_id'])) {
+        jsonError('No kitchen assigned. Contact admin.', 403);
+    }
+    return $user;
+}
