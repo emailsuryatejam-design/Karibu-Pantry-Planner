@@ -13,7 +13,7 @@ $page = $_GET['page'] ?? $defaultPage;
 // Valid pages per role
 $chefPages = ['dashboard', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'daily-groceries', 'recipes', 'reports', 'settings'];
 $storePages = ['store-dashboard', 'store-orders', 'store-history', 'settings'];
-$adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-items', 'admin-kitchens']));
+$adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-items', 'admin-kitchens', 'admin-req-types']));
 
 $allowedPages = isAdmin() ? $adminPages : (isChef() ? $chefPages : $storePages);
 if (!in_array($page, $allowedPages)) {
@@ -35,6 +35,7 @@ $pageTitles = [
     'store-history' => 'History',
     'admin-items' => 'Items',
     'admin-kitchens' => 'Kitchens',
+    'admin-req-types' => 'Req Types',
     'settings' => 'Settings',
 ];
 $pageTitle = $pageTitles[$page] ?? 'Pantry Planner';
@@ -165,7 +166,7 @@ $isAdminRole = isAdmin();
                 </a>
                 <!-- Admin: Admin menu -->
                 <a href="#" onclick="showAdminMenu();return false"
-                   class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= in_array($page, ['admin-items','admin-kitchens']) ? 'text-orange-600' : 'text-gray-400' ?>">
+                   class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= in_array($page, ['admin-items','admin-kitchens','admin-req-types']) ? 'text-orange-600' : 'text-gray-400' ?>">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
                     <span class="text-[9px] font-medium">Admin</span>
                 </a>
@@ -207,6 +208,12 @@ $isAdminRole = isAdmin();
                     </div>
                     <div><div class="text-sm font-semibold text-gray-800">Kitchen Management</div><div class="text-[10px] text-gray-400">Manage 6 kitchens</div></div>
                 </a>
+                <a href="app.php?page=admin-req-types" class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-orange-50 transition">
+                    <div class="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2H2v10l9.29 9.29c.94.94 2.48.94 3.42 0l6.58-6.58c.94-.94.94-2.48 0-3.42L12 2Z"/><path d="M7 7h.01"/></svg>
+                    </div>
+                    <div><div class="text-sm font-semibold text-gray-800">Requisition Types</div><div class="text-[10px] text-gray-400">Meal types chefs can select</div></div>
+                </a>
                 <a href="app.php?page=settings" class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-orange-50 transition">
                     <div class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -228,7 +235,7 @@ $isAdminRole = isAdmin();
     const pageNames = {
         'dashboard': 'Dashboard', 'requisition': 'Order', 'recipes': 'Recipes',
         'store-dashboard': 'Store', 'store-orders': 'Orders', 'store-history': 'History',
-        'settings': 'Settings', 'admin-items': 'Items', 'admin-kitchens': 'Kitchens',
+        'settings': 'Settings', 'admin-items': 'Items', 'admin-kitchens': 'Kitchens', 'admin-req-types': 'Req Types',
         'review-supply': 'Supply', 'day-close': 'Close', 'reports': 'Reports',
         'menu-plan': 'Plan', 'daily-groceries': 'Groceries'
     };

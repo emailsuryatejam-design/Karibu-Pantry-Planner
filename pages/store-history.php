@@ -86,7 +86,7 @@ async function shLoad() {
             html += `<div class="bg-white border border-gray-200 rounded-xl px-4 py-3 cursor-pointer hover:border-green-200 transition" onclick="shDetail(${r.id})">
                 <div class="flex items-center justify-between">
                     <div>
-                        <span class="text-sm font-semibold text-gray-800">${formatDate(r.date)} — Session ${r.session_number}</span>
+                        <span class="text-sm font-semibold text-gray-800">${formatDate(r.date)} — Requisition ${r.session_number}</span>
                         <div class="text-[10px] text-gray-400 mt-0.5">${r.chef_name || 'Chef'} &bull; ${r.meals || '—'} &bull; ${r.line_count} items</div>
                     </div>
                     <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${color}">${r.status}${r.has_dispute == 1 ? ' !' : ''}</span>
@@ -106,7 +106,7 @@ async function shDetail(reqId) {
         const lines = data.lines || [];
 
         let html = `<div class="p-4">
-            <h3 class="text-sm font-semibold text-gray-800 mb-1">Session ${req.session_number} Details</h3>
+            <h3 class="text-sm font-semibold text-gray-800 mb-1">Requisition ${req.session_number} Details</h3>
             <p class="text-[10px] text-gray-400 mb-3">${req.meals || '—'} &bull; ${req.chef_name || 'Chef'}</p>
             <div class="space-y-1 max-h-[55vh] overflow-y-auto">
                 <div class="grid grid-cols-[1fr_55px_55px_55px] gap-1 text-[9px] font-semibold text-gray-500 px-2 py-1 bg-gray-50 rounded-lg">

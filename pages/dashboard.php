@@ -17,7 +17,7 @@ $kitchenId = $user['kitchen_id'] ?? 0;
 <div class="flex gap-3 overflow-x-auto pb-2 mb-4" id="dbStats">
     <div class="min-w-[120px] bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-3 text-white flex-1">
         <div class="text-2xl font-bold" id="dbStatSessions">—</div>
-        <div class="text-[10px] opacity-80 font-medium">Active Sessions</div>
+        <div class="text-[10px] opacity-80 font-medium">Active Requisitions</div>
     </div>
     <div class="min-w-[120px] bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-3 text-white flex-1">
         <div class="text-2xl font-bold" id="dbStatAwaiting">—</div>
@@ -61,9 +61,9 @@ $kitchenId = $user['kitchen_id'] ?? 0;
     </a>
 </div>
 
-<!-- Today's Sessions -->
+<!-- Today's Requisitions -->
 <div class="mb-3">
-    <h3 class="text-sm font-semibold text-gray-700 mb-2">Today's Sessions</h3>
+    <h3 class="text-sm font-semibold text-gray-700 mb-2">Today's Requisitions</h3>
     <div id="dbSessionList" class="space-y-2">
         <div class="text-center py-6 text-xs text-gray-400">Loading...</div>
     </div>
@@ -96,7 +96,7 @@ async function dbLoadSessions() {
 
         if (reqs.length === 0) {
             container.innerHTML = `<div class="text-center py-6">
-                <p class="text-xs text-gray-400 mb-2">No sessions today</p>
+                <p class="text-xs text-gray-400 mb-2">No requisitions today</p>
                 <a href="app.php?page=requisition" class="text-xs text-orange-500 font-semibold hover:text-orange-600">+ Create Requisition</a>
             </div>`;
             return;
@@ -117,7 +117,7 @@ async function dbLoadSessions() {
             html += `<a href="app.php?page=requisition" class="block bg-white border border-gray-200 rounded-xl px-4 py-3 hover:border-orange-200 transition">
                 <div class="flex items-center justify-between">
                     <div>
-                        <span class="text-sm font-semibold text-gray-800">Session ${r.session_number}</span>
+                        <span class="text-sm font-semibold text-gray-800">Requisition ${r.session_number}</span>
                         <div class="flex items-center gap-2 mt-0.5">
                             <span class="text-[10px] text-gray-400">${r.meals || '—'}</span>
                             <span class="text-[10px] text-gray-400">${r.line_count || 0} items</span>

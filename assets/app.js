@@ -273,13 +273,13 @@ const voice = {
 
     /** Convenience methods for common events */
     orderSubmitted(session, kitchen) {
-        this.say(`Order submitted. Session ${session} for ${kitchen} sent to store.`, 'high');
+        this.say(`Order submitted. Requisition ${session} for ${kitchen} sent to store.`, 'high');
     },
     orderFulfilled(session, kitchen) {
-        this.say(`Order fulfilled. Session ${session} for ${kitchen} is ready for pickup.`, 'high');
+        this.say(`Order fulfilled. Requisition ${session} for ${kitchen} is ready for pickup.`, 'high');
     },
     orderReceived(session) {
-        this.say(`Receipt confirmed for session ${session}.`);
+        this.say(`Receipt confirmed for requisition ${session}.`);
     },
     newOrderAlert(chef, kitchen) {
         this.say(`Attention store. New order from ${chef} for ${kitchen}.`, 'high');
@@ -288,10 +288,10 @@ const voice = {
         this.say(`${count} items saved. Total order ${kg} kilograms.`);
     },
     dayClosed(date) {
-        this.say(`Day closed for ${date}. All sessions finalized.`);
+        this.say(`Day closed for ${date}. All requisitions finalized.`);
     },
-    sessionCreated(session) {
-        this.say(`Session ${session} created. Add items to continue.`);
+    requisitionCreated(session) {
+        this.say(`Requisition ${session} created. Add items to continue.`);
     },
     error(msg) {
         this.say(`Error. ${msg}`, 'high');

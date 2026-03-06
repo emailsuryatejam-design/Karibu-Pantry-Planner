@@ -73,7 +73,7 @@ async function sdLoadIncoming() {
             html += `<div class="bg-white border ${isNew ? 'border-red-200' : 'border-amber-200'} rounded-xl px-4 py-3">
                 <div class="flex items-center justify-between mb-2">
                     <div>
-                        <span class="text-sm font-semibold text-gray-800">Session ${r.session_number}</span>
+                        <span class="text-sm font-semibold text-gray-800">Requisition ${r.session_number}</span>
                         <span class="text-[10px] text-gray-400 ml-2">${r.chef_name || 'Chef'}</span>
                     </div>
                     <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${isNew ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}">${r.status}</span>
@@ -97,7 +97,7 @@ async function sdFulfill(reqId) {
         const req = data.requisition;
 
         let html = `<div class="p-4">
-            <h3 class="text-sm font-semibold text-gray-800 mb-1">Fulfill Session ${req.session_number}</h3>
+            <h3 class="text-sm font-semibold text-gray-800 mb-1">Fulfill Requisition ${req.session_number}</h3>
             <p class="text-[10px] text-gray-400 mb-3">${req.meals || '—'} &bull; ${req.chef_name || 'Chef'}</p>
             <div class="space-y-2 max-h-[50vh] overflow-y-auto">`;
 

@@ -170,7 +170,7 @@ function toggleVoice(enabled) {
 function testVoice() {
     const wasEnabled = voice.enabled;
     if (!wasEnabled) voice.enabled = true;
-    voice.say('This is a test announcement from Karibu Pantry Planner. Order submitted, session 1 for Test Kitchen.', 'high');
+    voice.say('This is a test announcement from Karibu Pantry Planner. Order submitted, requisition 1 for Test Kitchen.', 'high');
     if (!wasEnabled) {
         setTimeout(() => { voice.enabled = false; }, 5000);
     }

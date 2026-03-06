@@ -7,7 +7,7 @@ $kitchenId = $user['kitchen_id'] ?? 0;
 ?>
 
 <h2 class="text-lg font-bold text-gray-800 mb-1">Day Close</h2>
-<p class="text-xs text-gray-500 mb-3">End-of-day closeout for all sessions</p>
+<p class="text-xs text-gray-500 mb-3">End-of-day closeout for all requisitions</p>
 
 <!-- Date Nav -->
 <div class="flex items-center gap-2 mb-4">
@@ -42,7 +42,7 @@ async function dcLoad() {
         const summary = data.summary || {};
 
         if (reqs.length === 0) {
-            container.innerHTML = '<div class="text-center py-8"><p class="text-xs text-gray-400">No sessions for this date</p></div>';
+            container.innerHTML = '<div class="text-center py-8"><p class="text-xs text-gray-400">No requisitions for this date</p></div>';
             return;
         }
 
@@ -54,7 +54,7 @@ async function dcLoad() {
 
         let html = `<div class="bg-white border border-gray-200 rounded-xl p-3 mb-3">
             <div class="grid grid-cols-3 gap-2 text-center text-[10px]">
-                <div><div class="text-lg font-bold text-gray-800">${summary.total_sessions}</div>Total</div>
+                <div><div class="text-lg font-bold text-gray-800">${summary.total_sessions}</div>Requisitions</div>
                 <div><div class="text-lg font-bold text-green-600">${(summary.received || 0) + (summary.closed || 0)}</div>Done</div>
                 <div><div class="text-lg font-bold text-amber-600">${(summary.draft || 0) + (summary.submitted || 0) + (summary.processing || 0) + (summary.fulfilled || 0)}</div>Pending</div>
             </div>
@@ -66,7 +66,7 @@ async function dcLoad() {
             html += `<div class="bg-white border border-gray-200 rounded-xl px-4 py-3">
                 <div class="flex items-center justify-between">
                     <div>
-                        <span class="text-sm font-semibold text-gray-800">Session ${r.session_number}</span>
+                        <span class="text-sm font-semibold text-gray-800">Requisition ${r.session_number}</span>
                         <div class="text-[10px] text-gray-400 mt-0.5">${r.meals || '—'} &bull; ${r.line_count} items &bull; ${parseFloat(r.total_kg || 0).toFixed(1)} kg</div>
                     </div>
                     <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${color}">${r.status}${r.has_dispute ? ' !' : ''}</span>
@@ -81,15 +81,15 @@ async function dcLoad() {
 
         if (canClose) {
             html += `<button onclick="dcCloseDay()" class="w-full bg-blue-500 text-white py-3 rounded-xl text-sm font-semibold hover:bg-blue-600 transition">
-                Close ${summary.received} Received Session${summary.received > 1 ? 's' : ''}
+                Close ${summary.received} Received Requisition${summary.received > 1 ? 's' : ''}
             </button>`;
             if (!allDone) {
-                html += `<p class="text-[10px] text-amber-600 text-center mt-2">Note: ${(summary.draft || 0) + (summary.submitted || 0) + (summary.processing || 0) + (summary.fulfilled || 0)} session(s) still in progress</p>`;
+                html += `<p class="text-[10px] text-amber-600 text-center mt-2">Note: ${(summary.draft || 0) + (summary.submitted || 0) + (summary.processing || 0) + (summary.fulfilled || 0)} requisition(s) still in progress</p>`;
             }
         } else if (summary.closed === summary.total_sessions) {
-            html += `<div class="text-center py-4"><span class="text-xs text-green-600 font-semibold">All sessions closed for this day</span></div>`;
+            html += `<div class="text-center py-4"><span class="text-xs text-green-600 font-semibold">All requisitions closed for this day</span></div>`;
         } else {
-            html += `<div class="text-center py-4"><span class="text-xs text-gray-400">No sessions ready to close (must be received first)</span></div>`;
+            html += `<div class="text-center py-4"><span class="text-xs text-gray-400">No requisitions ready to close (must be received first)</span></div>`;
         }
 
         container.innerHTML = html;

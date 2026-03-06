@@ -192,7 +192,7 @@ switch ($action) {
 
         $pushPayload = [
             'title' => 'New Requisition',
-            'body'  => "{$user['name']} submitted Session #{$req['session_number']} for {$kitchenName}",
+            'body'  => "{$user['name']} submitted Requisition #{$req['session_number']} for {$kitchenName}",
             'url'   => '/app.php?page=store-dashboard',
             'tag'   => 'req-submitted-' . $reqId,
         ];
@@ -238,7 +238,7 @@ switch ($action) {
 
         $pushPayload = [
             'title' => 'Order Fulfilled',
-            'body'  => "Session #{$req['session_number']} for {$kitchenName} has been fulfilled by store",
+            'body'  => "Requisition #{$req['session_number']} for {$kitchenName} has been fulfilled by store",
             'url'   => '/app.php?page=review-supply',
             'tag'   => 'req-fulfilled-' . $reqId,
         ];

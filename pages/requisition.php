@@ -22,22 +22,18 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
     </button>
 </div>
 
-<!-- Session Tabs -->
+<!-- Requisition Tabs -->
 <div class="flex gap-2 mb-3 overflow-x-auto pb-1" id="rqSessionTabs">
-    <button class="text-xs font-semibold px-3 py-1.5 rounded-full bg-orange-500 text-white whitespace-nowrap" id="rqNewSessionBtn" onclick="rqCreateSession()">+ New Session</button>
+    <button class="text-xs font-semibold px-3 py-1.5 rounded-full bg-orange-500 text-white whitespace-nowrap" id="rqNewSessionBtn" onclick="rqCreateSession()">+ New Requisition</button>
 </div>
 
-<!-- Active Session Card -->
+<!-- Active Requisition Card -->
 <div id="rqSessionCard" class="hidden">
-    <!-- Meal Selector -->
+    <!-- Type Selector (loaded from DB) -->
     <div class="bg-white rounded-xl border border-gray-200 p-3 mb-3">
-        <label class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Meals</label>
+        <label class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Type</label>
         <div class="flex flex-wrap gap-2" id="rqMealPills">
-            <button onclick="rqToggleMeal('full_day')" data-meal="full_day" class="meal-pill text-xs font-medium px-3 py-1.5 rounded-full border border-gray-200 text-gray-500 transition">Full Day</button>
-            <button onclick="rqToggleMeal('breakfast')" data-meal="breakfast" class="meal-pill text-xs font-medium px-3 py-1.5 rounded-full border border-gray-200 text-gray-500 transition">Breakfast</button>
-            <button onclick="rqToggleMeal('lunch')" data-meal="lunch" class="meal-pill text-xs font-medium px-3 py-1.5 rounded-full border border-gray-200 text-gray-500 transition">Lunch</button>
-            <button onclick="rqToggleMeal('dinner')" data-meal="dinner" class="meal-pill text-xs font-medium px-3 py-1.5 rounded-full border border-gray-200 text-gray-500 transition">Dinner</button>
-            <button onclick="rqToggleMeal('picnic')" data-meal="picnic" class="meal-pill text-xs font-medium px-3 py-1.5 rounded-full border border-gray-200 text-gray-500 transition">Picnic</button>
+            <span class="text-[10px] text-gray-400">Loading types...</span>
         </div>
     </div>
 
@@ -65,7 +61,7 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
     <!-- Items by Category -->
     <div id="rqItemList"></div>
 
-    <!-- Status Banner (for submitted/fulfilled sessions) -->
+    <!-- Status Banner (for submitted/fulfilled requisitions) -->
     <div id="rqStatusBanner" class="hidden"></div>
 </div>
 
@@ -74,7 +70,7 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
     <div class="w-14 h-14 bg-orange-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
     </div>
-    <p class="text-sm text-gray-500 mb-3">No sessions for this date</p>
+    <p class="text-sm text-gray-500 mb-3">No requisitions for this date</p>
     <button onclick="rqCreateSession()" class="bg-orange-500 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition">
         + New Requisition
     </button>
@@ -105,12 +101,14 @@ let rqLines = {}; // { itemId: { portions, direct_kg, meal } }
 let rqSelectedMeals = ['lunch'];
 let rqGuestCount = 20;
 let rqCollapsed = {}; // category collapse state
+let rqTypes = []; // loaded from DB
 
 const RQ_MAX_DAYS_AHEAD = 7;
 const RQ_KITCHEN_ID = <?= (int)$kitchenId ?>;
 
 // ── Init ──
 rqRenderDate();
+rqLoadTypes();
 rqLoadSessions();
 rqLoadItems();
 
@@ -196,7 +194,7 @@ function rqRenderSessionTabs() {
         };
         const color = isActive ? 'bg-orange-500 text-white' : (statusColors[s.status] || 'bg-gray-100 text-gray-700');
         html += `<button onclick="rqLoadSession(${s.id})" class="text-xs font-semibold px-3 py-1.5 rounded-full ${color} whitespace-nowrap transition">
-            Session ${s.session_number}
+            Req ${s.session_number}
             ${s.status !== 'draft' ? `<span class="text-[9px] opacity-75 ml-1">${s.status}</span>` : ''}
         </button>`;
     });
@@ -215,12 +213,12 @@ async function rqCreateSession() {
                 meals: rqSelectedMeals
             })
         });
-        showToast('Session created', 'success');
-        voice.sessionCreated(data.session_number);
+        showToast('Requisition created', 'success');
+        voice.requisitionCreated(data.session_number);
         await rqLoadSessions();
         rqLoadSession(data.requisition_id);
     } catch (e) {
-        showToast(e.message || 'Failed to create session', 'error');
+        showToast(e.message || 'Failed to create requisition', 'error');
     }
 }
 
@@ -259,11 +257,32 @@ async function rqLoadSession(sessionId) {
         document.getElementById('rqBottomBar').classList.toggle('hidden', !isDraft);
 
     } catch (e) {
-        showToast('Failed to load session', 'error');
+        showToast('Failed to load requisition', 'error');
     }
 }
 
-// ── Meals ──
+// ── Types ──
+async function rqLoadTypes() {
+    try {
+        const data = await cachedApi('api/requisition-types.php?action=list', 600000);
+        rqTypes = data.types || [];
+        rqRenderTypePills();
+    } catch(e) {
+        // Fallback defaults
+        rqTypes = [{code:'lunch',name:'Lunch'},{code:'dinner',name:'Dinner'},{code:'breakfast',name:'Breakfast'}];
+        rqRenderTypePills();
+    }
+}
+
+function rqRenderTypePills() {
+    const container = document.getElementById('rqMealPills');
+    if (!rqTypes.length) { container.innerHTML = '<span class="text-[10px] text-gray-400">No types configured</span>'; return; }
+    container.innerHTML = rqTypes.map(t =>
+        `<button onclick="rqToggleMeal('${t.code}')" data-meal="${t.code}" class="meal-pill text-xs font-medium px-3 py-1.5 rounded-full border border-gray-200 text-gray-500 transition">${t.name}</button>`
+    ).join('');
+    rqUpdateMealPills();
+}
+
 function rqToggleMeal(meal) {
     if (!rqActiveSession || rqActiveSession.status !== 'draft') return;
     const idx = rqSelectedMeals.indexOf(meal);
@@ -530,7 +549,7 @@ async function rqShowReceiptSheet() {
     const lines = data.lines || [];
 
     let html = `<div class="p-4">
-        <h3 class="text-sm font-semibold text-gray-800 mb-3">Confirm Receipt — Session ${rqActiveSession.session_number}</h3>
+        <h3 class="text-sm font-semibold text-gray-800 mb-3">Confirm Receipt — Requisition ${rqActiveSession.session_number}</h3>
         <div class="space-y-2 max-h-[55vh] overflow-y-auto">`;
 
     lines.forEach(l => {
