@@ -27,7 +27,7 @@ $kitchenId = $user['kitchen_id'] ?? 0;
 <div class="grid grid-cols-2 gap-3 mb-4">
     <div class="bg-white border border-gray-200 rounded-xl p-3">
         <div class="text-2xl font-bold text-gray-800" id="rpTotalSessions">—</div>
-        <div class="text-[10px] text-gray-400">Total Sessions</div>
+        <div class="text-[10px] text-gray-400">Total Requisitions</div>
     </div>
     <div class="bg-white border border-gray-200 rounded-xl p-3">
         <div class="text-2xl font-bold text-orange-600" id="rpTotalKg">—</div>
@@ -126,7 +126,7 @@ async function rpLoad() {
                 html += `<div class="bg-white border border-gray-100 rounded-lg px-3 py-2">
                     <div class="flex items-center justify-between text-xs mb-1">
                         <span class="text-gray-700 font-medium">${formatDate(d.date)}</span>
-                        <span class="text-gray-500">${d.sessions} sessions &bull; ${d.kg.toFixed(1)} kg</span>
+                        <span class="text-gray-500">${d.sessions} requisitions &bull; ${d.kg.toFixed(1)} kg</span>
                     </div>
                     <div class="w-full bg-gray-100 rounded-full h-1.5">
                         <div class="bg-orange-500 h-1.5 rounded-full transition-all" style="width: ${pct}%"></div>
