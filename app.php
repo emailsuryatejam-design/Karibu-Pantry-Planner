@@ -69,7 +69,7 @@ $isAdminRole = isAdmin();
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="assets/app.css">
-    <script src="assets/app.js"></script>
+    <script src="assets/app.js?v=<?= filemtime(__DIR__ . '/assets/app.js') ?>"></script>
 </head>
 <body class="bg-gray-50 font-sans">
     <!-- Top Bar -->

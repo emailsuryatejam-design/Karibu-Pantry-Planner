@@ -72,6 +72,34 @@ switch ($action) {
         $guestCount = (int)($data['guest_count'] ?? 20);
         if (!$kid) jsonError('Kitchen ID required');
 
+        // One-time self-healing: add UNIQUE constraint + clean old duplicates if not already done
+        $migrated = cacheGet('uk_migration_done', 86400 * 365);
+        if (!$migrated) {
+            try {
+                // Check if UNIQUE key already exists
+                $indexes = $db->query("SHOW INDEX FROM requisitions WHERE Key_name = 'uk_kitchen_date_meals'")->fetchAll();
+                if (empty($indexes)) {
+                    // Delete duplicate draft requisitions (keep lowest ID per group)
+                    $dupes = $db->query("SELECT kitchen_id, req_date, meals, GROUP_CONCAT(id ORDER BY id) AS ids, COUNT(*) AS cnt FROM requisitions GROUP BY kitchen_id, req_date, meals HAVING COUNT(*) > 1")->fetchAll();
+                    foreach ($dupes as $dupe) {
+                        $allIds = explode(',', $dupe['ids']);
+                        $keepId = array_shift($allIds); // keep lowest
+                        if (!empty($allIds)) {
+                            $ph = implode(',', array_map('intval', $allIds));
+                            $db->exec("DELETE FROM requisition_lines WHERE requisition_id IN ($ph)");
+                            $db->exec("DELETE FROM requisition_dishes WHERE requisition_id IN ($ph)");
+                            $db->exec("DELETE FROM requisitions WHERE id IN ($ph)");
+                        }
+                    }
+                    $db->exec("ALTER TABLE requisitions ADD UNIQUE KEY uk_kitchen_date_meals (kitchen_id, req_date, meals)");
+                }
+                cacheSet('uk_migration_done', true);
+            } catch (Exception $e) {
+                // Constraint might already exist — that's fine, cache it
+                cacheSet('uk_migration_done', true);
+            }
+        }
+
         // Get active types
         $types = $db->query("SELECT id, name, code, sort_order FROM requisition_types WHERE is_active = 1 ORDER BY sort_order, name")->fetchAll();
 
