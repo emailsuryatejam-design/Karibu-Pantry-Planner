@@ -692,8 +692,8 @@ switch ($action) {
             if (!isset($kept[$type])) {
                 $kept[$type] = $r['id']; // Keep first one
             } else {
-                // Duplicate — only delete if it's an empty draft
-                if ($r['status'] === 'draft' && (int)$r['line_count'] === 0) {
+                // Duplicate — delete if it's a draft (even with lines, since they can be regenerated)
+                if ($r['status'] === 'draft') {
                     $toDelete[] = (int)$r['id'];
                 }
             }

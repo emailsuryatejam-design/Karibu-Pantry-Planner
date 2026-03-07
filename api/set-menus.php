@@ -187,7 +187,7 @@ switch ($action) {
         foreach ($srcDishes as $d) {
             $tc = $typeCode ?: $d['type_code'];
             $insertStmt->execute([$toDay, $tc, $d['recipe_id'], $d['recipe_name'], $d['sort_order']]);
-            if ($db->rowCount() > 0) $inserted++;
+            if ($insertStmt->rowCount() > 0) $inserted++;
         }
 
         auditLog('set_menu_copy_day', 'set_menu', null, null, [
