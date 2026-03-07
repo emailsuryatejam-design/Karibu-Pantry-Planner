@@ -69,6 +69,20 @@
     </div>
 
     <?php if (isAdmin()): ?>
+    <!-- Meal Types Management (Admin only) -->
+    <div class="bg-white rounded-xl border border-gray-100 p-5">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold text-sm text-gray-800">Meal Types</h3>
+            <button onclick="showAddMealType()"
+                class="px-3 py-1.5 bg-orange-600 text-white text-xs font-medium rounded-lg active:bg-orange-700">
+                + Add Type
+            </button>
+        </div>
+        <div id="mealTypesList" class="space-y-2">
+            <p class="text-xs text-gray-400 text-center py-4">Loading...</p>
+        </div>
+    </div>
+
     <!-- User Management (Admin only) -->
     <div class="bg-white rounded-xl border border-gray-100 p-5">
         <div class="flex items-center justify-between mb-4">
@@ -412,5 +426,169 @@ async function deleteUser(id, name) {
 
 // Init
 loadUsers();
+
+// ── Meal Types Management ──
+let mealTypesData = [];
+
+async function loadMealTypes() {
+    try {
+        const data = await api('api/requisition-types.php?action=list_all');
+        mealTypesData = data.types || [];
+        renderMealTypes();
+    } catch (err) {
+        document.getElementById('mealTypesList').innerHTML =
+            `<p class="text-xs text-red-500 text-center py-4">${escHtml(err.message)}</p>`;
+    }
+}
+
+function renderMealTypes() {
+    const list = document.getElementById('mealTypesList');
+    if (mealTypesData.length === 0) {
+        list.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No meal types configured</p>';
+        return;
+    }
+
+    list.innerHTML = mealTypesData.map((t, idx) => `
+        <div class="flex items-center justify-between py-2.5 px-3 rounded-lg ${t.is_active == 1 ? 'bg-gray-50' : 'bg-red-50 opacity-60'}">
+            <div class="flex items-center gap-3 min-w-0">
+                <div class="flex flex-col gap-0.5">
+                    ${idx > 0 ? `<button onclick="moveMealType(${t.id}, 'up')" class="text-gray-400 hover:text-orange-600 leading-none"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m18 15-6-6-6 6"/></svg></button>` : '<div class="h-3"></div>'}
+                    ${idx < mealTypesData.length - 1 ? `<button onclick="moveMealType(${t.id}, 'down')" class="text-gray-400 hover:text-orange-600 leading-none"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg></button>` : '<div class="h-3"></div>'}
+                </div>
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-800 truncate">${escHtml(t.name)}</p>
+                    <p class="text-[10px] text-gray-400">${escHtml(t.code)}${t.is_active != 1 ? ' · inactive' : ''}</p>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <label class="relative inline-flex cursor-pointer">
+                    <input type="checkbox" ${t.is_active == 1 ? 'checked' : ''} onchange="toggleMealType(${t.id})" class="sr-only peer">
+                    <div class="w-8 h-4 bg-gray-200 peer-checked:bg-green-500 rounded-full after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:after:translate-x-full"></div>
+                </label>
+                <button onclick="showEditMealType(${t.id})" class="p-1.5 text-gray-400 hover:text-orange-600 rounded">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></svg>
+                </button>
+            </div>
+        </div>
+    `).join('');
+}
+
+function showAddMealType() {
+    openSheet(`
+        <div class="p-4">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">Add Meal Type</h3>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-xs font-medium text-gray-600 mb-1 block">Name</label>
+                    <input type="text" id="mtName" placeholder="e.g. Lunchboxes"
+                        class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-medium text-gray-600 mb-1 block">Code (auto-generated if blank)</label>
+                    <input type="text" id="mtCode" placeholder="e.g. lunchboxes"
+                        class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm">
+                </div>
+                <button onclick="saveMealType(0)" id="mtSaveBtn"
+                    class="w-full py-3 bg-orange-600 text-white text-sm font-semibold rounded-xl active:bg-orange-700 mt-2">
+                    Add Meal Type
+                </button>
+            </div>
+        </div>
+    `);
+}
+
+function showEditMealType(id) {
+    const t = mealTypesData.find(x => x.id == id);
+    if (!t) return;
+
+    openSheet(`
+        <div class="p-4">
+            <h3 class="text-lg font-bold text-gray-800 mb-4">Edit Meal Type</h3>
+            <div class="space-y-3">
+                <div>
+                    <label class="text-xs font-medium text-gray-600 mb-1 block">Name</label>
+                    <input type="text" id="mtName" value="${escHtml(t.name)}"
+                        class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm">
+                </div>
+                <div>
+                    <label class="text-xs font-medium text-gray-600 mb-1 block">Code</label>
+                    <input type="text" id="mtCode" value="${escHtml(t.code)}"
+                        class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm">
+                </div>
+                <div class="flex items-center justify-between py-2">
+                    <span class="text-sm text-gray-700">Active</span>
+                    <label class="relative inline-flex cursor-pointer">
+                        <input type="checkbox" id="mtActive" ${t.is_active == 1 ? 'checked' : ''} class="sr-only peer">
+                        <div class="w-9 h-5 bg-gray-200 peer-checked:bg-green-500 rounded-full peer-focus:ring-2 peer-focus:ring-green-300 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>
+                    </label>
+                </div>
+                <button onclick="saveMealType(${t.id})" id="mtSaveBtn"
+                    class="w-full py-3 bg-orange-600 text-white text-sm font-semibold rounded-xl active:bg-orange-700">
+                    Save Changes
+                </button>
+            </div>
+        </div>
+    `);
+}
+
+async function saveMealType(id) {
+    const name = document.getElementById('mtName')?.value.trim();
+    const code = document.getElementById('mtCode')?.value.trim();
+    if (!name) { showToast('Name is required', 'warning'); return; }
+
+    const body = { name, code };
+    if (id > 0) {
+        body.id = id;
+        const t = mealTypesData.find(x => x.id == id);
+        body.sort_order = t ? t.sort_order : 0;
+        body.is_active = document.getElementById('mtActive')?.checked ? 1 : 0;
+    }
+
+    const btn = document.getElementById('mtSaveBtn');
+    setLoading(btn, true);
+    try {
+        await api('api/requisition-types.php?action=save', { method: 'POST', body });
+        showToast(id ? 'Meal type updated!' : 'Meal type added!', 'success');
+        closeSheet();
+        loadMealTypes();
+    } catch (err) {
+        showToast(err.message, 'error');
+        setLoading(btn, false);
+    }
+}
+
+async function toggleMealType(id) {
+    try {
+        await api('api/requisition-types.php?action=toggle_active', { method: 'POST', body: { id } });
+        loadMealTypes();
+    } catch (err) {
+        showToast(err.message, 'error');
+        loadMealTypes();
+    }
+}
+
+async function moveMealType(id, direction) {
+    const idx = mealTypesData.findIndex(x => x.id == id);
+    if (idx < 0) return;
+    const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+    if (swapIdx < 0 || swapIdx >= mealTypesData.length) return;
+
+    // Swap sort_order values
+    const items = mealTypesData.map((t, i) => {
+        let sortOrder = t.sort_order;
+        if (i === idx) sortOrder = mealTypesData[swapIdx].sort_order;
+        if (i === swapIdx) sortOrder = mealTypesData[idx].sort_order;
+        return { id: t.id, sort_order: sortOrder };
+    });
+
+    try {
+        await api('api/requisition-types.php?action=reorder', { method: 'POST', body: { items } });
+        loadMealTypes();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+loadMealTypes();
 </script>
 <?php endif; ?>
