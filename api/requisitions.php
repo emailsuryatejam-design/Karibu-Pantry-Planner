@@ -55,6 +55,58 @@ switch ($action) {
 
         jsonResponse(['requisition' => $req, 'lines' => $lineData]);
 
+    // ── Auto-create requisitions for all active types on a date ──
+    case 'auto_create_for_date':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+
+        $reqDate = $data['req_date'] ?? date('Y-m-d');
+        $kid = (int)($data['kitchen_id'] ?? $kitchenId);
+        $guestCount = (int)($data['guest_count'] ?? 20);
+        if (!$kid) jsonError('Kitchen ID required');
+
+        // Get active types
+        $types = $db->query("SELECT id, name, code, sort_order FROM requisition_types WHERE is_active = 1 ORDER BY sort_order, name")->fetchAll();
+        if (empty($types)) jsonError('No requisition types configured. Ask admin to add types.');
+
+        // Check which types already have a requisition for this date/kitchen
+        $existing = $db->prepare("SELECT meals FROM requisitions WHERE req_date = ? AND kitchen_id = ?");
+        $existing->execute([$reqDate, $kid]);
+        $existingTypes = array_column($existing->fetchAll(), 'meals');
+
+        $created = 0;
+        $insertStmt = $db->prepare("INSERT INTO requisitions (kitchen_id, req_date, session_number, guest_count, meals, status, created_by) VALUES (?, ?, ?, ?, ?, 'draft', ?)");
+
+        // Get current max session number
+        $maxStmt = $db->prepare("SELECT COALESCE(MAX(session_number), 0) FROM requisitions WHERE req_date = ? AND kitchen_id = ?");
+        $maxStmt->execute([$reqDate, $kid]);
+        $sessionNum = (int)$maxStmt->fetchColumn();
+
+        foreach ($types as $type) {
+            if (in_array($type['code'], $existingTypes)) continue; // Already exists
+            $sessionNum++;
+            $insertStmt->execute([$kid, $reqDate, $sessionNum, $guestCount, $type['code'], $user['id']]);
+            $created++;
+        }
+
+        if ($created > 0) {
+            auditLog('requisition_auto_create', 'requisition', null, null, [
+                'date' => $reqDate, 'kitchen_id' => $kid, 'created' => $created
+            ]);
+        }
+
+        // Return all requisitions for this date
+        $stmt = $db->prepare("SELECT r.*, u.name AS chef_name,
+            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
+            FROM requisitions r LEFT JOIN users u ON u.id = r.created_by
+            WHERE r.req_date = ? AND r.kitchen_id = ?
+            ORDER BY r.session_number ASC");
+        $stmt->execute([$reqDate, $kid]);
+        $reqs = $stmt->fetchAll();
+
+        jsonResponse(['requisitions' => $reqs, 'created' => $created]);
+
     // ── Create new draft requisition ──
     case 'create':
         requireMethod('POST');

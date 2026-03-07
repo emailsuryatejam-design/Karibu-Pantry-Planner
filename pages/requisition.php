@@ -1,7 +1,8 @@
 <?php
 /**
  * Karibu Pantry Planner — Requisition Page
- * Chef picks dishes (recipes) and ingredients auto-populate from recipe
+ * Auto-creates one requisition per type (Breakfast, Lunch, Dinner, etc.)
+ * Chef picks dishes (recipes) and ingredients auto-populate
  */
 $user = currentUser();
 $kitchenId = $user['kitchen_id'] ?? 0;
@@ -22,19 +23,20 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
     </button>
 </div>
 
-<!-- Requisition Tabs -->
+<!-- Requisition Type Tabs (auto-created per type) -->
 <div class="flex gap-2 mb-3 overflow-x-auto pb-1" id="rqSessionTabs">
-    <button class="text-xs font-semibold px-3 py-1.5 rounded-full bg-orange-500 text-white whitespace-nowrap" onclick="rqCreateSession()">+ New Requisition</button>
+    <span class="text-[10px] text-gray-400 py-2">Loading...</span>
 </div>
 
 <!-- Active Requisition Card -->
 <div id="rqSessionCard" class="hidden">
-    <!-- Type Selector -->
-    <div class="bg-white rounded-xl border border-gray-200 p-3 mb-3">
-        <label class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Type</label>
-        <div class="flex flex-wrap gap-2" id="rqMealPills">
-            <span class="text-[10px] text-gray-400">Loading types...</span>
+    <!-- Type Header -->
+    <div class="bg-white rounded-xl border border-gray-200 px-3 py-2.5 mb-3 flex items-center justify-between">
+        <div>
+            <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider" id="rqTypeLabel">Requisition</div>
+            <div class="text-sm font-bold text-gray-800" id="rqTypeName"></div>
         </div>
+        <div id="rqStatusPill"></div>
     </div>
 
     <!-- Guest Count -->
@@ -45,8 +47,6 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
         </div>
         <div class="flex items-center gap-2">
             <button onclick="rqAdjGuests(-5)" class="w-9 h-9 rounded-lg bg-gray-100 text-gray-600 font-bold text-lg flex items-center justify-center hover:bg-gray-200">-</button>
-            <button onclick="rqAdjGuests(-1)" class="w-9 h-9 rounded-lg bg-gray-50 text-gray-500 font-medium flex items-center justify-center hover:bg-gray-100">-1</button>
-            <button onclick="rqAdjGuests(1)" class="w-9 h-9 rounded-lg bg-gray-50 text-gray-500 font-medium flex items-center justify-center hover:bg-gray-100">+1</button>
             <button onclick="rqAdjGuests(5)" class="w-9 h-9 rounded-lg bg-orange-100 text-orange-600 font-bold text-lg flex items-center justify-center hover:bg-orange-200">+</button>
         </div>
     </div>
@@ -70,17 +70,6 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
     <div id="rqStatusBanner" class="hidden"></div>
 </div>
 
-<!-- Empty State -->
-<div id="rqEmptyState" class="text-center py-12">
-    <div class="w-14 h-14 bg-orange-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
-    </div>
-    <p class="text-sm text-gray-500 mb-3">No requisitions for this date</p>
-    <button onclick="rqCreateSession()" class="bg-orange-500 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition">
-        + New Requisition
-    </button>
-</div>
-
 <!-- Sticky Bottom Bar -->
 <div id="rqBottomBar" class="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2.5 z-40 hidden">
     <div class="max-w-2xl mx-auto flex items-center justify-between">
@@ -100,13 +89,12 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
 let rqDate = todayStr();
 let rqSessions = [];
 let rqActiveSession = null;
-let rqSelectedMeals = ['lunch'];
 let rqGuestCount = 20;
 let rqTypes = [];
 
 // Dish state
-let rqDishes = {};             // { recipeId: { recipe_id, recipe_name, recipe_servings, ingredients[] } }
-let rqAggregatedItems = {};    // { itemId: { item_name, total_qty, total_qty_raw, uom, stock_qty, order_mode, category, adjustment, sources[] } }
+let rqDishes = {};
+let rqAggregatedItems = {};
 let rqDishSearchResults = [];
 
 const RQ_MAX_DAYS_AHEAD = 7;
@@ -114,10 +102,15 @@ const RQ_KITCHEN_ID = <?= (int)$kitchenId ?>;
 
 // ── Init ──
 rqRenderDate();
-rqLoadTypes();
-rqLoadSessions();
+rqInit();
 
 const rqSearchDishesDebounced = debounce(() => rqSearchDishes(), 350);
+
+async function rqInit() {
+    // Load types first, then sessions (which auto-creates if needed)
+    await rqLoadTypes();
+    await rqLoadSessions();
+}
 
 // ── Date Navigation ──
 function rqNavDate(days) {
@@ -162,69 +155,91 @@ function rqShowDatePicker() {
     openSheet(html);
 }
 
+// ── Types ──
+async function rqLoadTypes() {
+    try {
+        const data = await cachedApi('api/requisition-types.php?action=list', 600000);
+        rqTypes = data.types || [];
+    } catch(e) {
+        rqTypes = [{code:'lunch',name:'Lunch'},{code:'dinner',name:'Dinner'},{code:'breakfast',name:'Breakfast'}];
+    }
+}
+
+// Get type name from code
+function rqTypeName(code) {
+    const t = rqTypes.find(t => t.code === code);
+    return t ? t.name : code;
+}
+
 // ── Sessions ──
 async function rqLoadSessions() {
     try {
-        const data = await api(`api/requisitions.php?action=list&date=${rqDate}&kitchen_id=${RQ_KITCHEN_ID}`);
+        // First try listing existing
+        let data = await api(`api/requisitions.php?action=list&date=${rqDate}&kitchen_id=${RQ_KITCHEN_ID}`);
         rqSessions = data.requisitions || [];
+
+        // Auto-create if none exist for this date
+        if (rqSessions.length === 0) {
+            try {
+                data = await api('api/requisitions.php?action=auto_create_for_date', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        req_date: rqDate,
+                        kitchen_id: RQ_KITCHEN_ID,
+                        guest_count: rqGuestCount
+                    })
+                });
+                rqSessions = data.requisitions || [];
+            } catch (e) {
+                showToast(e.message || 'Failed to create requisitions', 'error');
+            }
+        }
+
         rqRenderSessionTabs();
 
         if (rqSessions.length > 0) {
-            rqLoadSession(rqSessions[rqSessions.length - 1].id);
+            // Load first session by default
+            rqLoadSession(rqSessions[0].id);
         } else {
             rqActiveSession = null;
-            rqDishes = {};
-            rqAggregatedItems = {};
             document.getElementById('rqSessionCard').classList.add('hidden');
-            document.getElementById('rqEmptyState').classList.remove('hidden');
             document.getElementById('rqBottomBar').classList.add('hidden');
         }
     } catch (e) {
-        showToast('Failed to load sessions', 'error');
+        showToast('Failed to load requisitions', 'error');
     }
 }
 
 function rqRenderSessionTabs() {
     const container = document.getElementById('rqSessionTabs');
+    if (!rqSessions.length) {
+        container.innerHTML = '<span class="text-[10px] text-gray-400 py-2">No types configured</span>';
+        return;
+    }
+
     let html = '';
     rqSessions.forEach(s => {
         const isActive = rqActiveSession && rqActiveSession.id === s.id;
+        const typeName = rqTypeName(s.meals);
+        const hasLines = parseInt(s.line_count) > 0;
+
         const statusColors = {
-            draft: 'bg-gray-100 text-gray-700',
-            submitted: 'bg-blue-100 text-blue-700',
-            processing: 'bg-amber-100 text-amber-700',
-            fulfilled: 'bg-green-100 text-green-700',
-            received: 'bg-green-100 text-green-700',
-            closed: 'bg-gray-200 text-gray-500'
+            draft: hasLines ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-gray-100 text-gray-700 border-gray-200',
+            submitted: 'bg-blue-100 text-blue-700 border-blue-200',
+            processing: 'bg-amber-100 text-amber-700 border-amber-200',
+            fulfilled: 'bg-green-100 text-green-700 border-green-200',
+            received: 'bg-green-100 text-green-700 border-green-200',
+            closed: 'bg-gray-200 text-gray-500 border-gray-300'
         };
-        const color = isActive ? 'bg-orange-500 text-white' : (statusColors[s.status] || 'bg-gray-100 text-gray-700');
-        html += `<button onclick="rqLoadSession(${s.id})" class="text-xs font-semibold px-3 py-1.5 rounded-full ${color} whitespace-nowrap transition">
-            Req ${s.session_number}
-            ${s.status !== 'draft' ? `<span class="text-[9px] opacity-75 ml-1">${s.status}</span>` : ''}
+        const color = isActive ? 'bg-orange-500 text-white border-orange-500' : (statusColors[s.status] || 'bg-gray-100 text-gray-700 border-gray-200');
+
+        html += `<button onclick="rqLoadSession(${s.id})" class="text-xs font-semibold px-3 py-1.5 rounded-full border ${color} whitespace-nowrap transition">
+            ${typeName}
+            ${s.status !== 'draft' ? `<span class="text-[9px] opacity-75 ml-0.5">&#10003;</span>` : ''}
         </button>`;
     });
-    html += `<button class="text-xs font-semibold px-3 py-1.5 rounded-full bg-orange-100 text-orange-600 whitespace-nowrap hover:bg-orange-200 transition" onclick="rqCreateSession()">+ New</button>`;
-    container.innerHTML = html;
-}
 
-async function rqCreateSession() {
-    try {
-        const data = await api('api/requisitions.php?action=create', {
-            method: 'POST',
-            body: JSON.stringify({
-                req_date: rqDate,
-                kitchen_id: RQ_KITCHEN_ID,
-                guest_count: rqGuestCount,
-                meals: rqSelectedMeals
-            })
-        });
-        showToast('Requisition created', 'success');
-        voice.requisitionCreated(data.session_number);
-        await rqLoadSessions();
-        rqLoadSession(data.requisition_id);
-    } catch (e) {
-        showToast(e.message || 'Failed to create requisition', 'error');
-    }
+    container.innerHTML = html;
 }
 
 async function rqLoadSession(sessionId) {
@@ -236,8 +251,19 @@ async function rqLoadSession(sessionId) {
         // Restore state
         rqGuestCount = rqActiveSession.guest_count || 20;
         document.getElementById('rqGuestCount').textContent = rqGuestCount;
-        rqSelectedMeals = (rqActiveSession.meals || 'lunch').split(',').map(m => m.trim());
-        rqUpdateMealPills();
+
+        // Show type name
+        const typeName = rqTypeName(rqActiveSession.meals);
+        document.getElementById('rqTypeName').textContent = typeName;
+
+        // Status pill
+        const statusPill = document.getElementById('rqStatusPill');
+        if (rqActiveSession.status === 'draft') {
+            statusPill.innerHTML = '<span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">Draft</span>';
+        } else {
+            const sc = {submitted:'bg-blue-100 text-blue-700',processing:'bg-amber-100 text-amber-700',fulfilled:'bg-green-100 text-green-700',received:'bg-green-100 text-green-700',closed:'bg-gray-200 text-gray-500'};
+            statusPill.innerHTML = `<span class="text-[10px] ${sc[rqActiveSession.status] || ''} px-2 py-0.5 rounded-full font-medium capitalize">${rqActiveSession.status}</span>`;
+        }
 
         // Reset dish state
         rqDishes = {};
@@ -269,7 +295,7 @@ async function rqLoadSession(sessionId) {
 
             rqRecalcAggregated();
 
-            // Restore adjustments from saved lines
+            // Restore adjustments
             lines.forEach(l => {
                 const agg = rqAggregatedItems[l.item_id];
                 if (agg) {
@@ -281,11 +307,10 @@ async function rqLoadSession(sessionId) {
                 }
             });
         } catch {
-            // No dishes saved yet — fresh requisition
+            // No dishes saved yet
         }
 
         document.getElementById('rqSessionCard').classList.remove('hidden');
-        document.getElementById('rqEmptyState').classList.add('hidden');
         rqRenderSessionTabs();
         rqRenderStatusBanner();
         rqRenderDishView();
@@ -299,47 +324,6 @@ async function rqLoadSession(sessionId) {
     } catch (e) {
         showToast('Failed to load requisition', 'error');
     }
-}
-
-// ── Types ──
-async function rqLoadTypes() {
-    try {
-        const data = await cachedApi('api/requisition-types.php?action=list', 600000);
-        rqTypes = data.types || [];
-        rqRenderTypePills();
-    } catch(e) {
-        rqTypes = [{code:'lunch',name:'Lunch'},{code:'dinner',name:'Dinner'},{code:'breakfast',name:'Breakfast'}];
-        rqRenderTypePills();
-    }
-}
-
-function rqRenderTypePills() {
-    const container = document.getElementById('rqMealPills');
-    if (!rqTypes.length) { container.innerHTML = '<span class="text-[10px] text-gray-400">No types configured</span>'; return; }
-    container.innerHTML = rqTypes.map(t =>
-        `<button onclick="rqToggleMeal('${t.code}')" data-meal="${t.code}" class="meal-pill text-xs font-medium px-3 py-1.5 rounded-full border border-gray-200 text-gray-500 transition">${t.name}</button>`
-    ).join('');
-    rqUpdateMealPills();
-}
-
-function rqToggleMeal(meal) {
-    if (!rqActiveSession || rqActiveSession.status !== 'draft') return;
-    const idx = rqSelectedMeals.indexOf(meal);
-    if (idx >= 0) {
-        if (rqSelectedMeals.length <= 1) return;
-        rqSelectedMeals.splice(idx, 1);
-    } else {
-        rqSelectedMeals.push(meal);
-    }
-    rqUpdateMealPills();
-}
-
-function rqUpdateMealPills() {
-    document.querySelectorAll('.meal-pill').forEach(btn => {
-        const meal = btn.dataset.meal;
-        const active = rqSelectedMeals.includes(meal);
-        btn.className = `meal-pill text-xs font-medium px-3 py-1.5 rounded-full border transition ${active ? 'bg-orange-500 text-white border-orange-500' : 'border-gray-200 text-gray-500'}`;
-    });
 }
 
 // ── Guests ──
@@ -428,7 +412,6 @@ async function rqAddDish(recipeId) {
         rqRenderDishResults();
         rqUpdateSummary();
 
-        // Clear search
         document.getElementById('rqDishSearch').value = '';
         document.getElementById('rqDishResults').classList.add('hidden');
 
@@ -494,11 +477,15 @@ function rqRenderSelectedDishes(isDraft) {
     const dishList = Object.values(rqDishes);
 
     if (dishList.length === 0) {
-        container.innerHTML = `<div class="bg-white rounded-xl border border-dashed border-gray-300 p-6 text-center">
-            <div class="text-2xl mb-2">&#127858;</div>
-            <p class="text-sm text-gray-500 mb-1">No dishes selected yet</p>
-            <p class="text-[10px] text-gray-400">Search and add dishes above to auto-fill ingredients</p>
-        </div>`;
+        if (isDraft) {
+            container.innerHTML = `<div class="bg-white rounded-xl border border-dashed border-gray-300 p-6 text-center">
+                <div class="text-2xl mb-2">&#127858;</div>
+                <p class="text-sm text-gray-500 mb-1">No dishes selected yet</p>
+                <p class="text-[10px] text-gray-400">Search and add dishes above to auto-fill ingredients</p>
+            </div>`;
+        } else {
+            container.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">No dishes were added</p>';
+        }
         return;
     }
 
@@ -538,7 +525,6 @@ function rqRenderAggregatedItemsList(isDraft) {
         return;
     }
 
-    // Group by category
     const grouped = {};
     items.forEach(([itemId, agg]) => {
         const cat = agg.category || 'Other';
@@ -671,9 +657,10 @@ async function rqShowReceiptSheet() {
     if (!rqActiveSession) return;
     const data = await api(`api/requisitions.php?action=get&id=${rqActiveSession.id}`);
     const lines = data.lines || [];
+    const typeName = rqTypeName(rqActiveSession.meals);
 
     let html = `<div class="p-4">
-        <h3 class="text-sm font-semibold text-gray-800 mb-3">Confirm Receipt — Requisition ${rqActiveSession.session_number}</h3>
+        <h3 class="text-sm font-semibold text-gray-800 mb-3">Confirm Receipt — ${typeName}</h3>
         <div class="space-y-2 max-h-[55vh] overflow-y-auto">`;
 
     lines.forEach(l => {
@@ -733,7 +720,6 @@ async function rqSaveAndSubmit() {
             return;
         }
 
-        // Build adjustments map
         const adjustments = {};
         for (const [itemId, agg] of Object.entries(rqAggregatedItems)) {
             if (agg.adjustment && Math.abs(agg.adjustment) > 0.01) {
@@ -755,13 +741,13 @@ async function rqSaveAndSubmit() {
             })
         });
 
-        // Submit
         await api('api/requisitions.php?action=submit', {
             method: 'POST',
             body: JSON.stringify({ requisition_id: rqActiveSession.id })
         });
 
-        showToast('Requisition submitted!', 'success');
+        const typeName = rqTypeName(rqActiveSession.meals);
+        showToast(`${typeName} requisition submitted!`, 'success');
         voice.orderSubmitted(rqActiveSession.session_number, '<?= addslashes($kitchenName) ?>');
         rqLoadSessions();
 
