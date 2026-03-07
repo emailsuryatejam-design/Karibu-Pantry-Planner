@@ -197,6 +197,10 @@ async function rLoadDetail(id) {
 
         // Actions
         html += `<div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 bg-gray-50/50">
+            <button onclick="rShowAddToOrder(${id}, '${escHtml(r.name).replace(/'/g, "\\'")}')" class="flex-1 text-xs text-blue-700 font-semibold bg-blue-50 py-2 rounded-lg compact-btn flex items-center justify-center gap-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
+                Add to Order
+            </button>
             <button onclick="rShowEdit(${id})" class="flex-1 text-xs text-orange-700 font-semibold bg-orange-50 py-2 rounded-lg compact-btn">Edit</button>
             <button onclick="rDeleteRecipe(${id}, '${r.name.replace(/'/g, "\\'")}')" class="text-xs text-red-600 font-medium bg-red-50 px-4 py-2 rounded-lg compact-btn">Delete</button>
         </div>`;
@@ -411,5 +415,75 @@ async function rRemoveIngredient(ingredientId, recipeId) {
         showToast('Ingredient removed');
         rLoadDetail(recipeId);
     } catch(e) { showToast(e.message || 'Failed', 'error'); }
+}
+
+// ═══════════════════════════════════════
+//  Add to Today's Order — from Recipes
+// ═══════════════════════════════════════
+const R_KITCHEN_ID = <?= (int)($user['kitchen_id'] ?? 0) ?>;
+
+async function rShowAddToOrder(recipeId, recipeName) {
+    // Load today's requisitions (auto-create if needed)
+    try {
+        const typeData = await cachedApi('api/requisition-types.php?action=list', 600000);
+        const types = typeData.types || [];
+
+        const today = todayStr();
+        const data = await api('api/requisitions.php?action=auto_create_for_date', {
+            method: 'POST',
+            body: JSON.stringify({ req_date: today, kitchen_id: R_KITCHEN_ID, guest_count: 20 })
+        });
+        const sessions = data.requisitions || [];
+        if (!sessions.length) { showToast('No requisitions found for today', 'error'); return; }
+
+        // Build meal type picker sheet
+        const getTypeName = (code) => {
+            const t = types.find(t => t.code === code);
+            return t ? t.name : code;
+        };
+
+        let html = `
+            <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
+            <div class="px-5 py-3 border-b border-gray-100">
+                <h3 class="text-sm font-bold text-gray-900">Add to Today's Order</h3>
+                <p class="text-[10px] text-gray-400 mt-0.5">${escHtml(recipeName)}</p>
+            </div>
+            <div class="px-5 py-4 space-y-2">
+                <p class="text-xs text-gray-500 mb-2">Pick a meal type:</p>`;
+
+        sessions.forEach(s => {
+            const name = escHtml(getTypeName(s.meals));
+            const statusLabel = s.status === 'draft' ? '' : `<span class="text-[9px] text-amber-600 ml-1">(${s.status})</span>`;
+            const disabled = s.status !== 'draft';
+            html += `<button onclick="rDoAddToOrder(${recipeId}, ${s.id}, '${name}')" ${disabled ? 'disabled' : ''}
+                class="w-full flex items-center justify-between px-4 py-3 rounded-xl border ${disabled ? 'border-gray-100 bg-gray-50 opacity-50' : 'border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-200'} transition">
+                <span class="text-sm font-semibold ${disabled ? 'text-gray-400' : 'text-gray-800'}">${name}${statusLabel}</span>
+                ${disabled ? '<span class="text-[10px] text-gray-400">Not editable</span>'
+                    : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>'}
+            </button>`;
+        });
+
+        html += `<p class="text-[10px] text-gray-400 text-center mt-3">Submit to store from the Order page</p></div>`;
+        openSheet(html);
+    } catch (e) {
+        showToast(e.message || 'Failed to load orders', 'error');
+    }
+}
+
+async function rDoAddToOrder(recipeId, requisitionId, typeName) {
+    try {
+        const data = await api('api/requisitions.php', {
+            method: 'POST',
+            body: JSON.stringify({ action: 'add_single_dish', requisition_id: requisitionId, recipe_id: recipeId })
+        });
+        closeSheet();
+        showToast(`Added to ${typeName} order`, 'success');
+    } catch (e) {
+        if (e.message && e.message.includes('already in that order')) {
+            showToast(`Already in ${typeName} order`, 'warning');
+        } else {
+            showToast(e.message || 'Failed to add', 'error');
+        }
+    }
 }
 </script>
