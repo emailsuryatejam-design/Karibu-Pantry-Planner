@@ -159,16 +159,22 @@ async function rLoadDetail(id) {
 
         // Ingredients
         html += `<div class="px-4 py-2 border-t border-gray-50">`;
-        html += `<h4 class="text-[10px] font-semibold text-gray-500 uppercase mb-2">Ingredients (${ings.length})</h4>`;
+        html += `<div class="flex items-center justify-between mb-2">
+            <h4 class="text-[10px] font-semibold text-gray-500 uppercase">Ingredients (${ings.length})</h4>
+            <button onclick="rShowAddIngredient(${id})" class="text-[10px] font-semibold text-orange-600 bg-orange-50 px-2 py-1 rounded-lg compact-btn hover:bg-orange-100 transition">+ Add</button>
+        </div>`;
         if (ings.length === 0) {
-            html += `<p class="text-xs text-gray-400">No ingredients yet</p>`;
+            html += `<p class="text-xs text-gray-400">No ingredients yet — add items from the pantry</p>`;
         } else {
-            html += `<div class="grid grid-cols-2 gap-x-4 gap-y-1">`;
+            html += `<div class="space-y-1">`;
             ings.forEach(ing => {
-                html += `<div class="flex items-center gap-2 py-1">
+                html += `<div class="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-50">
                     <span class="w-1.5 h-1.5 rounded-full shrink-0 ${ing.is_primary ? 'bg-orange-400' : 'bg-gray-300'}"></span>
                     <span class="text-xs text-gray-800 truncate flex-1">${ing.item_name}</span>
-                    <span class="text-[10px] text-gray-500 shrink-0">${ing.qty} ${ing.uom}</span>
+                    <span class="text-[10px] text-gray-500 shrink-0">${parseFloat(ing.qty)} ${ing.uom}</span>
+                    <button onclick="rRemoveIngredient(${ing.id}, ${id})" class="text-gray-300 hover:text-red-500 transition compact-btn p-0.5" title="Remove">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
                 </div>`;
             });
             html += `</div>`;
@@ -282,5 +288,128 @@ async function rDeleteRecipe(id, name) {
         rExpandedId = null;
         rLoadRecipes();
     } catch (err) { showToast(err.message, 'error'); }
+}
+
+// ── Ingredient Management ──
+let riSelectedItem = null;
+let riSearchTimer = null;
+
+function rShowAddIngredient(recipeId) {
+    riSelectedItem = null;
+    openSheet(`
+        <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
+        <div class="px-5 py-3 border-b border-gray-100">
+            <h3 class="text-sm font-bold text-gray-900">Add Ingredient</h3>
+            <p class="text-[10px] text-gray-400 mt-0.5">Search pantry items to add</p>
+        </div>
+        <div class="px-5 py-4 space-y-3">
+            <div class="relative">
+                <input type="text" id="riSearch" placeholder="Search items..." oninput="riDoSearch()"
+                    class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
+                <div id="riResults" class="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 max-h-40 overflow-y-auto hidden"></div>
+            </div>
+            <div id="riSelected" class="hidden bg-orange-50 rounded-lg px-3 py-2 flex items-center justify-between">
+                <span id="riSelectedName" class="text-sm font-medium text-gray-800"></span>
+                <button onclick="riClearSelection()" class="text-gray-400 hover:text-red-500 compact-btn">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+            </div>
+            <div class="flex gap-2">
+                <input type="number" id="riQty" placeholder="Qty" step="0.1" min="0.01"
+                    class="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
+                <select id="riUom" class="w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-2.5 text-sm">
+                    <option value="kg">kg</option>
+                    <option value="ltr">ltr</option>
+                    <option value="pcs">pcs</option>
+                    <option value="g">g</option>
+                </select>
+            </div>
+            <label class="flex items-center gap-2 text-xs text-gray-600">
+                <input type="checkbox" id="riPrimary" checked class="rounded text-orange-500 focus:ring-orange-300"> Primary ingredient
+            </label>
+            <button onclick="riSave(${recipeId})" id="riSaveBtn"
+                class="w-full bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-lg text-sm font-semibold transition">
+                Add Ingredient
+            </button>
+        </div>
+    `);
+}
+
+function riDoSearch() {
+    clearTimeout(riSearchTimer);
+    riSearchTimer = setTimeout(async () => {
+        const q = document.getElementById('riSearch').value.trim();
+        const container = document.getElementById('riResults');
+        if (q.length < 2) { container.classList.add('hidden'); return; }
+
+        try {
+            const data = await api(`api/recipes.php?action=search_items&q=${encodeURIComponent(q)}`);
+            const items = data.items || [];
+            if (items.length === 0) {
+                container.innerHTML = '<div class="px-4 py-3 text-xs text-gray-400">No items found</div>';
+            } else {
+                container.innerHTML = items.map(item =>
+                    `<button onclick="riSelectItem(${item.id}, '${item.name.replace(/'/g,"\\'")}', '${item.uom}')"
+                        class="w-full text-left px-4 py-2.5 hover:bg-orange-50 text-sm text-gray-700 compact-btn border-b border-gray-50 last:border-0 transition">
+                        ${item.name} <span class="text-[10px] text-gray-400">${item.category} · ${item.uom}</span>
+                    </button>`
+                ).join('');
+            }
+            container.classList.remove('hidden');
+        } catch(e) {}
+    }, 300);
+}
+
+function riSelectItem(id, name, uom) {
+    riSelectedItem = { id, name };
+    document.getElementById('riSelected').classList.remove('hidden');
+    document.getElementById('riSelectedName').textContent = name;
+    document.getElementById('riResults').classList.add('hidden');
+    document.getElementById('riSearch').value = name;
+    document.getElementById('riUom').value = uom || 'kg';
+    document.getElementById('riQty').focus();
+}
+
+function riClearSelection() {
+    riSelectedItem = null;
+    document.getElementById('riSelected').classList.add('hidden');
+    document.getElementById('riSearch').value = '';
+    document.getElementById('riSearch').focus();
+}
+
+async function riSave(recipeId) {
+    if (!riSelectedItem) { showToast('Select an item first', 'warning'); return; }
+    const qty = parseFloat(document.getElementById('riQty').value);
+    if (!qty || qty <= 0) { showToast('Enter a quantity', 'warning'); return; }
+
+    const btn = document.getElementById('riSaveBtn');
+    setLoading(btn, true);
+
+    try {
+        await api('api/recipes.php', { method: 'POST', body: {
+            action: 'add_ingredient',
+            recipe_id: recipeId,
+            item_id: riSelectedItem.id,
+            item_name: riSelectedItem.name,
+            qty: qty,
+            uom: document.getElementById('riUom').value,
+            is_primary: document.getElementById('riPrimary').checked ? 1 : 0
+        }});
+        closeSheet();
+        showToast('Ingredient added');
+        rLoadDetail(recipeId);
+    } catch(e) {
+        showToast(e.message || 'Failed', 'error');
+        setLoading(btn, false);
+    }
+}
+
+async function rRemoveIngredient(ingredientId, recipeId) {
+    if (!confirm('Remove this ingredient?')) return;
+    try {
+        await api('api/recipes.php', { method: 'POST', body: { action: 'remove_ingredient', id: ingredientId } });
+        showToast('Ingredient removed');
+        rLoadDetail(recipeId);
+    } catch(e) { showToast(e.message || 'Failed', 'error'); }
 }
 </script>
