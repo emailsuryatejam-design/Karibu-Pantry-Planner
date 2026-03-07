@@ -91,6 +91,7 @@ let rqTypes = [];
 let rqDishes = {};
 let rqAggregatedItems = {};
 let rqDishSearchResults = [];
+let rqSetMenuLoaded = false; // Track if set menu was auto-loaded for this session
 
 const RQ_MAX_DAYS_AHEAD = 7;
 const RQ_KITCHEN_ID = <?= (int)$kitchenId ?>;
@@ -156,7 +157,11 @@ async function rqLoadTypes() {
         const data = await cachedApi('api/requisition-types.php?action=list', 600000);
         rqTypes = data.types || [];
     } catch(e) {
-        rqTypes = [{code:'lunch',name:'Lunch'},{code:'dinner',name:'Dinner'},{code:'breakfast',name:'Breakfast'}];
+        rqTypes = [{code:'breakfast',name:'Breakfast'},{code:'lunch',name:'Lunch'},{code:'dinner',name:'Dinner'}];
+    }
+    // Ensure fallback types are always available for lookup
+    if (rqTypes.length === 0) {
+        rqTypes = [{code:'breakfast',name:'Breakfast'},{code:'lunch',name:'Lunch'},{code:'dinner',name:'Dinner'}];
     }
 }
 
@@ -169,25 +174,30 @@ function rqTypeName(code) {
 // ── Sessions ──
 async function rqLoadSessions() {
     try {
-        // First try listing existing
-        let data = await api(`api/requisitions.php?action=list&date=${rqDate}&kitchen_id=${RQ_KITCHEN_ID}`);
+        // Step 1: Cleanup old duplicate empty-draft requisitions
+        try {
+            await api('api/requisitions.php?action=cleanup_duplicates', {
+                method: 'POST',
+                body: JSON.stringify({ req_date: rqDate, kitchen_id: RQ_KITCHEN_ID })
+            });
+        } catch {}
+
+        // Step 2: Always call auto_create_for_date — it's idempotent:
+        // creates missing types, returns the full list for this date/kitchen
+        try { sessionStorage.removeItem('api_api/requisition-types.php?action=list'); } catch {}
+        const data = await api('api/requisitions.php?action=auto_create_for_date', {
+            method: 'POST',
+            body: JSON.stringify({
+                req_date: rqDate,
+                kitchen_id: RQ_KITCHEN_ID,
+                guest_count: rqGuestCount
+            })
+        });
         rqSessions = data.requisitions || [];
 
-        // Auto-create if none exist for this date
-        if (rqSessions.length === 0) {
-            try {
-                data = await api('api/requisitions.php?action=auto_create_for_date', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                        req_date: rqDate,
-                        kitchen_id: RQ_KITCHEN_ID,
-                        guest_count: rqGuestCount
-                    })
-                });
-                rqSessions = data.requisitions || [];
-            } catch (e) {
-                showToast(e.message || 'Failed to create requisitions', 'error');
-            }
+        // Reload types in case they were just seeded
+        if (data.created > 0) {
+            await rqLoadTypes();
         }
 
         rqRenderSessionTabs();
@@ -201,7 +211,7 @@ async function rqLoadSessions() {
             document.getElementById('rqBottomBar').classList.add('hidden');
         }
     } catch (e) {
-        showToast('Failed to load requisitions', 'error');
+        showToast(e.message || 'Failed to load requisitions', 'error');
     }
 }
 
@@ -212,11 +222,23 @@ function rqRenderSessionTabs() {
         return;
     }
 
+    // Check for duplicate meal types (old data)
+    const mealCounts = {};
+    rqSessions.forEach(s => {
+        mealCounts[s.meals] = (mealCounts[s.meals] || 0) + 1;
+    });
+
     let html = '';
+    const mealIndex = {}; // Track which index this meal type is at
     rqSessions.forEach(s => {
         const isActive = rqActiveSession && rqActiveSession.id === s.id;
         const typeName = rqTypeName(s.meals);
         const hasLines = parseInt(s.line_count) > 0;
+        const hasDuplicates = mealCounts[s.meals] > 1;
+
+        // If there are duplicate meal types, append session number to distinguish
+        mealIndex[s.meals] = (mealIndex[s.meals] || 0) + 1;
+        const label = hasDuplicates ? `${typeName} #${mealIndex[s.meals]}` : typeName;
 
         const statusColors = {
             draft: hasLines ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-gray-100 text-gray-700 border-gray-200',
@@ -229,7 +251,7 @@ function rqRenderSessionTabs() {
         const color = isActive ? 'bg-orange-500 text-white border-orange-500' : (statusColors[s.status] || 'bg-gray-100 text-gray-700 border-gray-200');
 
         html += `<button onclick="rqLoadSession(${s.id})" class="text-xs font-semibold px-3 py-1.5 rounded-full border ${color} whitespace-nowrap transition">
-            ${typeName}
+            ${label}
             ${s.status !== 'draft' ? `<span class="text-[9px] opacity-75 ml-0.5">&#10003;</span>` : ''}
         </button>`;
     });
@@ -263,11 +285,14 @@ async function rqLoadSession(sessionId) {
         // Reset dish state
         rqDishes = {};
         rqAggregatedItems = {};
+        rqSetMenuLoaded = false;
 
         // Load saved dishes
+        let hasSavedDishes = false;
         try {
             const dishData = await api(`api/requisitions.php?action=get_dishes&requisition_id=${sessionId}`);
             const savedDishes = dishData.dishes || [];
+            hasSavedDishes = savedDishes.length > 0;
 
             for (const d of savedDishes) {
                 try {
@@ -303,6 +328,11 @@ async function rqLoadSession(sessionId) {
             });
         } catch {
             // No dishes saved yet
+        }
+
+        // Auto-load from rotational set menu if draft, no saved dishes, and no lines
+        if (rqActiveSession.status === 'draft' && !hasSavedDishes && lines.length === 0) {
+            await rqLoadSetMenuDishes();
         }
 
         document.getElementById('rqSessionCard').classList.remove('hidden');
@@ -476,7 +506,7 @@ function rqRenderSelectedDishes(isDraft) {
             container.innerHTML = `<div class="bg-white rounded-xl border border-dashed border-gray-300 p-6 text-center">
                 <div class="text-2xl mb-2">&#127858;</div>
                 <p class="text-sm text-gray-500 mb-1">No dishes selected yet</p>
-                <p class="text-[10px] text-gray-400">Search and add dishes above to auto-fill ingredients</p>
+                <p class="text-[10px] text-gray-400">Search and add dishes, or configure the weekly set menu for auto-fill</p>
             </div>`;
         } else {
             container.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">No dishes were added</p>';
@@ -484,7 +514,10 @@ function rqRenderSelectedDishes(isDraft) {
         return;
     }
 
-    let html = `<div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Selected Dishes (${dishList.length})</div>`;
+    let html = `<div class="flex items-center justify-between mb-2">
+        <span class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Selected Dishes (${dishList.length})</span>
+        ${rqSetMenuLoaded ? '<span class="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">From Set Menu</span>' : ''}
+    </div>`;
     html += '<div class="space-y-2">';
 
     dishList.forEach(d => {
@@ -589,6 +622,63 @@ function rqAdjAggItem(itemId, delta) {
     rqAggregatedItems[itemId].total_qty = rqAggregatedItems[itemId].total_qty_raw + rqAggregatedItems[itemId].adjustment;
     rqRenderAggregatedItemsList(true);
     rqUpdateSummary();
+}
+
+// ═══════════════════════════════════════
+//  Set Menu Auto-Load
+// ═══════════════════════════════════════
+
+async function rqLoadSetMenuDishes() {
+    if (!rqActiveSession) return;
+
+    // Get day of week (ISO: 1=Mon..7=Sun) from requisition date
+    const dateObj = new Date(rqDate + 'T00:00:00');
+    let dayOfWeek = dateObj.getDay(); // JS: 0=Sun
+    dayOfWeek = dayOfWeek === 0 ? 7 : dayOfWeek; // Convert to ISO
+
+    const typeCode = rqActiveSession.meals;
+    if (!typeCode) return;
+
+    try {
+        const data = await api(`api/set-menus.php?action=get_day&day=${dayOfWeek}&type=${encodeURIComponent(typeCode)}`);
+        const menuDishes = data.dishes || [];
+
+        if (menuDishes.length === 0) return;
+
+        let loaded = 0;
+        for (const md of menuDishes) {
+            if (rqDishes[md.recipe_id]) continue; // Already added
+
+            try {
+                const ingData = await api(`api/requisitions.php?action=get_recipe_ingredients&recipe_id=${md.recipe_id}`);
+                const recipe = ingData.recipe;
+                const ingredients = ingData.ingredients || [];
+
+                if (ingredients.length === 0) continue;
+
+                rqDishes[md.recipe_id] = {
+                    recipe_id: recipe.id,
+                    recipe_name: recipe.name,
+                    recipe_servings: parseInt(recipe.servings) || 4,
+                    ingredients: ingredients
+                };
+                loaded++;
+            } catch {
+                // Recipe might have been deleted, skip
+            }
+        }
+
+        if (loaded > 0) {
+            rqSetMenuLoaded = true;
+            rqRecalcAggregated();
+            rqRenderDishView();
+            rqUpdateSummary();
+            const dayNames = ['','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+            showToast(`${loaded} dish${loaded > 1 ? 'es' : ''} loaded from ${dayNames[dayOfWeek]} set menu`, 'info');
+        }
+    } catch {
+        // Set menu not configured, silently continue
+    }
 }
 
 // ═══════════════════════════════════════
