@@ -91,7 +91,7 @@ let rqTypes = [];
 let rqDishes = {};
 let rqAggregatedItems = {};
 let rqDishSearchResults = [];
-let rqSetMenuLoaded = false; // Track if set menu was auto-loaded for this session
+let rqSetMenuLoadedFor = {}; // Track per-session: { sessionId: true }
 
 const RQ_MAX_DAYS_AHEAD = 7;
 const RQ_KITCHEN_ID = <?= (int)$kitchenId ?>;
@@ -157,11 +157,8 @@ async function rqLoadTypes() {
         const data = await cachedApi('api/requisition-types.php?action=list', 600000);
         rqTypes = data.types || [];
     } catch(e) {
-        rqTypes = [{code:'breakfast',name:'Breakfast'},{code:'lunch',name:'Lunch'},{code:'dinner',name:'Dinner'}];
-    }
-    // Ensure fallback types are always available for lookup
-    if (rqTypes.length === 0) {
-        rqTypes = [{code:'breakfast',name:'Breakfast'},{code:'lunch',name:'Lunch'},{code:'dinner',name:'Dinner'}];
+        showToast('Failed to load meal types', 'error');
+        rqTypes = [];
     }
 }
 
@@ -174,17 +171,7 @@ function rqTypeName(code) {
 // ── Sessions ──
 async function rqLoadSessions() {
     try {
-        // Step 1: Cleanup old duplicate empty-draft requisitions
-        try {
-            await api('api/requisitions.php?action=cleanup_duplicates', {
-                method: 'POST',
-                body: JSON.stringify({ req_date: rqDate, kitchen_id: RQ_KITCHEN_ID })
-            });
-        } catch {}
-
-        // Step 2: Always call auto_create_for_date — it's idempotent:
-        // creates missing types, returns the full list for this date/kitchen
-        try { sessionStorage.removeItem('api_api/requisition-types.php?action=list'); } catch {}
+        // auto_create_for_date uses INSERT IGNORE + UNIQUE constraint — always safe, no cleanup needed
         const data = await api('api/requisitions.php?action=auto_create_for_date', {
             method: 'POST',
             body: JSON.stringify({
@@ -203,7 +190,6 @@ async function rqLoadSessions() {
         rqRenderSessionTabs();
 
         if (rqSessions.length > 0) {
-            // Load first session by default
             rqLoadSession(rqSessions[0].id);
         } else {
             rqActiveSession = null;
@@ -222,23 +208,11 @@ function rqRenderSessionTabs() {
         return;
     }
 
-    // Check for duplicate meal types (old data)
-    const mealCounts = {};
-    rqSessions.forEach(s => {
-        mealCounts[s.meals] = (mealCounts[s.meals] || 0) + 1;
-    });
-
     let html = '';
-    const mealIndex = {}; // Track which index this meal type is at
     rqSessions.forEach(s => {
         const isActive = rqActiveSession && rqActiveSession.id === s.id;
         const typeName = rqTypeName(s.meals);
         const hasLines = parseInt(s.line_count) > 0;
-        const hasDuplicates = mealCounts[s.meals] > 1;
-
-        // If there are duplicate meal types, append session number to distinguish
-        mealIndex[s.meals] = (mealIndex[s.meals] || 0) + 1;
-        const label = hasDuplicates ? `${typeName} #${mealIndex[s.meals]}` : typeName;
 
         const statusColors = {
             draft: hasLines ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-gray-100 text-gray-700 border-gray-200',
@@ -251,8 +225,8 @@ function rqRenderSessionTabs() {
         const color = isActive ? 'bg-orange-500 text-white border-orange-500' : (statusColors[s.status] || 'bg-gray-100 text-gray-700 border-gray-200');
 
         html += `<button onclick="rqLoadSession(${s.id})" class="text-xs font-semibold px-3 py-1.5 rounded-full border ${color} whitespace-nowrap transition">
-            ${label}
-            ${s.status !== 'draft' ? `<span class="text-[9px] opacity-75 ml-0.5">&#10003;</span>` : ''}
+            ${escHtml(typeName)}
+            ${s.status !== 'draft' ? '<span class="text-[9px] opacity-75 ml-0.5">&#10003;</span>' : ''}
         </button>`;
     });
 
@@ -285,32 +259,22 @@ async function rqLoadSession(sessionId) {
         // Reset dish state
         rqDishes = {};
         rqAggregatedItems = {};
-        rqSetMenuLoaded = false;
 
-        // Load saved dishes
+        // Load saved dishes + ingredients in ONE batch call (no N+1)
         let hasSavedDishes = false;
         try {
-            const dishData = await api(`api/requisitions.php?action=get_dishes&requisition_id=${sessionId}`);
-            const savedDishes = dishData.dishes || [];
+            const batchData = await api(`api/requisitions.php?action=get_dishes_with_ingredients&requisition_id=${sessionId}`);
+            const savedDishes = batchData.dishes || [];
+            const ingredientsByRecipe = batchData.ingredients_by_recipe || {};
             hasSavedDishes = savedDishes.length > 0;
 
             for (const d of savedDishes) {
-                try {
-                    const ingData = await api(`api/requisitions.php?action=get_recipe_ingredients&recipe_id=${d.recipe_id}`);
-                    rqDishes[d.recipe_id] = {
-                        recipe_id: d.recipe_id,
-                        recipe_name: d.recipe_name,
-                        recipe_servings: d.recipe_servings || 4,
-                        ingredients: ingData.ingredients || []
-                    };
-                } catch {
-                    rqDishes[d.recipe_id] = {
-                        recipe_id: d.recipe_id,
-                        recipe_name: d.recipe_name,
-                        recipe_servings: d.recipe_servings || 4,
-                        ingredients: []
-                    };
-                }
+                rqDishes[d.recipe_id] = {
+                    recipe_id: d.recipe_id,
+                    recipe_name: d.recipe_name,
+                    recipe_servings: d.recipe_servings || 4,
+                    ingredients: ingredientsByRecipe[d.recipe_id] || []
+                };
             }
 
             rqRecalcAggregated();
@@ -330,8 +294,8 @@ async function rqLoadSession(sessionId) {
             // No dishes saved yet
         }
 
-        // Auto-load from rotational set menu if draft, no saved dishes, and no lines
-        if (rqActiveSession.status === 'draft' && !hasSavedDishes && lines.length === 0) {
+        // Auto-load from rotational set menu if draft, no saved dishes, no lines, and not already loaded for this session
+        if (rqActiveSession.status === 'draft' && !hasSavedDishes && lines.length === 0 && !rqSetMenuLoadedFor[sessionId]) {
             await rqLoadSetMenuDishes();
         }
 
@@ -400,8 +364,8 @@ function rqRenderDishResults() {
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
             </div>
             <div class="flex-1 min-w-0">
-                <div class="text-sm font-medium text-gray-800 truncate">${r.name}</div>
-                <div class="text-[10px] text-gray-400">${r.cuisine || ''} ${r.ingredient_count} ingredients &bull; serves ${r.servings}</div>
+                <div class="text-sm font-medium text-gray-800 truncate">${escHtml(r.name)}</div>
+                <div class="text-[10px] text-gray-400">${escHtml(r.cuisine || '')} ${r.ingredient_count} ingredients &bull; serves ${r.servings}</div>
             </div>
             ${alreadyAdded ? '<span class="text-[10px] text-orange-500 font-semibold shrink-0">Added</span>' : '<span class="text-orange-500 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg></span>'}
         </button>`;
@@ -516,7 +480,7 @@ function rqRenderSelectedDishes(isDraft) {
 
     let html = `<div class="flex items-center justify-between mb-2">
         <span class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Selected Dishes (${dishList.length})</span>
-        ${rqSetMenuLoaded ? '<span class="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">From Set Menu</span>' : ''}
+        ${rqActiveSession && rqSetMenuLoadedFor[rqActiveSession.id] ? '<span class="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">From Set Menu</span>' : ''}
     </div>`;
     html += '<div class="space-y-2">';
 
@@ -529,7 +493,7 @@ function rqRenderSelectedDishes(isDraft) {
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
                     </div>
                     <div class="min-w-0">
-                        <div class="text-sm font-medium text-gray-800 truncate">${d.recipe_name}</div>
+                        <div class="text-sm font-medium text-gray-800 truncate">${escHtml(d.recipe_name)}</div>
                         <div class="text-[10px] text-gray-400">${d.ingredients.length} ingredients &bull; serves ${d.recipe_servings} &bull; &times;${scaleFactor} scale</div>
                     </div>
                 </div>
@@ -564,7 +528,7 @@ function rqRenderAggregatedItemsList(isDraft) {
 
     for (const [cat, catItems] of Object.entries(grouped)) {
         html += `<div class="mb-2">
-            <div class="text-[10px] font-semibold text-gray-400 uppercase px-1 mb-1">${cat}</div>`;
+            <div class="text-[10px] font-semibold text-gray-400 uppercase px-1 mb-1">${escHtml(cat)}</div>`;
 
         catItems.forEach(agg => {
             const totalQty = Math.max(0, agg.total_qty);
@@ -576,7 +540,7 @@ function rqRenderAggregatedItemsList(isDraft) {
                 if (agg.stock_qty >= requiredKg) {
                     stockBadge = '<span class="text-[9px] bg-green-100 text-green-700 px-1 py-0.5 rounded">In Stock</span>';
                 } else if (agg.stock_qty > 0) {
-                    stockBadge = `<span class="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded">Partial ${agg.stock_qty}${agg.uom}</span>`;
+                    stockBadge = `<span class="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded">Partial ${agg.stock_qty}${escHtml(agg.uom)}</span>`;
                 } else {
                     stockBadge = '<span class="text-[9px] bg-red-100 text-red-700 px-1 py-0.5 rounded">No Stock</span>';
                 }
@@ -585,22 +549,22 @@ function rqRenderAggregatedItemsList(isDraft) {
             html += `<div class="bg-white border border-gray-100 rounded-lg px-3 py-2 mb-1">
                 <div class="flex items-center justify-between mb-1">
                     <div class="flex-1 min-w-0">
-                        <span class="text-sm font-medium text-gray-800 truncate block">${agg.item_name}</span>
+                        <span class="text-sm font-medium text-gray-800 truncate block">${escHtml(agg.item_name)}</span>
                         <div class="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span class="text-[9px] text-gray-400">From: ${agg.sources.join(', ')}</span>
+                            <span class="text-[9px] text-gray-400">From: ${agg.sources.map(s => escHtml(s)).join(', ')}</span>
                             ${stockBadge}
                         </div>
                     </div>
                     ${requiredKg > 0 && orderQty > 0 ? `<div class="text-right ml-2">
-                        <div class="text-xs font-bold text-orange-600">${orderQty} ${agg.uom}</div>
+                        <div class="text-xs font-bold text-orange-600">${orderQty} ${escHtml(agg.uom)}</div>
                         <div class="text-[9px] text-gray-400">to order</div>
                     </div>` : (requiredKg > 0 ? `<div class="text-right ml-2">
-                        <div class="text-xs font-bold text-green-600">0 ${agg.uom}</div>
+                        <div class="text-xs font-bold text-green-600">0 ${escHtml(agg.uom)}</div>
                         <div class="text-[9px] text-gray-400">covered</div>
                     </div>` : '')}
                 </div>
                 <div class="flex items-center justify-between">
-                    <span class="text-[10px] text-gray-500">Need: ${requiredKg} ${agg.uom}</span>
+                    <span class="text-[10px] text-gray-500">Need: ${requiredKg} ${escHtml(agg.uom)}</span>
                     ${isDraft ? `<div class="flex items-center gap-1">
                         <button onclick="rqAdjAggItem(${agg.itemId}, -0.5)" class="w-7 h-7 rounded-lg bg-gray-100 text-gray-500 font-bold flex items-center justify-center hover:bg-gray-200 text-xs">-</button>
                         <span class="text-xs font-semibold text-gray-700 w-12 text-center">${requiredKg}</span>
@@ -640,36 +604,30 @@ async function rqLoadSetMenuDishes() {
     if (!typeCode) return;
 
     try {
-        const data = await api(`api/set-menus.php?action=get_day&day=${dayOfWeek}&type=${encodeURIComponent(typeCode)}`);
+        // Single batch call: dishes + all recipe ingredients + stock data
+        const data = await api(`api/set-menus.php?action=get_day_with_ingredients&day=${dayOfWeek}&type=${encodeURIComponent(typeCode)}`);
         const menuDishes = data.dishes || [];
+        const ingredientsByRecipe = data.ingredients_by_recipe || {};
 
         if (menuDishes.length === 0) return;
 
         let loaded = 0;
         for (const md of menuDishes) {
             if (rqDishes[md.recipe_id]) continue; // Already added
+            const ingredients = ingredientsByRecipe[md.recipe_id] || [];
+            if (ingredients.length === 0) continue;
 
-            try {
-                const ingData = await api(`api/requisitions.php?action=get_recipe_ingredients&recipe_id=${md.recipe_id}`);
-                const recipe = ingData.recipe;
-                const ingredients = ingData.ingredients || [];
-
-                if (ingredients.length === 0) continue;
-
-                rqDishes[md.recipe_id] = {
-                    recipe_id: recipe.id,
-                    recipe_name: recipe.name,
-                    recipe_servings: parseInt(recipe.servings) || 4,
-                    ingredients: ingredients
-                };
-                loaded++;
-            } catch {
-                // Recipe might have been deleted, skip
-            }
+            rqDishes[md.recipe_id] = {
+                recipe_id: md.recipe_id,
+                recipe_name: md.recipe_name,
+                recipe_servings: parseInt(md.recipe_servings) || 4,
+                ingredients: ingredients
+            };
+            loaded++;
         }
 
         if (loaded > 0) {
-            rqSetMenuLoaded = true;
+            rqSetMenuLoadedFor[rqActiveSession.id] = true;
             rqRecalcAggregated();
             rqRenderDishView();
             rqUpdateSummary();
@@ -745,20 +703,20 @@ async function rqShowReceiptSheet() {
     const typeName = rqTypeName(rqActiveSession.meals);
 
     let html = `<div class="p-4">
-        <h3 class="text-sm font-semibold text-gray-800 mb-3">Confirm Receipt — ${typeName}</h3>
+        <h3 class="text-sm font-semibold text-gray-800 mb-3">Confirm Receipt — ${escHtml(typeName)}</h3>
         <div class="space-y-2 max-h-[55vh] overflow-y-auto">`;
 
     lines.forEach(l => {
         const fulfilledQty = parseFloat(l.fulfilled_qty) || 0;
         html += `<div class="bg-gray-50 rounded-lg px-3 py-2">
-            <div class="text-sm font-medium text-gray-800">${l.item_name}</div>
+            <div class="text-sm font-medium text-gray-800">${escHtml(l.item_name)}</div>
             <div class="flex items-center justify-between mt-1">
-                <span class="text-xs text-gray-500">Sent: ${fulfilledQty} ${l.uom}</span>
+                <span class="text-xs text-gray-500">Sent: ${fulfilledQty} ${escHtml(l.uom)}</span>
                 <div class="flex items-center gap-1">
                     <span class="text-xs text-gray-500">Got:</span>
                     <input type="number" value="${fulfilledQty}" min="0" step="0.5" data-line-id="${l.id}"
                         class="recv-qty w-16 text-center border border-gray-200 rounded py-1 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-green-300">
-                    <span class="text-xs text-gray-400">${l.uom}</span>
+                    <span class="text-xs text-gray-400">${escHtml(l.uom)}</span>
                 </div>
             </div>
         </div>`;

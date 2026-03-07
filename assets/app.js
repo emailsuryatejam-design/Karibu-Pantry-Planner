@@ -2,6 +2,14 @@
  * Karibu Pantry Planner — Vanilla JS Helpers
  */
 
+// ── XSS-safe HTML escaping ──
+function escHtml(s) {
+    if (!s) return '';
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+}
+
 // ── API Helper ──
 async function api(endpoint, options = {}) {
     const method = (options.method || 'GET').toUpperCase();

@@ -113,6 +113,11 @@ function getCachedKitchens(): array {
 }
 
 
+// ── SQL Helpers ──
+function escapeLike(string $str): string {
+    return str_replace(['%', '_', '\\'], ['\\%', '\\_', '\\\\'], $str);
+}
+
 // ── JSON Helpers ──
 function jsonResponse($data, $code = 200) {
     http_response_code($code);
