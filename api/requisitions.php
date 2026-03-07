@@ -72,18 +72,49 @@ switch ($action) {
         $guestCount = (int)($data['guest_count'] ?? 20);
         if (!$kid) jsonError('Kitchen ID required');
 
-        // One-time self-healing: add UNIQUE constraint + clean old duplicates if not already done
-        $migrated = cacheGet('uk_migration_done', 86400 * 365);
+        // One-time self-healing: ensure missing tables exist, clean duplicates, add UNIQUE constraint
+        $migrated = cacheGet('uk_migration_v2_done', 86400 * 365);
         if (!$migrated) {
             try {
-                // Check if UNIQUE key already exists
+                // 1. Create missing tables that older deployments might not have
+                $db->exec("CREATE TABLE IF NOT EXISTS requisition_dishes (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    requisition_id INT NOT NULL,
+                    recipe_id INT NOT NULL,
+                    recipe_name VARCHAR(200) NOT NULL,
+                    recipe_servings INT DEFAULT 4,
+                    scale_factor DECIMAL(10,3) DEFAULT 1.000,
+                    guest_count INT DEFAULT 20,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_req_dish (requisition_id)
+                )");
+                $db->exec("CREATE TABLE IF NOT EXISTS requisition_types (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    name VARCHAR(100) NOT NULL,
+                    code VARCHAR(50) NOT NULL UNIQUE,
+                    sort_order INT DEFAULT 0,
+                    is_active TINYINT(1) DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )");
+                $db->exec("CREATE TABLE IF NOT EXISTS set_menu_items (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    day_of_week TINYINT NOT NULL,
+                    type_code VARCHAR(50) NOT NULL DEFAULT 'lunch',
+                    recipe_id INT NOT NULL,
+                    recipe_name VARCHAR(200) NOT NULL,
+                    servings INT DEFAULT 4,
+                    sort_order INT DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    INDEX idx_day_type (day_of_week, type_code)
+                )");
+
+                // 2. Clean duplicate requisitions + add UNIQUE constraint
                 $indexes = $db->query("SHOW INDEX FROM requisitions WHERE Key_name = 'uk_kitchen_date_meals'")->fetchAll();
                 if (empty($indexes)) {
-                    // Delete duplicate draft requisitions (keep lowest ID per group)
                     $dupes = $db->query("SELECT kitchen_id, req_date, meals, GROUP_CONCAT(id ORDER BY id) AS ids, COUNT(*) AS cnt FROM requisitions GROUP BY kitchen_id, req_date, meals HAVING COUNT(*) > 1")->fetchAll();
                     foreach ($dupes as $dupe) {
                         $allIds = explode(',', $dupe['ids']);
-                        $keepId = array_shift($allIds); // keep lowest
+                        array_shift($allIds); // keep lowest ID
                         if (!empty($allIds)) {
                             $ph = implode(',', array_map('intval', $allIds));
                             $db->exec("DELETE FROM requisition_lines WHERE requisition_id IN ($ph)");
@@ -93,10 +124,11 @@ switch ($action) {
                     }
                     $db->exec("ALTER TABLE requisitions ADD UNIQUE KEY uk_kitchen_date_meals (kitchen_id, req_date, meals)");
                 }
-                cacheSet('uk_migration_done', true);
+
+                cacheSet('uk_migration_v2_done', true);
             } catch (Exception $e) {
-                // Constraint might already exist — that's fine, cache it
-                cacheSet('uk_migration_done', true);
+                // Do NOT cache on failure — retry next request
+                error_log('Karibu migration error: ' . $e->getMessage());
             }
         }
 
