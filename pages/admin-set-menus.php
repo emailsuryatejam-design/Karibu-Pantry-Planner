@@ -31,7 +31,7 @@ smActiveDay = smActiveDay === 0 ? 7 : smActiveDay; // Convert to ISO
 let smActiveType = '';
 let smTypes = [];
 let smWeek = {};   // { day: { type: [dishes] } }
-let smSearchTimer = null;
+const smSearchRecipesDebounced = debounce(() => smSearchRecipes(), 300);
 
 smInit();
 
@@ -51,8 +51,8 @@ async function smLoadTypes() {
             smActiveType = smTypes[0].code;
         }
     } catch(e) {
-        smTypes = [{code:'breakfast',name:'Breakfast'},{code:'lunch',name:'Lunch'},{code:'dinner',name:'Dinner'}];
-        if (!smActiveType) smActiveType = 'breakfast';
+        showToast('Failed to load meal types', 'error');
+        smTypes = [];
     }
 }
 
@@ -91,7 +91,7 @@ function smRenderTypeTabs() {
         html += `<button onclick="smSelectType('${t.code}')"
             class="text-xs font-medium px-3 py-1.5 rounded-full border whitespace-nowrap transition
             ${isActive ? 'bg-blue-500 text-white border-blue-500' : 'bg-white text-gray-500 border-gray-200 hover:bg-blue-50'}">
-            ${t.name}
+            ${escHtml(t.name)}
             ${dishes.length > 0 ? `<span class="text-[9px] opacity-75 ml-0.5">(${dishes.length})</span>` : ''}
         </button>`;
     });
@@ -131,9 +131,9 @@ function smRenderContent() {
     // Header with actions
     html += `<div class="flex items-center justify-between mb-3">
         <div>
-            <span class="text-sm font-bold text-gray-800">${dayName}</span>
+            <span class="text-sm font-bold text-gray-800">${escHtml(dayName)}</span>
             <span class="text-sm text-gray-400 mx-1">&bull;</span>
-            <span class="text-sm font-medium text-gray-600">${typeName}</span>
+            <span class="text-sm font-medium text-gray-600">${escHtml(typeName)}</span>
         </div>
         <div class="flex items-center gap-2">
             <button onclick="smShowCopyDay()" class="text-[10px] font-semibold text-blue-600 bg-blue-50 px-2 py-1 rounded-lg hover:bg-blue-100 transition" title="Copy from another day">
@@ -154,7 +154,7 @@ function smRenderContent() {
     if (dishes.length === 0) {
         html += `<div class="text-center py-8">
             <div class="text-2xl mb-2">&#127869;</div>
-            <p class="text-sm text-gray-500">No dishes set for ${dayName} ${typeName}</p>
+            <p class="text-sm text-gray-500">No dishes set for ${escHtml(dayName)} ${escHtml(typeName)}</p>
             <p class="text-[10px] text-gray-400 mt-1">Add dishes to auto-populate this meal's requisition</p>
         </div>`;
     } else {
@@ -171,8 +171,8 @@ function smRenderContent() {
                             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
                         </div>
                         <div class="min-w-0">
-                            <div class="text-sm font-medium text-gray-800 truncate">${d.recipe_name}</div>
-                            <div class="text-[10px] text-gray-400">${d.cuisine || ''} ${d.ingredient_count || 0} ingredients &bull; serves ${d.recipe_servings || '?'}</div>
+                            <div class="text-sm font-medium text-gray-800 truncate">${escHtml(d.recipe_name)}</div>
+                            <div class="text-[10px] text-gray-400">${escHtml(d.cuisine || '')} ${d.ingredient_count || 0} ingredients &bull; serves ${d.recipe_servings || '?'}</div>
                         </div>
                     </div>
                     <button onclick="smRemoveDish(${d.id}, '${d.recipe_name.replace(/'/g, "\\'")}')" class="text-gray-300 hover:text-red-500 transition p-1 shrink-0">
@@ -195,12 +195,12 @@ function smShowAddDish() {
     openSheet(`
         <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
         <div class="px-5 py-3 border-b border-gray-100">
-            <h3 class="text-sm font-bold text-gray-900">Add Dish to ${dayName} ${typeName}</h3>
+            <h3 class="text-sm font-bold text-gray-900">Add Dish to ${escHtml(dayName)} ${escHtml(typeName)}</h3>
             <p class="text-[10px] text-gray-400 mt-0.5">Search recipes by name</p>
         </div>
         <div class="px-5 py-4 space-y-3">
             <div class="relative">
-                <input type="text" id="smDishSearch" placeholder="Search recipes..." oninput="smSearchRecipes()"
+                <input type="text" id="smDishSearch" placeholder="Search recipes..." oninput="smSearchRecipesDebounced()"
                     class="w-full border border-gray-200 rounded-lg px-3 py-2.5 pl-9 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
                 <svg class="absolute left-3 top-3 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
             </div>
@@ -210,40 +210,37 @@ function smShowAddDish() {
     setTimeout(() => document.getElementById('smDishSearch')?.focus(), 300);
 }
 
-function smSearchRecipes() {
-    clearTimeout(smSearchTimer);
-    smSearchTimer = setTimeout(async () => {
-        const q = document.getElementById('smDishSearch')?.value.trim();
-        const container = document.getElementById('smSearchResults');
-        if (!q || q.length < 2) { container.innerHTML = ''; return; }
+async function smSearchRecipes() {
+    const q = document.getElementById('smDishSearch')?.value.trim();
+    const container = document.getElementById('smSearchResults');
+    if (!q || q.length < 2) { container.innerHTML = ''; return; }
 
-        try {
-            const data = await api(`api/set-menus.php?action=search_recipes&q=${encodeURIComponent(q)}`);
-            const recipes = data.recipes || [];
-            const existing = ((smWeek[smActiveDay] || {})[smActiveType] || []).map(d => d.recipe_id);
+    try {
+        const data = await api(`api/set-menus.php?action=search_recipes&q=${encodeURIComponent(q)}`);
+        const recipes = data.recipes || [];
+        const existing = ((smWeek[smActiveDay] || {})[smActiveType] || []).map(d => d.recipe_id);
 
-            if (recipes.length === 0) {
-                container.innerHTML = '<p class="text-xs text-gray-400 py-3">No recipes found</p>';
-                return;
-            }
-
-            container.innerHTML = recipes.map(r => {
-                const already = existing.includes(parseInt(r.id));
-                return `<button onclick="smAddDish(${r.id}, '${r.name.replace(/'/g, "\\'")}')" class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-orange-50 transition text-left border-b border-gray-50 last:border-0 rounded-lg ${already ? 'opacity-40' : ''}" ${already ? 'disabled' : ''}>
-                    <div class="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="text-sm font-medium text-gray-800 truncate">${r.name}</div>
-                        <div class="text-[10px] text-gray-400">${r.cuisine || ''} ${r.ingredient_count} ingredients &bull; serves ${r.servings}</div>
-                    </div>
-                    ${already ? '<span class="text-[10px] text-orange-500 font-semibold shrink-0">Added</span>' : '<span class="text-orange-500 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg></span>'}
-                </button>`;
-            }).join('');
-        } catch(e) {
-            container.innerHTML = '<p class="text-xs text-red-400 py-2">Search failed</p>';
+        if (recipes.length === 0) {
+            container.innerHTML = '<p class="text-xs text-gray-400 py-3">No recipes found</p>';
+            return;
         }
-    }, 300);
+
+        container.innerHTML = recipes.map(r => {
+            const already = existing.includes(parseInt(r.id));
+            return `<button onclick="smAddDish(${r.id}, '${r.name.replace(/'/g, "\\'")}')" class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-orange-50 transition text-left border-b border-gray-50 last:border-0 rounded-lg ${already ? 'opacity-40' : ''}" ${already ? 'disabled' : ''}>
+                <div class="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
+                </div>
+                <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium text-gray-800 truncate">${escHtml(r.name)}</div>
+                    <div class="text-[10px] text-gray-400">${escHtml(r.cuisine || '')} ${r.ingredient_count} ingredients &bull; serves ${r.servings}</div>
+                </div>
+                ${already ? '<span class="text-[10px] text-orange-500 font-semibold shrink-0">Added</span>' : '<span class="text-orange-500 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg></span>'}
+            </button>`;
+        }).join('');
+    } catch(e) {
+        container.innerHTML = '<p class="text-xs text-red-400 py-2">Search failed</p>';
+    }
 }
 
 async function smAddDish(recipeId, recipeName) {
@@ -313,7 +310,7 @@ function smShowCopyDay() {
 
     let html = `<div class="p-4">
         <h3 class="text-sm font-bold text-gray-800 mb-1">Copy Dishes</h3>
-        <p class="text-[10px] text-gray-400 mb-3">Copy ${typeName} dishes from another day to ${dayName}</p>
+        <p class="text-[10px] text-gray-400 mb-3">Copy ${escHtml(typeName)} dishes from another day to ${escHtml(dayName)}</p>
         <div class="space-y-2">`;
 
     SM_DAYS.forEach((name, i) => {

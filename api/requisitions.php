@@ -44,8 +44,14 @@ switch ($action) {
         $id = (int)($_GET['id'] ?? 0);
         if (!$id) jsonError('Requisition ID required');
 
-        $stmt = $db->prepare("SELECT r.*, u.name AS chef_name FROM requisitions r LEFT JOIN users u ON u.id = r.created_by WHERE r.id = ?");
-        $stmt->execute([$id]);
+        // Admin can view any requisition; others restricted to their kitchen
+        if ($user['role'] === 'admin') {
+            $stmt = $db->prepare("SELECT r.*, u.name AS chef_name FROM requisitions r LEFT JOIN users u ON u.id = r.created_by WHERE r.id = ?");
+            $stmt->execute([$id]);
+        } else {
+            $stmt = $db->prepare("SELECT r.*, u.name AS chef_name FROM requisitions r LEFT JOIN users u ON u.id = r.created_by WHERE r.id = ? AND r.kitchen_id = ?");
+            $stmt->execute([$id, $kitchenId]);
+        }
         $req = $stmt->fetch();
         if (!$req) jsonError('Requisition not found', 404);
 
@@ -66,21 +72,9 @@ switch ($action) {
         $guestCount = (int)($data['guest_count'] ?? 20);
         if (!$kid) jsonError('Kitchen ID required');
 
-        // Get active types — auto-seed defaults if table is empty
-        try {
-            $types = $db->query("SELECT id, name, code, sort_order FROM requisition_types WHERE is_active = 1 ORDER BY sort_order, name")->fetchAll();
-        } catch (PDOException $e) {
-            // Table might not exist yet — create it
-            $db->exec("CREATE TABLE IF NOT EXISTS requisition_types (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                name VARCHAR(50) NOT NULL,
-                code VARCHAR(30) NOT NULL UNIQUE,
-                sort_order INT DEFAULT 0,
-                is_active TINYINT(1) DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )");
-            $types = [];
-        }
+        // Get active types
+        $types = $db->query("SELECT id, name, code, sort_order FROM requisition_types WHERE is_active = 1 ORDER BY sort_order, name")->fetchAll();
+
         if (empty($types)) {
             // Auto-seed default types so chefs are never blocked
             $defaults = [
@@ -97,24 +91,16 @@ switch ($action) {
             cacheClear('requisition_types');
         }
 
-        // Check which types already have a requisition for this date/kitchen
-        $existing = $db->prepare("SELECT meals FROM requisitions WHERE req_date = ? AND kitchen_id = ?");
-        $existing->execute([$reqDate, $kid]);
-        $existingTypes = array_column($existing->fetchAll(), 'meals');
-
+        // INSERT IGNORE: UNIQUE constraint (kitchen_id, req_date, meals) silently skips duplicates.
+        // No need for a prior SELECT — race-condition safe.
         $created = 0;
-        $insertStmt = $db->prepare("INSERT INTO requisitions (kitchen_id, req_date, session_number, guest_count, meals, status, created_by) VALUES (?, ?, ?, ?, ?, 'draft', ?)");
-
-        // Get current max session number
-        $maxStmt = $db->prepare("SELECT COALESCE(MAX(session_number), 0) FROM requisitions WHERE req_date = ? AND kitchen_id = ?");
-        $maxStmt->execute([$reqDate, $kid]);
-        $sessionNum = (int)$maxStmt->fetchColumn();
+        $insertStmt = $db->prepare("INSERT IGNORE INTO requisitions
+            (kitchen_id, req_date, session_number, guest_count, meals, status, created_by)
+            VALUES (?, ?, ?, ?, ?, 'draft', ?)");
 
         foreach ($types as $type) {
-            if (in_array($type['code'], $existingTypes)) continue; // Already exists
-            $sessionNum++;
-            $insertStmt->execute([$kid, $reqDate, $sessionNum, $guestCount, $type['code'], $user['id']]);
-            $created++;
+            $insertStmt->execute([$kid, $reqDate, $type['sort_order'], $guestCount, $type['code'], $user['id']]);
+            if ($insertStmt->rowCount() > 0) $created++;
         }
 
         if ($created > 0) {
@@ -475,9 +461,10 @@ switch ($action) {
         }
 
         // Filtered search — query DB directly
+        $escaped = escapeLike($q);
         $sql = "SELECT id, name, code, category, uom, stock_qty, portion_weight, order_mode FROM items WHERE is_active = 1 AND (name LIKE ? OR code LIKE ?) ORDER BY category, name";
         $stmt = $db->prepare($sql);
-        $stmt->execute(["%$q%", "%$q%"]);
+        $stmt->execute(["%$escaped%", "%$escaped%"]);
         $items = $stmt->fetchAll();
 
         $grouped = [];
@@ -493,11 +480,12 @@ switch ($action) {
         $q = trim($_GET['q'] ?? '');
         if (strlen($q) < 2) jsonError('Search query too short');
 
+        $escaped = escapeLike($q);
         $stmt = $db->prepare("SELECT id, name, cuisine, servings, prep_time,
             (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = recipes.id) AS ingredient_count
             FROM recipes WHERE is_active = 1 AND (name LIKE ? OR cuisine LIKE ?)
             ORDER BY name LIMIT 20");
-        $stmt->execute(["%$q%", "%$q%"]);
+        $stmt->execute(["%$escaped%", "%$escaped%"]);
         $recipes = $stmt->fetchAll();
 
         jsonResponse(['recipes' => $recipes]);
@@ -550,6 +538,22 @@ switch ($action) {
             // Aggregated items: itemId => { item_name, total_qty, uom, stock_qty, portion_weight, order_mode, category, sources[] }
             $aggregated = [];
 
+            // Batch-load ALL recipe ingredients in one query (avoids N+1)
+            $recipeIds = array_unique(array_filter(array_map(fn($d) => (int)($d['recipe_id'] ?? 0), $dishes)));
+            $allIngredients = [];
+            if ($recipeIds) {
+                $ph = implode(',', array_fill(0, count($recipeIds), '?'));
+                $batchIngStmt = $db->prepare("SELECT ri.recipe_id, ri.item_id, ri.qty, ri.uom,
+                    i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
+                    FROM recipe_ingredients ri
+                    LEFT JOIN items i ON i.id = ri.item_id
+                    WHERE ri.recipe_id IN ($ph)");
+                $batchIngStmt->execute(array_values($recipeIds));
+                foreach ($batchIngStmt->fetchAll() as $ing) {
+                    $allIngredients[(int)$ing['recipe_id']][] = $ing;
+                }
+            }
+
             foreach ($dishes as $dish) {
                 $recipeId = (int)($dish['recipe_id'] ?? 0);
                 $recipeName = $dish['recipe_name'] ?? '';
@@ -564,14 +568,8 @@ switch ($action) {
                 $dStmt->execute([$reqId, $recipeId, $recipeName, $recipeServings, round($scaleFactor, 3), $guestCount]);
                 $dishId = $db->lastInsertId();
 
-                // Fetch recipe ingredients
-                $iStmt = $db->prepare("SELECT ri.item_id, ri.qty, ri.uom,
-                    i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
-                    FROM recipe_ingredients ri
-                    LEFT JOIN items i ON i.id = ri.item_id
-                    WHERE ri.recipe_id = ?");
-                $iStmt->execute([$recipeId]);
-                $ingredients = $iStmt->fetchAll();
+                // Use pre-loaded ingredients (no per-dish query)
+                $ingredients = $allIngredients[$recipeId] ?? [];
 
                 foreach ($ingredients as $ing) {
                     $itemId = (int)$ing['item_id'];
@@ -649,72 +647,38 @@ switch ($action) {
             jsonError('Failed to save dish lines: ' . $e->getMessage());
         }
 
-    // ── Get dishes for a requisition (re-editing) ──
-    case 'get_dishes':
+    // ── Get dishes for a requisition with all ingredients (batch) ──
+    case 'get_dishes_with_ingredients':
         $reqId = (int)($_GET['requisition_id'] ?? 0);
         if (!$reqId) jsonError('Requisition ID required');
 
-        $stmt = $db->prepare("SELECT rd.*,
-            (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = rd.recipe_id) AS ingredient_count
-            FROM requisition_dishes rd
-            WHERE rd.requisition_id = ?
-            ORDER BY rd.created_at");
-        $stmt->execute([$reqId]);
-        $dishes = $stmt->fetchAll();
+        // Get dishes
+        $dStmt = $db->prepare("SELECT rd.recipe_id, rd.recipe_name, rd.recipe_servings, rd.scale_factor
+            FROM requisition_dishes rd WHERE rd.requisition_id = ? ORDER BY rd.created_at");
+        $dStmt->execute([$reqId]);
+        $dishes = $dStmt->fetchAll();
 
-        jsonResponse(['dishes' => $dishes]);
-
-    // ── Cleanup duplicate draft requisitions for a date ──
-    // Keeps the first (lowest ID) per meal type; deletes empty-draft duplicates
-    case 'cleanup_duplicates':
-        requireMethod('POST');
-        requireRole(['chef', 'admin']);
-        $data = getJsonInput();
-
-        $reqDate = $data['req_date'] ?? date('Y-m-d');
-        $kid = (int)($data['kitchen_id'] ?? $kitchenId);
-        if (!$kid) jsonError('Kitchen ID required');
-
-        // Find all requisitions for this date/kitchen
-        $stmt = $db->prepare("SELECT r.id, r.meals, r.status,
-            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
-            FROM requisitions r
-            WHERE r.req_date = ? AND r.kitchen_id = ?
-            ORDER BY r.id ASC");
-        $stmt->execute([$reqDate, $kid]);
-        $allReqs = $stmt->fetchAll();
-
-        $kept = [];      // meals_code => first_req_id (we keep this one)
-        $toDelete = [];  // IDs to delete
-
-        foreach ($allReqs as $r) {
-            $type = $r['meals'];
-            if (!isset($kept[$type])) {
-                $kept[$type] = $r['id']; // Keep first one
-            } else {
-                // Duplicate — delete if it's a draft (even with lines, since they can be regenerated)
-                if ($r['status'] === 'draft') {
-                    $toDelete[] = (int)$r['id'];
-                }
-            }
+        if (empty($dishes)) {
+            jsonResponse(['dishes' => [], 'ingredients_by_recipe' => new \stdClass()]);
         }
 
-        $deleted = 0;
-        if ($toDelete) {
-            $ph = implode(',', array_fill(0, count($toDelete), '?'));
-            // Also clean up any dish records
-            $db->prepare("DELETE FROM requisition_dishes WHERE requisition_id IN ($ph)")->execute($toDelete);
-            $db->prepare("DELETE FROM requisition_lines WHERE requisition_id IN ($ph)")->execute($toDelete);
-            $stmt = $db->prepare("DELETE FROM requisitions WHERE id IN ($ph)");
-            $stmt->execute($toDelete);
-            $deleted = $stmt->rowCount();
+        // Batch-load all recipe ingredients in ONE query
+        $recipeIds = array_unique(array_column($dishes, 'recipe_id'));
+        $ph = implode(',', array_fill(0, count($recipeIds), '?'));
+        $iStmt = $db->prepare("SELECT ri.recipe_id, ri.item_id, ri.qty, ri.uom, ri.is_primary,
+            i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
+            FROM recipe_ingredients ri
+            LEFT JOIN items i ON i.id = ri.item_id
+            WHERE ri.recipe_id IN ($ph)
+            ORDER BY ri.recipe_id, ri.is_primary DESC, i.name");
+        $iStmt->execute(array_values($recipeIds));
+
+        $ingredientsByRecipe = [];
+        foreach ($iStmt->fetchAll() as $ing) {
+            $ingredientsByRecipe[$ing['recipe_id']][] = $ing;
         }
 
-        auditLog('requisition_cleanup', 'requisition', null, null, [
-            'date' => $reqDate, 'kitchen_id' => $kid, 'deleted' => $deleted, 'deleted_ids' => $toDelete
-        ]);
-
-        jsonResponse(['cleaned' => true, 'deleted' => $deleted, 'deleted_ids' => $toDelete]);
+        jsonResponse(['dishes' => $dishes, 'ingredients_by_recipe' => $ingredientsByRecipe ?: new \stdClass()]);
 
     default:
         jsonError('Unknown action');
