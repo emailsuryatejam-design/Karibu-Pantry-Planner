@@ -234,81 +234,88 @@ function rqRenderSessionTabs() {
 }
 
 async function rqLoadSession(sessionId) {
-    try {
-        const data = await api(`api/requisitions.php?action=get&id=${sessionId}`);
-        rqActiveSession = data.requisition;
-        const lines = data.lines || [];
-
-        // Restore state
-        rqGuestCount = rqActiveSession.guest_count || 20;
+    // ── INSTANT: update UI from cached rqSessions (zero network) ──
+    const cached = rqSessions.find(s => s.id == sessionId);
+    if (cached) {
+        rqActiveSession = cached;
+        rqGuestCount = cached.guest_count || rqGuestCount;
         document.getElementById('rqGuestCount').value = rqGuestCount;
+        document.getElementById('rqTypeName').textContent = rqTypeName(cached.meals);
 
-        // Show type name
-        const typeName = rqTypeName(rqActiveSession.meals);
-        document.getElementById('rqTypeName').textContent = typeName;
-
-        // Status pill
         const statusPill = document.getElementById('rqStatusPill');
-        if (rqActiveSession.status === 'draft') {
+        if (cached.status === 'draft') {
             statusPill.innerHTML = '<span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">Draft</span>';
         } else {
             const sc = {submitted:'bg-blue-100 text-blue-700',processing:'bg-amber-100 text-amber-700',fulfilled:'bg-green-100 text-green-700',received:'bg-green-100 text-green-700',closed:'bg-gray-200 text-gray-500'};
-            statusPill.innerHTML = `<span class="text-[10px] ${sc[rqActiveSession.status] || ''} px-2 py-0.5 rounded-full font-medium capitalize">${rqActiveSession.status}</span>`;
+            statusPill.innerHTML = `<span class="text-[10px] ${sc[cached.status] || ''} px-2 py-0.5 rounded-full font-medium capitalize">${cached.status}</span>`;
         }
 
-        // Reset dish state
+        const isDraft = cached.status === 'draft';
+        document.getElementById('rqSessionCard').classList.remove('hidden');
+        document.getElementById('rqBottomBar').classList.toggle('hidden', !isDraft);
+        document.getElementById('rqDishSearchWrap').classList.toggle('hidden', !isDraft);
+        rqRenderSessionTabs();
+        rqRenderStatusBanner();
+
+        // Clear previous dishes immediately (prevents stale content flash)
         rqDishes = {};
         rqAggregatedItems = {};
+        rqRenderDishView();
+        rqUpdateSummary();
+    }
 
-        // Load saved dishes + ingredients in ONE batch call (no N+1)
-        let hasSavedDishes = false;
-        try {
-            const batchData = await api(`api/requisitions.php?action=get_dishes_with_ingredients&requisition_id=${sessionId}`);
-            const savedDishes = batchData.dishes || [];
-            const ingredientsByRecipe = batchData.ingredients_by_recipe || {};
-            hasSavedDishes = savedDishes.length > 0;
+    // ── ASYNC: fetch full data (both calls in parallel) ──
+    try {
+        const [data, batchData] = await Promise.all([
+            api(`api/requisitions.php?action=get&id=${sessionId}`),
+            api(`api/requisitions.php?action=get_dishes_with_ingredients&requisition_id=${sessionId}`).catch(() => ({ dishes: [], ingredients_by_recipe: {} }))
+        ]);
 
-            for (const d of savedDishes) {
-                rqDishes[d.recipe_id] = {
-                    recipe_id: d.recipe_id,
-                    recipe_name: d.recipe_name,
-                    recipe_servings: d.recipe_servings || 4,
-                    ingredients: ingredientsByRecipe[d.recipe_id] || []
-                };
-            }
+        rqActiveSession = data.requisition;
+        const lines = data.lines || [];
 
-            rqRecalcAggregated();
+        // Update guest count from full data
+        rqGuestCount = rqActiveSession.guest_count || 20;
+        document.getElementById('rqGuestCount').value = rqGuestCount;
 
-            // Restore adjustments
-            lines.forEach(l => {
-                const agg = rqAggregatedItems[l.item_id];
-                if (agg) {
-                    const diff = parseFloat(l.required_kg) - agg.total_qty_raw;
-                    if (Math.abs(diff) > 0.01) {
-                        agg.adjustment = diff;
-                        agg.total_qty = agg.total_qty_raw + diff;
-                    }
-                }
-            });
-        } catch {
-            // No dishes saved yet
+        // Reset + populate dishes from batch
+        rqDishes = {};
+        rqAggregatedItems = {};
+        const savedDishes = batchData.dishes || [];
+        const ingredientsByRecipe = batchData.ingredients_by_recipe || {};
+        const hasSavedDishes = savedDishes.length > 0;
+
+        for (const d of savedDishes) {
+            rqDishes[d.recipe_id] = {
+                recipe_id: d.recipe_id,
+                recipe_name: d.recipe_name,
+                recipe_servings: d.recipe_servings || 4,
+                ingredients: ingredientsByRecipe[d.recipe_id] || []
+            };
         }
+
+        rqRecalcAggregated();
+
+        // Restore adjustments
+        lines.forEach(l => {
+            const agg = rqAggregatedItems[l.item_id];
+            if (agg) {
+                const diff = parseFloat(l.required_kg) - agg.total_qty_raw;
+                if (Math.abs(diff) > 0.01) {
+                    agg.adjustment = diff;
+                    agg.total_qty = agg.total_qty_raw + diff;
+                }
+            }
+        });
 
         // Auto-load from rotational set menu if draft, no saved dishes, no lines, and not already loaded for this session
         if (rqActiveSession.status === 'draft' && !hasSavedDishes && lines.length === 0 && !rqSetMenuLoadedFor[sessionId]) {
             await rqLoadSetMenuDishes();
         }
 
-        document.getElementById('rqSessionCard').classList.remove('hidden');
-        rqRenderSessionTabs();
         rqRenderStatusBanner();
         rqRenderDishView();
         rqUpdateSummary();
-
-        // Show/hide elements based on status
-        const isDraft = rqActiveSession.status === 'draft';
-        document.getElementById('rqBottomBar').classList.toggle('hidden', !isDraft);
-        document.getElementById('rqDishSearchWrap').classList.toggle('hidden', !isDraft);
 
     } catch (e) {
         showToast('Failed to load requisition', 'error');
