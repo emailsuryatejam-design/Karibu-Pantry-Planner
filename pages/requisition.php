@@ -41,14 +41,9 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
 
     <!-- Guest Count -->
     <div class="bg-white rounded-xl border border-gray-200 p-3 mb-3 flex items-center justify-between">
-        <div>
-            <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Guest Count</div>
-            <div class="text-lg font-bold text-gray-800" id="rqGuestCount">20</div>
-        </div>
-        <div class="flex items-center gap-2">
-            <button onclick="rqAdjGuests(-5)" class="w-9 h-9 rounded-lg bg-gray-100 text-gray-600 font-bold text-lg flex items-center justify-center hover:bg-gray-200">-</button>
-            <button onclick="rqAdjGuests(5)" class="w-9 h-9 rounded-lg bg-orange-100 text-orange-600 font-bold text-lg flex items-center justify-center hover:bg-orange-200">+</button>
-        </div>
+        <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Guest Count</div>
+        <input type="number" id="rqGuestCount" value="20" min="1" onchange="rqSetGuests(this.value)"
+            class="w-20 text-center text-lg font-bold text-gray-800 border border-gray-200 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
     </div>
 
     <!-- Dish Search -->
@@ -250,7 +245,7 @@ async function rqLoadSession(sessionId) {
 
         // Restore state
         rqGuestCount = rqActiveSession.guest_count || 20;
-        document.getElementById('rqGuestCount').textContent = rqGuestCount;
+        document.getElementById('rqGuestCount').value = rqGuestCount;
 
         // Show type name
         const typeName = rqTypeName(rqActiveSession.meals);
@@ -327,10 +322,10 @@ async function rqLoadSession(sessionId) {
 }
 
 // ── Guests ──
-function rqAdjGuests(delta) {
+function rqSetGuests(val) {
     if (!rqActiveSession || rqActiveSession.status !== 'draft') return;
-    rqGuestCount = Math.max(1, rqGuestCount + delta);
-    document.getElementById('rqGuestCount').textContent = rqGuestCount;
+    rqGuestCount = Math.max(1, parseInt(val) || 1);
+    document.getElementById('rqGuestCount').value = rqGuestCount;
     rqRecalcAggregated();
     rqRenderDishView();
     rqUpdateSummary();
