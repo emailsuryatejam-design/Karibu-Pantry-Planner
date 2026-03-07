@@ -409,6 +409,182 @@ switch ($action) {
 
         jsonResponse(['items' => $items, 'grouped' => $grouped]);
 
+    // ── Search recipes for dish picker ──
+    case 'search_recipes':
+        $q = trim($_GET['q'] ?? '');
+        if (strlen($q) < 2) jsonError('Search query too short');
+
+        $stmt = $db->prepare("SELECT id, name, cuisine, servings, prep_time,
+            (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = recipes.id) AS ingredient_count
+            FROM recipes WHERE is_active = 1 AND (name LIKE ? OR cuisine LIKE ?)
+            ORDER BY name LIMIT 20");
+        $stmt->execute(["%$q%", "%$q%"]);
+        $recipes = $stmt->fetchAll();
+
+        jsonResponse(['recipes' => $recipes]);
+
+    // ── Get recipe ingredients with stock data ──
+    case 'get_recipe_ingredients':
+        $recipeId = (int)($_GET['recipe_id'] ?? 0);
+        if (!$recipeId) jsonError('Recipe ID required');
+
+        $stmt = $db->prepare("SELECT id, name, cuisine, servings, prep_time FROM recipes WHERE id = ? AND is_active = 1");
+        $stmt->execute([$recipeId]);
+        $recipe = $stmt->fetch();
+        if (!$recipe) jsonError('Recipe not found', 404);
+
+        $stmt = $db->prepare("SELECT ri.id, ri.item_id, ri.qty, ri.uom, ri.is_primary,
+            i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
+            FROM recipe_ingredients ri
+            LEFT JOIN items i ON i.id = ri.item_id
+            WHERE ri.recipe_id = ?
+            ORDER BY ri.is_primary DESC, i.name");
+        $stmt->execute([$recipeId]);
+        $ingredients = $stmt->fetchAll();
+
+        jsonResponse(['recipe' => $recipe, 'ingredients' => $ingredients]);
+
+    // ── Save dish-based requisition lines ──
+    case 'save_dish_lines':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        $dishes = $data['dishes'] ?? [];
+        $guestCount = (int)($data['guest_count'] ?? 20);
+        if (!$reqId) jsonError('Requisition ID required');
+        if (empty($dishes)) jsonError('At least one dish is required');
+
+        // Verify requisition is draft
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'draft'");
+        $stmt->execute([$reqId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Requisition not found or not in draft status');
+
+        $db->beginTransaction();
+        try {
+            // Clear old dish entries and lines for this requisition
+            $db->prepare("DELETE FROM requisition_dishes WHERE requisition_id = ?")->execute([$reqId]);
+            $db->prepare("DELETE FROM requisition_lines WHERE requisition_id = ?")->execute([$reqId]);
+
+            // Aggregated items: itemId => { item_name, total_qty, uom, stock_qty, portion_weight, order_mode, category, sources[] }
+            $aggregated = [];
+
+            foreach ($dishes as $dish) {
+                $recipeId = (int)($dish['recipe_id'] ?? 0);
+                $recipeName = $dish['recipe_name'] ?? '';
+                $recipeServings = (int)($dish['recipe_servings'] ?? 4);
+                if ($recipeServings < 1) $recipeServings = 4;
+
+                $scaleFactor = $guestCount / $recipeServings;
+
+                // Insert dish record
+                $dStmt = $db->prepare("INSERT INTO requisition_dishes (requisition_id, recipe_id, recipe_name, recipe_servings, scale_factor, guest_count)
+                    VALUES (?, ?, ?, ?, ?, ?)");
+                $dStmt->execute([$reqId, $recipeId, $recipeName, $recipeServings, round($scaleFactor, 3), $guestCount]);
+                $dishId = $db->lastInsertId();
+
+                // Fetch recipe ingredients
+                $iStmt = $db->prepare("SELECT ri.item_id, ri.qty, ri.uom,
+                    i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
+                    FROM recipe_ingredients ri
+                    LEFT JOIN items i ON i.id = ri.item_id
+                    WHERE ri.recipe_id = ?");
+                $iStmt->execute([$recipeId]);
+                $ingredients = $iStmt->fetchAll();
+
+                foreach ($ingredients as $ing) {
+                    $itemId = (int)$ing['item_id'];
+                    $scaledQty = (float)$ing['qty'] * $scaleFactor;
+
+                    if (isset($aggregated[$itemId])) {
+                        $aggregated[$itemId]['total_qty'] += $scaledQty;
+                        $aggregated[$itemId]['sources'][] = ['dish_id' => $dishId, 'recipe_id' => $recipeId, 'recipe_name' => $recipeName];
+                    } else {
+                        $aggregated[$itemId] = [
+                            'item_name' => $ing['item_name'],
+                            'total_qty' => $scaledQty,
+                            'uom' => $ing['uom'] ?? ($ing['order_mode'] === 'direct_kg' ? 'kg' : 'kg'),
+                            'stock_qty' => (float)$ing['stock_qty'],
+                            'portion_weight' => (float)$ing['portion_weight'],
+                            'order_mode' => $ing['order_mode'],
+                            'category' => $ing['category'],
+                            'sources' => [['dish_id' => $dishId, 'recipe_id' => $recipeId, 'recipe_name' => $recipeName]],
+                        ];
+                    }
+                }
+            }
+
+            // Apply manual adjustments if provided
+            $adjustments = $data['adjustments'] ?? [];
+            foreach ($adjustments as $itemId => $adj) {
+                if (isset($aggregated[(int)$itemId])) {
+                    $aggregated[(int)$itemId]['total_qty'] += (float)$adj;
+                }
+            }
+
+            // Insert aggregated lines
+            $insertStmt = $db->prepare("INSERT INTO requisition_lines
+                (requisition_id, item_id, item_name, meal, order_mode, portions, portion_weight, required_kg, stock_qty, order_qty, uom, source_dish_id, source_recipe_id)
+                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)");
+
+            $totalItems = 0;
+            $totalKg = 0;
+            $meal = $req['meals'] ?? 'lunch';
+
+            foreach ($aggregated as $itemId => $agg) {
+                $requiredKg = ceil($agg['total_qty'] * 2) / 2; // Round up to 0.5
+                $orderQty = max(0, $requiredKg - $agg['stock_qty']);
+                $orderQty = ceil($orderQty * 2) / 2;
+
+                if ($requiredKg <= 0) continue;
+
+                // Use first source for tracking
+                $sourceDishId = $agg['sources'][0]['dish_id'] ?? null;
+                $sourceRecipeId = $agg['sources'][0]['recipe_id'] ?? null;
+
+                $insertStmt->execute([
+                    $reqId, $itemId, $agg['item_name'], $meal, $agg['order_mode'],
+                    $agg['portion_weight'], $requiredKg, $agg['stock_qty'], $orderQty,
+                    $agg['uom'], $sourceDishId, $sourceRecipeId
+                ]);
+
+                $totalItems++;
+                $totalKg += $orderQty;
+            }
+
+            // Update guest count on requisition
+            $db->prepare("UPDATE requisitions SET guest_count = ?, updated_at = NOW() WHERE id = ?")->execute([$guestCount, $reqId]);
+
+            $db->commit();
+
+            auditLog('requisition_save_dish_lines', 'requisition', $reqId, null, [
+                'dishes' => count($dishes), 'items' => $totalItems, 'total_kg' => $totalKg, 'guests' => $guestCount
+            ]);
+
+            jsonResponse(['saved' => true, 'total_items' => $totalItems, 'total_kg' => round($totalKg, 2), 'dish_count' => count($dishes)]);
+
+        } catch (Exception $e) {
+            $db->rollBack();
+            jsonError('Failed to save dish lines: ' . $e->getMessage());
+        }
+
+    // ── Get dishes for a requisition (re-editing) ──
+    case 'get_dishes':
+        $reqId = (int)($_GET['requisition_id'] ?? 0);
+        if (!$reqId) jsonError('Requisition ID required');
+
+        $stmt = $db->prepare("SELECT rd.*,
+            (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = rd.recipe_id) AS ingredient_count
+            FROM requisition_dishes rd
+            WHERE rd.requisition_id = ?
+            ORDER BY rd.created_at");
+        $stmt->execute([$reqId]);
+        $dishes = $stmt->fetchAll();
+
+        jsonResponse(['dishes' => $dishes]);
+
     default:
         jsonError('Unknown action');
 }
