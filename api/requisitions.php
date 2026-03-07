@@ -543,7 +543,7 @@ switch ($action) {
         $escaped = escapeLike($q);
         $stmt = $db->prepare("SELECT id, name, cuisine, servings, prep_time,
             (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = recipes.id) AS ingredient_count
-            FROM recipes WHERE is_active = 1 AND (name LIKE ? OR cuisine LIKE ?)
+            FROM recipes WHERE (name LIKE ? OR cuisine LIKE ?)
             ORDER BY name LIMIT 20");
         $stmt->execute(["%$escaped%", "%$escaped%"]);
         $recipes = $stmt->fetchAll();
@@ -555,7 +555,7 @@ switch ($action) {
         $recipeId = (int)($_GET['recipe_id'] ?? 0);
         if (!$recipeId) jsonError('Recipe ID required');
 
-        $stmt = $db->prepare("SELECT id, name, cuisine, servings, prep_time FROM recipes WHERE id = ? AND is_active = 1");
+        $stmt = $db->prepare("SELECT id, name, cuisine, servings, prep_time FROM recipes WHERE id = ?");
         $stmt->execute([$recipeId]);
         $recipe = $stmt->fetch();
         if (!$recipe) jsonError('Recipe not found', 404);
@@ -570,6 +570,49 @@ switch ($action) {
         $ingredients = $stmt->fetchAll();
 
         jsonResponse(['recipe' => $recipe, 'ingredients' => $ingredients]);
+
+    // ── Add a single dish to a requisition (from Recipes page) ──
+    case 'add_single_dish':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        $recipeId = (int)($data['recipe_id'] ?? 0);
+        if (!$reqId || !$recipeId) jsonError('Requisition ID and Recipe ID required');
+
+        // Verify requisition is draft
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'draft'");
+        $stmt->execute([$reqId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Requisition not found or not in draft status');
+
+        // Get recipe info
+        $stmt = $db->prepare("SELECT id, name, servings FROM recipes WHERE id = ?");
+        $stmt->execute([$recipeId]);
+        $recipe = $stmt->fetch();
+        if (!$recipe) jsonError('Recipe not found');
+
+        // Check not already added
+        $stmt = $db->prepare("SELECT id FROM requisition_dishes WHERE requisition_id = ? AND recipe_id = ?");
+        $stmt->execute([$reqId, $recipeId]);
+        if ($stmt->fetch()) jsonError('This dish is already in that order');
+
+        // Insert
+        $guestCount = (int)($req['guest_count'] ?? 20);
+        $recipeServings = (int)($recipe['servings'] ?? 4);
+        if ($recipeServings < 1) $recipeServings = 4;
+        $scaleFactor = $guestCount / $recipeServings;
+
+        $stmt = $db->prepare("INSERT INTO requisition_dishes (requisition_id, recipe_id, recipe_name, recipe_servings, scale_factor, guest_count)
+            VALUES (?, ?, ?, ?, ?, ?)");
+        $stmt->execute([$reqId, $recipeId, $recipe['name'], $recipeServings, round($scaleFactor, 3), $guestCount]);
+
+        auditLog('requisition_add_dish', 'requisition', $reqId, null, [
+            'recipe_id' => $recipeId, 'recipe_name' => $recipe['name']
+        ]);
+
+        jsonResponse(['added' => true, 'recipe_name' => $recipe['name']]);
 
     // ── Save dish-based requisition lines ──
     case 'save_dish_lines':
