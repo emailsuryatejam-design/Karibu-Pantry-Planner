@@ -66,9 +66,36 @@ switch ($action) {
         $guestCount = (int)($data['guest_count'] ?? 20);
         if (!$kid) jsonError('Kitchen ID required');
 
-        // Get active types
-        $types = $db->query("SELECT id, name, code, sort_order FROM requisition_types WHERE is_active = 1 ORDER BY sort_order, name")->fetchAll();
-        if (empty($types)) jsonError('No requisition types configured. Ask admin to add types.');
+        // Get active types — auto-seed defaults if table is empty
+        try {
+            $types = $db->query("SELECT id, name, code, sort_order FROM requisition_types WHERE is_active = 1 ORDER BY sort_order, name")->fetchAll();
+        } catch (PDOException $e) {
+            // Table might not exist yet — create it
+            $db->exec("CREATE TABLE IF NOT EXISTS requisition_types (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                name VARCHAR(50) NOT NULL,
+                code VARCHAR(30) NOT NULL UNIQUE,
+                sort_order INT DEFAULT 0,
+                is_active TINYINT(1) DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )");
+            $types = [];
+        }
+        if (empty($types)) {
+            // Auto-seed default types so chefs are never blocked
+            $defaults = [
+                ['Breakfast', 'breakfast', 1],
+                ['Lunch', 'lunch', 2],
+                ['Dinner', 'dinner', 3],
+            ];
+            $seedStmt = $db->prepare("INSERT IGNORE INTO requisition_types (name, code, sort_order) VALUES (?, ?, ?)");
+            foreach ($defaults as $d) {
+                $seedStmt->execute($d);
+            }
+            $types = $db->query("SELECT id, name, code, sort_order FROM requisition_types WHERE is_active = 1 ORDER BY sort_order, name")->fetchAll();
+            if (empty($types)) jsonError('No requisition types configured. Ask admin to add types.');
+            cacheClear('requisition_types');
+        }
 
         // Check which types already have a requisition for this date/kitchen
         $existing = $db->prepare("SELECT meals FROM requisitions WHERE req_date = ? AND kitchen_id = ?");
@@ -636,6 +663,58 @@ switch ($action) {
         $dishes = $stmt->fetchAll();
 
         jsonResponse(['dishes' => $dishes]);
+
+    // ── Cleanup duplicate draft requisitions for a date ──
+    // Keeps the first (lowest ID) per meal type; deletes empty-draft duplicates
+    case 'cleanup_duplicates':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+
+        $reqDate = $data['req_date'] ?? date('Y-m-d');
+        $kid = (int)($data['kitchen_id'] ?? $kitchenId);
+        if (!$kid) jsonError('Kitchen ID required');
+
+        // Find all requisitions for this date/kitchen
+        $stmt = $db->prepare("SELECT r.id, r.meals, r.status,
+            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
+            FROM requisitions r
+            WHERE r.req_date = ? AND r.kitchen_id = ?
+            ORDER BY r.id ASC");
+        $stmt->execute([$reqDate, $kid]);
+        $allReqs = $stmt->fetchAll();
+
+        $kept = [];      // meals_code => first_req_id (we keep this one)
+        $toDelete = [];  // IDs to delete
+
+        foreach ($allReqs as $r) {
+            $type = $r['meals'];
+            if (!isset($kept[$type])) {
+                $kept[$type] = $r['id']; // Keep first one
+            } else {
+                // Duplicate — only delete if it's an empty draft
+                if ($r['status'] === 'draft' && (int)$r['line_count'] === 0) {
+                    $toDelete[] = (int)$r['id'];
+                }
+            }
+        }
+
+        $deleted = 0;
+        if ($toDelete) {
+            $ph = implode(',', array_fill(0, count($toDelete), '?'));
+            // Also clean up any dish records
+            $db->prepare("DELETE FROM requisition_dishes WHERE requisition_id IN ($ph)")->execute($toDelete);
+            $db->prepare("DELETE FROM requisition_lines WHERE requisition_id IN ($ph)")->execute($toDelete);
+            $stmt = $db->prepare("DELETE FROM requisitions WHERE id IN ($ph)");
+            $stmt->execute($toDelete);
+            $deleted = $stmt->rowCount();
+        }
+
+        auditLog('requisition_cleanup', 'requisition', null, null, [
+            'date' => $reqDate, 'kitchen_id' => $kid, 'deleted' => $deleted, 'deleted_ids' => $toDelete
+        ]);
+
+        jsonResponse(['cleaned' => true, 'deleted' => $deleted, 'deleted_ids' => $toDelete]);
 
     default:
         jsonError('Unknown action');
