@@ -84,7 +84,7 @@ switch ($action) {
 
         jsonResponse(['requisition_id' => $reqId, 'session_number' => $sessionNum]);
 
-    // ── Save/update lines (bulk) ──
+    // ── Save/update lines (bulk) — legacy, kept for backward compatibility ──
     case 'save_lines':
         requireMethod('POST');
         requireRole(['chef', 'admin']);
@@ -385,7 +385,7 @@ switch ($action) {
 
         jsonResponse(['requisitions' => $reqs, 'summary' => $summary]);
 
-    // ── Get items for requisition form (cached) ──
+    // ── Get items for requisition form (cached) — legacy, kept for backward compat ──
     case 'get_items':
         $q = trim($_GET['q'] ?? '');
 

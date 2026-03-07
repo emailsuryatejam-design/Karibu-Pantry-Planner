@@ -1,7 +1,7 @@
 <?php
 /**
  * Karibu Pantry Planner — Requisition Page
- * Chef creates orders by picking dishes (auto-ingredients) or manual item mode
+ * Chef picks dishes (recipes) and ingredients auto-populate from recipe
  */
 $user = currentUser();
 $kitchenId = $user['kitchen_id'] ?? 0;
@@ -24,12 +24,12 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
 
 <!-- Requisition Tabs -->
 <div class="flex gap-2 mb-3 overflow-x-auto pb-1" id="rqSessionTabs">
-    <button class="text-xs font-semibold px-3 py-1.5 rounded-full bg-orange-500 text-white whitespace-nowrap" id="rqNewSessionBtn" onclick="rqCreateSession()">+ New Requisition</button>
+    <button class="text-xs font-semibold px-3 py-1.5 rounded-full bg-orange-500 text-white whitespace-nowrap" onclick="rqCreateSession()">+ New Requisition</button>
 </div>
 
 <!-- Active Requisition Card -->
 <div id="rqSessionCard" class="hidden">
-    <!-- Type Selector (loaded from DB) -->
+    <!-- Type Selector -->
     <div class="bg-white rounded-xl border border-gray-200 p-3 mb-3">
         <label class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Type</label>
         <div class="flex flex-wrap gap-2" id="rqMealPills">
@@ -51,47 +51,20 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
         </div>
     </div>
 
-    <!-- Mode Toggle -->
-    <div class="flex bg-gray-100 rounded-xl p-1 mb-3" id="rqModeToggle">
-        <button onclick="rqSetMode('dish')" id="rqModeDish" class="flex-1 text-xs font-semibold py-2 rounded-lg transition flex items-center justify-center gap-1.5 bg-white text-orange-600 shadow-sm">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
-            Pick Dishes
-        </button>
-        <button onclick="rqSetMode('item')" id="rqModeItem" class="flex-1 text-xs font-semibold py-2 rounded-lg transition flex items-center justify-center gap-1.5 text-gray-500">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
-            Manual Items
-        </button>
+    <!-- Dish Search -->
+    <div class="relative mb-3" id="rqDishSearchWrap">
+        <input type="text" id="rqDishSearch" placeholder="Search dishes by name..." oninput="rqSearchDishesDebounced()"
+            class="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
+        <svg class="absolute left-3 top-3 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
     </div>
+    <!-- Dish Search Results -->
+    <div id="rqDishResults" class="mb-3 hidden"></div>
 
-    <!-- ═══ DISH MODE ═══ -->
-    <div id="rqDishView">
-        <!-- Dish Search -->
-        <div class="relative mb-3">
-            <input type="text" id="rqDishSearch" placeholder="Search dishes by name..." oninput="rqSearchDishesDebounced()"
-                class="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
-            <svg class="absolute left-3 top-3 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        </div>
-        <!-- Dish Search Results -->
-        <div id="rqDishResults" class="mb-3 hidden"></div>
+    <!-- Selected Dishes -->
+    <div id="rqSelectedDishes" class="mb-3"></div>
 
-        <!-- Selected Dishes -->
-        <div id="rqSelectedDishes" class="mb-3"></div>
-
-        <!-- Aggregated Ingredients -->
-        <div id="rqAggregatedItems"></div>
-    </div>
-
-    <!-- ═══ MANUAL ITEM MODE ═══ -->
-    <div id="rqItemView" class="hidden">
-        <!-- Search -->
-        <div class="relative mb-3">
-            <input type="text" id="rqSearch" placeholder="Search items..." oninput="rqFilterItems()"
-                class="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
-            <svg class="absolute left-3 top-3 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-        </div>
-        <!-- Items by Category -->
-        <div id="rqItemList"></div>
-    </div>
+    <!-- Aggregated Ingredients -->
+    <div id="rqAggregatedItems"></div>
 
     <!-- Status Banner (for submitted/fulfilled requisitions) -->
     <div id="rqStatusBanner" class="hidden"></div>
@@ -100,7 +73,7 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
 <!-- Empty State -->
 <div id="rqEmptyState" class="text-center py-12">
     <div class="w-14 h-14 bg-orange-100 rounded-2xl flex items-center justify-center mx-auto mb-3">
-        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
     </div>
     <p class="text-sm text-gray-500 mb-3">No requisitions for this date</p>
     <button onclick="rqCreateSession()" class="bg-orange-500 text-white px-5 py-2.5 rounded-xl text-sm font-semibold hover:bg-orange-600 transition">
@@ -112,7 +85,7 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
 <div id="rqBottomBar" class="fixed bottom-16 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2.5 z-40 hidden">
     <div class="max-w-2xl mx-auto flex items-center justify-between">
         <div>
-            <span class="text-xs text-gray-500" id="rqSummaryLabel">Items: <strong id="rqSummaryItems" class="text-gray-800">0</strong></span>
+            <span class="text-xs text-gray-500" id="rqSummaryLabel">Dishes: <strong class="text-gray-800">0</strong></span>
             <span class="mx-2 text-gray-300">|</span>
             <span class="text-xs text-gray-500">Order: <strong id="rqSummaryKg" class="text-orange-600">0 kg</strong></span>
         </div>
@@ -127,18 +100,13 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
 let rqDate = todayStr();
 let rqSessions = [];
 let rqActiveSession = null;
-let rqItems = [];
-let rqGrouped = {};
-let rqLines = {}; // Manual mode: { itemId: { portions, direct_kg, meal } }
 let rqSelectedMeals = ['lunch'];
 let rqGuestCount = 20;
-let rqCollapsed = {}; // category collapse state
-let rqTypes = []; // loaded from DB
+let rqTypes = [];
 
-// Dish mode state
-let rqMode = 'dish';           // 'dish' or 'item'
-let rqDishes = {};             // { recipeId: { recipe_id, recipe_name, recipe_servings, ingredients: [] } }
-let rqAggregatedItems = {};    // { itemId: { item_name, total_qty, uom, stock_qty, order_mode, category, adjustment, sources[] } }
+// Dish state
+let rqDishes = {};             // { recipeId: { recipe_id, recipe_name, recipe_servings, ingredients[] } }
+let rqAggregatedItems = {};    // { itemId: { item_name, total_qty, total_qty_raw, uom, stock_qty, order_mode, category, adjustment, sources[] } }
 let rqDishSearchResults = [];
 
 const RQ_MAX_DAYS_AHEAD = 7;
@@ -148,7 +116,6 @@ const RQ_KITCHEN_ID = <?= (int)$kitchenId ?>;
 rqRenderDate();
 rqLoadTypes();
 rqLoadSessions();
-rqLoadItems();
 
 const rqSearchDishesDebounced = debounce(() => rqSearchDishes(), 350);
 
@@ -172,7 +139,6 @@ function rqRenderDate() {
         const diff = Math.round((new Date(rqDate) - new Date(today)) / 86400000);
         document.getElementById('rqDateRelative').textContent = diff > 0 ? `+${diff} day${diff > 1 ? 's' : ''}` : `${diff} day${diff < -1 ? 's' : ''}`;
     }
-    // Disable forward if at max
     const maxDate = changeDate(today, RQ_MAX_DAYS_AHEAD);
     document.getElementById('rqNextBtn').disabled = rqDate >= maxDate;
     document.getElementById('rqNextBtn').style.opacity = rqDate >= maxDate ? '0.3' : '1';
@@ -207,7 +173,6 @@ async function rqLoadSessions() {
             rqLoadSession(rqSessions[rqSessions.length - 1].id);
         } else {
             rqActiveSession = null;
-            rqLines = {};
             rqDishes = {};
             rqAggregatedItems = {};
             document.getElementById('rqSessionCard').classList.add('hidden');
@@ -222,7 +187,7 @@ async function rqLoadSessions() {
 function rqRenderSessionTabs() {
     const container = document.getElementById('rqSessionTabs');
     let html = '';
-    rqSessions.forEach((s, i) => {
+    rqSessions.forEach(s => {
         const isActive = rqActiveSession && rqActiveSession.id === s.id;
         const statusColors = {
             draft: 'bg-gray-100 text-gray-700',
@@ -268,122 +233,72 @@ async function rqLoadSession(sessionId) {
         rqActiveSession = data.requisition;
         const lines = data.lines || [];
 
-        // Restore state from session
+        // Restore state
         rqGuestCount = rqActiveSession.guest_count || 20;
         document.getElementById('rqGuestCount').textContent = rqGuestCount;
-
         rqSelectedMeals = (rqActiveSession.meals || 'lunch').split(',').map(m => m.trim());
         rqUpdateMealPills();
 
-        // Reset both modes
-        rqLines = {};
+        // Reset dish state
         rqDishes = {};
         rqAggregatedItems = {};
 
-        // Check if this requisition has dishes (dish mode)
+        // Load saved dishes
         try {
             const dishData = await api(`api/requisitions.php?action=get_dishes&requisition_id=${sessionId}`);
             const savedDishes = dishData.dishes || [];
 
-            if (savedDishes.length > 0) {
-                // Restore dish mode
-                rqMode = 'dish';
-                for (const d of savedDishes) {
-                    // Fetch ingredients for each saved dish
-                    try {
-                        const ingData = await api(`api/requisitions.php?action=get_recipe_ingredients&recipe_id=${d.recipe_id}`);
-                        rqDishes[d.recipe_id] = {
-                            recipe_id: d.recipe_id,
-                            recipe_name: d.recipe_name,
-                            recipe_servings: d.recipe_servings || 4,
-                            ingredients: ingData.ingredients || []
-                        };
-                    } catch {
-                        // Recipe may have been deleted, still show with name
-                        rqDishes[d.recipe_id] = {
-                            recipe_id: d.recipe_id,
-                            recipe_name: d.recipe_name,
-                            recipe_servings: d.recipe_servings || 4,
-                            ingredients: []
-                        };
+            for (const d of savedDishes) {
+                try {
+                    const ingData = await api(`api/requisitions.php?action=get_recipe_ingredients&recipe_id=${d.recipe_id}`);
+                    rqDishes[d.recipe_id] = {
+                        recipe_id: d.recipe_id,
+                        recipe_name: d.recipe_name,
+                        recipe_servings: d.recipe_servings || 4,
+                        ingredients: ingData.ingredients || []
+                    };
+                } catch {
+                    rqDishes[d.recipe_id] = {
+                        recipe_id: d.recipe_id,
+                        recipe_name: d.recipe_name,
+                        recipe_servings: d.recipe_servings || 4,
+                        ingredients: []
+                    };
+                }
+            }
+
+            rqRecalcAggregated();
+
+            // Restore adjustments from saved lines
+            lines.forEach(l => {
+                const agg = rqAggregatedItems[l.item_id];
+                if (agg) {
+                    const diff = parseFloat(l.required_kg) - agg.total_qty_raw;
+                    if (Math.abs(diff) > 0.01) {
+                        agg.adjustment = diff;
+                        agg.total_qty = agg.total_qty_raw + diff;
                     }
                 }
-                rqRecalcAggregated();
-                // Restore adjustments from lines if any
-                lines.forEach(l => {
-                    const agg = rqAggregatedItems[l.item_id];
-                    if (agg) {
-                        const diff = parseFloat(l.required_kg) - agg.total_qty_raw;
-                        if (Math.abs(diff) > 0.01) {
-                            agg.adjustment = diff;
-                        }
-                    }
-                });
-            } else {
-                // Manual item mode
-                rqMode = 'item';
-                lines.forEach(l => {
-                    rqLines[l.item_id] = {
-                        portions: l.portions || 0,
-                        direct_kg: parseFloat(l.required_kg) || 0,
-                        meal: l.meal || 'lunch'
-                    };
-                });
-            }
-        } catch {
-            // Fallback to item mode
-            rqMode = 'item';
-            lines.forEach(l => {
-                rqLines[l.item_id] = {
-                    portions: l.portions || 0,
-                    direct_kg: parseFloat(l.required_kg) || 0,
-                    meal: l.meal || 'lunch'
-                };
             });
+        } catch {
+            // No dishes saved yet — fresh requisition
         }
 
-        rqApplyMode();
         document.getElementById('rqSessionCard').classList.remove('hidden');
         document.getElementById('rqEmptyState').classList.add('hidden');
         rqRenderSessionTabs();
         rqRenderStatusBanner();
-
-        if (rqMode === 'dish') {
-            rqRenderDishView();
-        } else {
-            rqRenderItems();
-        }
+        rqRenderDishView();
         rqUpdateSummary();
 
-        // Show/hide bottom bar based on status
+        // Show/hide elements based on status
         const isDraft = rqActiveSession.status === 'draft';
         document.getElementById('rqBottomBar').classList.toggle('hidden', !isDraft);
+        document.getElementById('rqDishSearchWrap').classList.toggle('hidden', !isDraft);
 
     } catch (e) {
         showToast('Failed to load requisition', 'error');
     }
-}
-
-// ── Mode Toggle ──
-function rqSetMode(mode) {
-    if (!rqActiveSession || rqActiveSession.status !== 'draft') return;
-    rqMode = mode;
-    rqApplyMode();
-    if (mode === 'dish') {
-        rqRenderDishView();
-    } else {
-        rqRenderItems();
-    }
-    rqUpdateSummary();
-}
-
-function rqApplyMode() {
-    const isDish = rqMode === 'dish';
-    document.getElementById('rqDishView').classList.toggle('hidden', !isDish);
-    document.getElementById('rqItemView').classList.toggle('hidden', isDish);
-    // Toggle button styles
-    document.getElementById('rqModeDish').className = `flex-1 text-xs font-semibold py-2 rounded-lg transition flex items-center justify-center gap-1.5 ${isDish ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500'}`;
-    document.getElementById('rqModeItem').className = `flex-1 text-xs font-semibold py-2 rounded-lg transition flex items-center justify-center gap-1.5 ${!isDish ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500'}`;
 }
 
 // ── Types ──
@@ -432,18 +347,13 @@ function rqAdjGuests(delta) {
     if (!rqActiveSession || rqActiveSession.status !== 'draft') return;
     rqGuestCount = Math.max(1, rqGuestCount + delta);
     document.getElementById('rqGuestCount').textContent = rqGuestCount;
-
-    if (rqMode === 'dish') {
-        rqRecalcAggregated();
-        rqRenderDishView();
-    } else {
-        rqRenderItems();
-    }
+    rqRecalcAggregated();
+    rqRenderDishView();
     rqUpdateSummary();
 }
 
 // ═══════════════════════════════════════
-//  DISH MODE — Search, Add, Remove, Aggregate
+//  DISH — Search, Add, Remove, Aggregate
 // ═══════════════════════════════════════
 
 async function rqSearchDishes() {
@@ -468,7 +378,7 @@ async function rqSearchDishes() {
 function rqRenderDishResults() {
     const container = document.getElementById('rqDishResults');
     if (!rqDishSearchResults.length) {
-        container.innerHTML = '<p class="text-xs text-gray-400 bg-white rounded-xl border border-gray-200 p-3">No dishes found</p>';
+        container.innerHTML = '<p class="text-xs text-gray-400 bg-white rounded-xl border border-gray-200 p-3">No dishes found. Add recipes first in the Recipes page.</p>';
         container.classList.remove('hidden');
         return;
     }
@@ -515,7 +425,7 @@ async function rqAddDish(recipeId) {
         showToast(`${recipe.name} added`, 'success');
         rqRecalcAggregated();
         rqRenderDishView();
-        rqRenderDishResults(); // update search results to show "Added"
+        rqRenderDishResults();
         rqUpdateSummary();
 
         // Clear search
@@ -550,7 +460,6 @@ function rqRecalcAggregated() {
                 newAgg[itemId].total_qty += scaledQty;
                 newAgg[itemId].sources.push(dish.recipe_name);
             } else {
-                // Preserve existing adjustment if recalcing
                 const oldAdj = rqAggregatedItems[itemId]?.adjustment || 0;
                 newAgg[itemId] = {
                     item_name: ing.item_name,
@@ -566,7 +475,6 @@ function rqRecalcAggregated() {
         });
     }
 
-    // Store raw total for adjustment tracking
     for (const itemId of Object.keys(newAgg)) {
         newAgg[itemId].total_qty_raw = newAgg[itemId].total_qty;
         newAgg[itemId].total_qty += newAgg[itemId].adjustment;
@@ -578,7 +486,7 @@ function rqRecalcAggregated() {
 function rqRenderDishView() {
     const isDraft = rqActiveSession && rqActiveSession.status === 'draft';
     rqRenderSelectedDishes(isDraft);
-    rqRenderAggregatedItems(isDraft);
+    rqRenderAggregatedItemsList(isDraft);
 }
 
 function rqRenderSelectedDishes(isDraft) {
@@ -621,7 +529,7 @@ function rqRenderSelectedDishes(isDraft) {
     container.innerHTML = html;
 }
 
-function rqRenderAggregatedItems(isDraft) {
+function rqRenderAggregatedItemsList(isDraft) {
     const container = document.getElementById('rqAggregatedItems');
     const items = Object.entries(rqAggregatedItems);
 
@@ -649,7 +557,6 @@ function rqRenderAggregatedItems(isDraft) {
             const requiredKg = Math.ceil(totalQty * 2) / 2;
             const orderQty = Math.max(0, Math.ceil((requiredKg - agg.stock_qty) * 2) / 2);
 
-            // Stock badge
             let stockBadge = '';
             if (requiredKg > 0) {
                 if (agg.stock_qty >= requiredKg) {
@@ -699,222 +606,34 @@ function rqAdjAggItem(itemId, delta) {
     if (!rqAggregatedItems[itemId]) return;
     rqAggregatedItems[itemId].adjustment = (rqAggregatedItems[itemId].adjustment || 0) + delta;
     rqAggregatedItems[itemId].total_qty = rqAggregatedItems[itemId].total_qty_raw + rqAggregatedItems[itemId].adjustment;
-    rqRenderAggregatedItems(true);
+    rqRenderAggregatedItemsList(true);
     rqUpdateSummary();
 }
 
 // ═══════════════════════════════════════
-//  MANUAL ITEM MODE (existing logic)
-// ═══════════════════════════════════════
-
-async function rqLoadItems() {
-    try {
-        const data = await cachedApi('api/requisitions.php?action=get_items', 300000);
-        rqItems = data.items || [];
-        rqGrouped = data.grouped || {};
-        rqRenderItems();
-    } catch (e) {
-        showToast('Failed to load items', 'error');
-    }
-}
-
-function rqFilterItems() {
-    const q = document.getElementById('rqSearch').value.toLowerCase();
-    document.querySelectorAll('.rq-item-row').forEach(row => {
-        const name = row.dataset.name.toLowerCase();
-        row.style.display = name.includes(q) ? '' : 'none';
-    });
-    document.querySelectorAll('.rq-cat-group').forEach(group => {
-        const visibleItems = group.querySelectorAll('.rq-item-row:not([style*="display: none"])');
-        group.style.display = visibleItems.length > 0 ? '' : 'none';
-    });
-}
-
-function rqRenderItems() {
-    const container = document.getElementById('rqItemList');
-    if (!rqActiveSession) { container.innerHTML = ''; return; }
-
-    const isDraft = rqActiveSession.status === 'draft';
-    let html = '';
-
-    for (const [cat, items] of Object.entries(rqGrouped)) {
-        const isCollapsed = rqCollapsed[cat] ?? false;
-        const activeCount = items.filter(i => rqLines[i.id] && (rqLines[i.id].portions > 0 || rqLines[i.id].direct_kg > 0)).length;
-
-        html += `<div class="rq-cat-group mb-2">
-            <button onclick="rqToggleCat('${cat}')" class="w-full flex items-center justify-between bg-white border border-gray-200 rounded-xl px-3 py-2.5 mb-1">
-                <div class="flex items-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="transition-transform ${isCollapsed ? '' : 'rotate-90'}"><path d="m9 18 6-6-6-6"/></svg>
-                    <span class="text-xs font-semibold text-gray-700">${cat}</span>
-                    <span class="text-[10px] text-gray-400">(${items.length})</span>
-                </div>
-                ${activeCount > 0 ? `<span class="text-[10px] bg-orange-100 text-orange-600 px-1.5 py-0.5 rounded-full font-semibold">${activeCount} selected</span>` : ''}
-            </button>
-            <div class="${isCollapsed ? 'hidden' : ''}" id="rqCat_${cat.replace(/[^a-zA-Z0-9]/g, '_')}">`;
-
-        items.forEach(item => {
-            const line = rqLines[item.id] || { portions: 0, direct_kg: 0 };
-            const isPortion = item.order_mode === 'portion';
-            const portionWeight = parseFloat(item.portion_weight) || 0.25;
-            const stockQty = parseFloat(item.stock_qty) || 0;
-
-            let requiredKg = 0;
-            if (isPortion) {
-                requiredKg = line.portions * portionWeight;
-            } else {
-                requiredKg = line.direct_kg || 0;
-            }
-            requiredKg = Math.ceil(requiredKg * 2) / 2;
-            const orderQty = Math.max(0, Math.ceil((requiredKg - stockQty) * 2) / 2);
-
-            let stockBadge = '';
-            if (requiredKg > 0) {
-                if (stockQty >= requiredKg) {
-                    stockBadge = '<span class="text-[9px] bg-green-100 text-green-700 px-1 py-0.5 rounded">In Stock</span>';
-                } else if (stockQty > 0) {
-                    stockBadge = `<span class="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded">Partial ${stockQty}${item.uom}</span>`;
-                } else {
-                    stockBadge = '<span class="text-[9px] bg-red-100 text-red-700 px-1 py-0.5 rounded">No Stock</span>';
-                }
-            }
-
-            html += `<div class="rq-item-row bg-white border border-gray-100 rounded-lg px-3 py-2 mb-1" data-name="${item.name}" data-id="${item.id}">
-                <div class="flex items-center justify-between mb-1">
-                    <div class="flex-1 min-w-0">
-                        <span class="text-sm font-medium text-gray-800 truncate block">${item.name}</span>
-                        <div class="flex items-center gap-2 mt-0.5">
-                            ${isPortion ? `<span class="text-[9px] text-gray-400">${portionWeight * 1000}g/portion</span>` : '<span class="text-[9px] bg-blue-50 text-blue-600 px-1 py-0.5 rounded">Direct KG</span>'}
-                            ${stockBadge}
-                        </div>
-                    </div>
-                    ${requiredKg > 0 && orderQty > 0 ? `<div class="text-right ml-2">
-                        <div class="text-xs font-bold text-orange-600">${orderQty} ${item.uom}</div>
-                        <div class="text-[9px] text-gray-400">to order</div>
-                    </div>` : ''}
-                </div>`;
-
-            if (isDraft) {
-                if (isPortion) {
-                    html += `<div class="flex items-center gap-2 mt-1">
-                        <button onclick="rqAdjItem(${item.id},-1)" class="w-8 h-8 rounded-lg bg-gray-100 text-gray-500 font-bold flex items-center justify-center hover:bg-gray-200 text-sm">-</button>
-                        <input type="number" value="${line.portions}" min="0" onchange="rqSetPortions(${item.id}, this.value)"
-                            class="w-16 text-center border border-gray-200 rounded-lg py-1 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-orange-300">
-                        <button onclick="rqAdjItem(${item.id},1)" class="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 font-bold flex items-center justify-center hover:bg-orange-200 text-sm">+</button>
-                        <span class="text-xs text-gray-400 ml-1">portions</span>
-                        ${requiredKg > 0 ? `<span class="text-xs text-gray-500 ml-auto">= ${requiredKg} ${item.uom}</span>` : ''}
-                    </div>`;
-                } else {
-                    html += `<div class="flex items-center gap-2 mt-1">
-                        <button onclick="rqAdjItemKg(${item.id},-0.5)" class="w-8 h-8 rounded-lg bg-gray-100 text-gray-500 font-bold flex items-center justify-center hover:bg-gray-200 text-sm">-</button>
-                        <input type="number" value="${line.direct_kg || 0}" min="0" step="0.5" onchange="rqSetDirectKg(${item.id}, this.value)"
-                            class="w-20 text-center border border-gray-200 rounded-lg py-1 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-orange-300">
-                        <button onclick="rqAdjItemKg(${item.id},0.5)" class="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 font-bold flex items-center justify-center hover:bg-orange-200 text-sm">+</button>
-                        <span class="text-xs text-gray-400 ml-1">${item.uom}</span>
-                    </div>`;
-                }
-            } else {
-                if (isPortion && line.portions > 0) {
-                    html += `<div class="text-xs text-gray-500 mt-1">${line.portions} portions = ${requiredKg} ${item.uom}</div>`;
-                } else if (!isPortion && requiredKg > 0) {
-                    html += `<div class="text-xs text-gray-500 mt-1">${requiredKg} ${item.uom}</div>`;
-                }
-            }
-
-            html += `</div>`;
-        });
-
-        html += `</div></div>`;
-    }
-
-    container.innerHTML = html;
-}
-
-function rqToggleCat(cat) {
-    rqCollapsed[cat] = !rqCollapsed[cat];
-    rqRenderItems();
-}
-
-// ── Item quantity changes (manual mode) ──
-function rqAdjItem(itemId, delta) {
-    if (!rqLines[itemId]) rqLines[itemId] = { portions: 0, direct_kg: 0, meal: rqSelectedMeals[0] || 'lunch' };
-    rqLines[itemId].portions = Math.max(0, (rqLines[itemId].portions || 0) + delta);
-    rqRenderItems();
-    rqUpdateSummary();
-}
-
-function rqSetPortions(itemId, val) {
-    if (!rqLines[itemId]) rqLines[itemId] = { portions: 0, direct_kg: 0, meal: rqSelectedMeals[0] || 'lunch' };
-    rqLines[itemId].portions = Math.max(0, parseInt(val) || 0);
-    rqRenderItems();
-    rqUpdateSummary();
-}
-
-function rqAdjItemKg(itemId, delta) {
-    if (!rqLines[itemId]) rqLines[itemId] = { portions: 0, direct_kg: 0, meal: rqSelectedMeals[0] || 'lunch' };
-    rqLines[itemId].direct_kg = Math.max(0, parseFloat(((rqLines[itemId].direct_kg || 0) + delta).toFixed(1)));
-    rqRenderItems();
-    rqUpdateSummary();
-}
-
-function rqSetDirectKg(itemId, val) {
-    if (!rqLines[itemId]) rqLines[itemId] = { portions: 0, direct_kg: 0, meal: rqSelectedMeals[0] || 'lunch' };
-    rqLines[itemId].direct_kg = Math.max(0, parseFloat(val) || 0);
-    rqRenderItems();
-    rqUpdateSummary();
-}
-
-// ═══════════════════════════════════════
-//  SHARED — Summary, Status, Save/Submit
+//  Summary, Status, Save/Submit, Receipt
 // ═══════════════════════════════════════
 
 function rqUpdateSummary() {
     let totalItems = 0;
     let totalKg = 0;
 
-    if (rqMode === 'dish') {
-        // Dish mode: summarize aggregated items
-        for (const [itemId, agg] of Object.entries(rqAggregatedItems)) {
-            const totalQty = Math.max(0, agg.total_qty);
-            const requiredKg = Math.ceil(totalQty * 2) / 2;
-            if (requiredKg <= 0) continue;
-            const orderQty = Math.max(0, Math.ceil((requiredKg - agg.stock_qty) * 2) / 2);
-            if (orderQty > 0) {
-                totalItems++;
-                totalKg += orderQty;
-            }
+    for (const [itemId, agg] of Object.entries(rqAggregatedItems)) {
+        const totalQty = Math.max(0, agg.total_qty);
+        const requiredKg = Math.ceil(totalQty * 2) / 2;
+        if (requiredKg <= 0) continue;
+        const orderQty = Math.max(0, Math.ceil((requiredKg - agg.stock_qty) * 2) / 2);
+        if (orderQty > 0) {
+            totalItems++;
+            totalKg += orderQty;
         }
-        const dishCount = Object.keys(rqDishes).length;
-        document.getElementById('rqSummaryLabel').innerHTML = `Dishes: <strong class="text-gray-800">${dishCount}</strong> &bull; Items: <strong class="text-gray-800">${totalItems}</strong>`;
-    } else {
-        // Manual mode
-        for (const [itemId, line] of Object.entries(rqLines)) {
-            const item = rqItems.find(i => i.id == itemId);
-            if (!item) continue;
-
-            let requiredKg = 0;
-            if (item.order_mode === 'portion') {
-                requiredKg = (line.portions || 0) * (parseFloat(item.portion_weight) || 0.25);
-            } else {
-                requiredKg = line.direct_kg || 0;
-            }
-            requiredKg = Math.ceil(requiredKg * 2) / 2;
-            if (requiredKg <= 0) continue;
-
-            const stockQty = parseFloat(item.stock_qty) || 0;
-            const orderQty = Math.max(0, Math.ceil((requiredKg - stockQty) * 2) / 2);
-
-            if (orderQty > 0) {
-                totalItems++;
-                totalKg += orderQty;
-            }
-        }
-        document.getElementById('rqSummaryLabel').innerHTML = `Items: <strong class="text-gray-800" id="rqSummaryItems">${totalItems}</strong>`;
     }
 
+    const dishCount = Object.keys(rqDishes).length;
+    document.getElementById('rqSummaryLabel').innerHTML = `Dishes: <strong class="text-gray-800">${dishCount}</strong> &bull; Items: <strong class="text-gray-800">${totalItems}</strong>`;
     document.getElementById('rqSummaryKg').textContent = totalKg.toFixed(1) + ' kg';
 }
 
-// ── Status Banner ──
 function rqRenderStatusBanner() {
     const banner = document.getElementById('rqStatusBanner');
     if (!rqActiveSession || rqActiveSession.status === 'draft') {
@@ -948,7 +667,6 @@ function rqRenderStatusBanner() {
     banner.classList.remove('hidden');
 }
 
-// ── Receipt Confirmation ──
 async function rqShowReceiptSheet() {
     if (!rqActiveSession) return;
     const data = await api(`api/requisitions.php?action=get&id=${rqActiveSession.id}`);
@@ -1002,68 +720,40 @@ async function rqConfirmReceipt() {
     }
 }
 
-// ── Save & Submit ──
 async function rqSaveAndSubmit() {
     if (!rqActiveSession) return;
     const btn = document.getElementById('rqSubmitBtn');
     setLoading(btn, true);
 
     try {
-        if (rqMode === 'dish') {
-            // ── Dish-based save ──
-            const dishList = Object.values(rqDishes);
-            if (dishList.length === 0) {
-                showToast('Add at least one dish before submitting', 'warning');
-                setLoading(btn, false);
-                return;
-            }
-
-            // Build adjustments map
-            const adjustments = {};
-            for (const [itemId, agg] of Object.entries(rqAggregatedItems)) {
-                if (agg.adjustment && Math.abs(agg.adjustment) > 0.01) {
-                    adjustments[itemId] = agg.adjustment;
-                }
-            }
-
-            await api('api/requisitions.php?action=save_dish_lines', {
-                method: 'POST',
-                body: JSON.stringify({
-                    requisition_id: rqActiveSession.id,
-                    dishes: dishList.map(d => ({
-                        recipe_id: d.recipe_id,
-                        recipe_name: d.recipe_name,
-                        recipe_servings: d.recipe_servings
-                    })),
-                    guest_count: rqGuestCount,
-                    adjustments: adjustments
-                })
-            });
-
-        } else {
-            // ── Manual item save ──
-            const linesToSave = [];
-            for (const [itemId, line] of Object.entries(rqLines)) {
-                if ((line.portions || 0) <= 0 && (line.direct_kg || 0) <= 0) continue;
-                linesToSave.push({
-                    item_id: parseInt(itemId),
-                    meal: rqSelectedMeals[0] || 'lunch',
-                    portions: line.portions || 0,
-                    direct_kg: line.direct_kg || 0
-                });
-            }
-
-            if (linesToSave.length === 0) {
-                showToast('Add items before submitting', 'warning');
-                setLoading(btn, false);
-                return;
-            }
-
-            await api('api/requisitions.php?action=save_lines', {
-                method: 'POST',
-                body: JSON.stringify({ requisition_id: rqActiveSession.id, lines: linesToSave })
-            });
+        const dishList = Object.values(rqDishes);
+        if (dishList.length === 0) {
+            showToast('Add at least one dish before submitting', 'warning');
+            setLoading(btn, false);
+            return;
         }
+
+        // Build adjustments map
+        const adjustments = {};
+        for (const [itemId, agg] of Object.entries(rqAggregatedItems)) {
+            if (agg.adjustment && Math.abs(agg.adjustment) > 0.01) {
+                adjustments[itemId] = agg.adjustment;
+            }
+        }
+
+        await api('api/requisitions.php?action=save_dish_lines', {
+            method: 'POST',
+            body: JSON.stringify({
+                requisition_id: rqActiveSession.id,
+                dishes: dishList.map(d => ({
+                    recipe_id: d.recipe_id,
+                    recipe_name: d.recipe_name,
+                    recipe_servings: d.recipe_servings
+                })),
+                guest_count: rqGuestCount,
+                adjustments: adjustments
+            })
+        });
 
         // Submit
         await api('api/requisitions.php?action=submit', {
