@@ -25,7 +25,7 @@ $kitchenId = $user['kitchen_id'] ?? 0;
     </div>
     <div class="min-w-[120px] bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-3 text-white flex-1">
         <div class="text-2xl font-bold" id="dbStatReceive">—</div>
-        <div class="text-[10px] opacity-80 font-medium">Ready to Receive</div>
+        <div class="text-[10px] opacity-80 font-medium">Ready to Close</div>
     </div>
 </div>
 
@@ -38,12 +38,12 @@ $kitchenId = $user['kitchen_id'] ?? 0;
         <div class="text-sm font-semibold text-gray-800">New Requisition</div>
         <div class="text-[10px] text-gray-400">Order items for kitchen</div>
     </a>
-    <a href="app.php?page=review-supply" class="bg-white border border-gray-200 rounded-xl p-4 hover:border-green-300 hover:bg-green-50 transition group">
+    <a href="app.php?page=store-history" class="bg-white border border-gray-200 rounded-xl p-4 hover:border-green-300 hover:bg-green-50 transition group">
         <div class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center mb-2 group-hover:bg-green-200 transition">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
         </div>
-        <div class="text-sm font-semibold text-gray-800">Review Supply</div>
-        <div class="text-[10px] text-gray-400">Confirm received items</div>
+        <div class="text-sm font-semibold text-gray-800">Order History</div>
+        <div class="text-[10px] text-gray-400">Past orders & records</div>
     </a>
     <a href="app.php?page=day-close" class="bg-white border border-gray-200 rounded-xl p-4 hover:border-blue-300 hover:bg-blue-50 transition group">
         <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center mb-2 group-hover:bg-blue-200 transition">
@@ -84,7 +84,7 @@ async function dbLoadStats() {
         const s = data.stats || {};
         document.getElementById('dbStatSessions').textContent = s.active_sessions || 0;
         document.getElementById('dbStatAwaiting').textContent = s.awaiting_supply || 0;
-        document.getElementById('dbStatReceive').textContent = (s.ready_receive || 0);
+        document.getElementById('dbStatReceive').textContent = (s.ready_close || 0);
     } catch(e) {}
 }
 
