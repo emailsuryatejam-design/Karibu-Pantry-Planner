@@ -10,6 +10,13 @@ function escHtml(s) {
     return d.innerHTML;
 }
 
+// ── Requisition label: "Breakfast" or "Breakfast (2)" for supplementary orders ──
+function reqLabel(r) {
+    const meal = escHtml((r.meals || '').replace(/^./, c => c.toUpperCase()));
+    const supp = parseInt(r.supplement_number) || 0;
+    return supp > 0 ? `${meal} (${supp + 1})` : meal;
+}
+
 // ── API Helper ──
 async function api(endpoint, options = {}) {
     const method = (options.method || 'GET').toUpperCase();

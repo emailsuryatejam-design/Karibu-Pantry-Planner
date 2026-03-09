@@ -66,8 +66,8 @@ async function dcLoad() {
             html += `<div class="bg-white border border-gray-200 rounded-xl px-4 py-3">
                 <div class="flex items-center justify-between">
                     <div>
-                        <span class="text-sm font-semibold text-gray-800">Requisition ${r.session_number}</span>
-                        <div class="text-[10px] text-gray-400 mt-0.5">${r.meals || '—'} &bull; ${r.line_count} items &bull; ${parseFloat(r.total_kg || 0).toFixed(1)} kg</div>
+                        <span class="text-sm font-semibold text-gray-800">${reqLabel(r)}</span>
+                        <div class="text-[10px] text-gray-400 mt-0.5">${r.line_count} items &bull; ${parseFloat(r.total_kg || 0).toFixed(1)} kg</div>
                     </div>
                     <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${color}">${r.status}${r.has_dispute ? ' !' : ''}</span>
                 </div>

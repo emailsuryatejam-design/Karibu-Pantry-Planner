@@ -73,12 +73,12 @@ async function sdLoadIncoming() {
             html += `<div class="bg-white border ${isNew ? 'border-red-200' : 'border-amber-200'} rounded-xl px-4 py-3">
                 <div class="flex items-center justify-between mb-2">
                     <div>
-                        <span class="text-sm font-semibold text-gray-800">Requisition ${r.session_number}</span>
+                        <span class="text-sm font-semibold text-gray-800">${reqLabel(r)}</span>
                         <span class="text-[10px] text-gray-400 ml-2">${r.chef_name || 'Chef'}</span>
                     </div>
                     <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${isNew ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}">${r.status}</span>
                 </div>
-                <div class="text-[10px] text-gray-400 mb-2">${r.meals || '—'} &bull; ${r.line_count} items</div>
+                <div class="text-[10px] text-gray-400 mb-2">${r.line_count} items</div>
                 <button onclick="sdFulfill(${r.id})" class="w-full bg-green-500 text-white py-2 rounded-lg text-sm font-semibold hover:bg-green-600 transition">
                     ${isNew ? 'Start Fulfilling' : 'Continue'}
                 </button>
@@ -97,8 +97,8 @@ async function sdFulfill(reqId) {
         const req = data.requisition;
 
         let html = `<div class="p-4">
-            <h3 class="text-sm font-semibold text-gray-800 mb-1">Fulfill Requisition ${req.session_number}</h3>
-            <p class="text-[10px] text-gray-400 mb-3">${req.meals || '—'} &bull; ${req.chef_name || 'Chef'}</p>
+            <h3 class="text-sm font-semibold text-gray-800 mb-1">Fulfill ${reqLabel(req)}</h3>
+            <p class="text-[10px] text-gray-400 mb-3">${req.chef_name || 'Chef'}</p>
             <div class="space-y-2 max-h-[50vh] overflow-y-auto">`;
 
         lines.forEach(l => {
