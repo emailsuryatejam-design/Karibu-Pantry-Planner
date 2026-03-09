@@ -758,9 +758,9 @@ async function rqCreateSupplementary() {
     if (!confirm(`Create a supplementary order for ${typeName}? This will add a new tab for additional items.`)) return;
 
     try {
-        const data = await api('api/requisitions.php', {
+        const data = await api('api/requisitions.php?action=create_supplementary', {
             method: 'POST',
-            body: { action: 'create_supplementary', parent_id: rqActiveSession.id }
+            body: { parent_id: rqActiveSession.id }
         });
         rqSessions = data.requisitions || [];
         rqRenderSessionTabs();
