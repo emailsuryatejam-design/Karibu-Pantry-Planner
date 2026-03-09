@@ -514,6 +514,142 @@ async function printOrder(reqId, kitchenNameOverride) {
     }
 }
 
+// ── Print Store Order (grocery_orders table — different from requisitions) ──
+async function printStoreOrder(orderId) {
+    try {
+        const data = await api(`api/store-orders.php?action=get&id=${orderId}`);
+        const order = data.order;
+        const lines = data.lines || [];
+
+        const chefName = order.chef_name || 'Chef';
+        const date = formatDate(order.order_date);
+        const status = (order.status || 'pending').toUpperCase();
+        const hasDispute = parseInt(order.has_dispute) === 1;
+
+        let tableRows = '';
+        lines.forEach((l, i) => {
+            const reqQty = parseFloat(l.requested_qty) || 0;
+            const fulfilledQty = parseFloat(l.fulfilled_qty) || 0;
+            const receivedQty = parseFloat(l.received_qty) || 0;
+            const diff = receivedQty > 0 ? receivedQty - reqQty : (fulfilledQty > 0 ? fulfilledQty - reqQty : 0);
+            const hasDiff = Math.abs(diff) > 0.01;
+            const diffStyle = diff < 0 ? 'color:#dc2626;font-weight:bold' : (diff > 0 ? 'color:#16a34a;font-weight:bold' : 'color:#6b7280');
+            const rowBg = hasDiff ? 'background:#fef2f2;' : '';
+
+            tableRows += `<tr style="border-bottom:1px solid #e5e7eb;${rowBg}">
+                <td style="padding:6px 8px;text-align:center;color:#6b7280">${i + 1}</td>
+                <td style="padding:6px 8px;font-weight:500">${escHtml(l.item_name)}</td>
+                <td style="padding:6px 8px;text-align:center;color:#6b7280;font-size:11px">${escHtml(l.uom || 'kg')}</td>
+                <td style="padding:6px 8px;text-align:center">${reqQty}</td>
+                <td style="padding:6px 8px;text-align:center;font-weight:600;color:#2563eb">${fulfilledQty || '—'}</td>
+                <td style="padding:6px 8px;text-align:center;font-weight:600;color:#16a34a">${receivedQty || '—'}</td>
+                <td style="padding:6px 8px;text-align:center;${diffStyle}">${hasDiff ? (diff > 0 ? '+' : '') + diff : '—'}</td>
+            </tr>`;
+        });
+
+        let disputeHtml = '';
+        if (hasDispute) {
+            disputeHtml = `<div style="margin-top:12px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px">
+                <span style="font-size:12px;font-weight:600;color:#dc2626">⚠ DISPUTE: Quantity differences detected between issued and received items</span>
+            </div>`;
+        }
+
+        const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<title>Store Order #${order.id} — ${date}</title>
+<style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; padding: 24px; color: #1f2937; font-size: 13px; }
+    @media print {
+        body { padding: 12px; }
+        .no-print { display: none !important; }
+        @page { margin: 15mm; size: A4; }
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f3f4f6; text-align: left; padding: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #374151; border-bottom: 2px solid #d1d5db; }
+    th.center { text-align: center; }
+</style>
+</head><body>
+    <div class="no-print" style="margin-bottom:16px;text-align:right">
+        <button onclick="window.print()" style="background:#ea580c;color:white;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">
+            🖨 Print
+        </button>
+        <button onclick="window.close()" style="background:#e5e7eb;color:#374151;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-left:8px">
+            ✕ Close
+        </button>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #ea580c;padding-bottom:12px;margin-bottom:16px">
+        <div>
+            <h1 style="font-size:20px;font-weight:700;color:#ea580c">Karibu Pantry Planner</h1>
+        </div>
+        <div style="text-align:right">
+            <div style="font-size:16px;font-weight:700;color:#1f2937">STORE ORDER</div>
+            <div style="font-size:11px;color:#6b7280">#${order.id}</div>
+        </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div style="background:#f9fafb;padding:10px 12px;border-radius:8px;border:1px solid #e5e7eb">
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">Date</div>
+            <div style="font-size:14px;font-weight:600;color:#1f2937;margin-top:2px">${date}</div>
+        </div>
+        <div style="background:#f9fafb;padding:10px 12px;border-radius:8px;border:1px solid #e5e7eb">
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">Chef</div>
+            <div style="font-size:14px;font-weight:600;color:#1f2937;margin-top:2px">${escHtml(chefName)}</div>
+        </div>
+        <div style="background:#f9fafb;padding:10px 12px;border-radius:8px;border:1px solid #e5e7eb">
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">Status</div>
+            <div style="font-size:14px;font-weight:600;color:#1f2937;margin-top:2px">${status}</div>
+        </div>
+    </div>
+    <div style="margin-bottom:12px">
+        <span style="font-size:12px;color:#6b7280">${lines.length} items</span>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th style="width:36px;text-align:center">#</th>
+                <th>Item</th>
+                <th class="center" style="width:50px">UOM</th>
+                <th class="center" style="width:70px">Requested</th>
+                <th class="center" style="width:70px">Sent</th>
+                <th class="center" style="width:70px">Received</th>
+                <th class="center" style="width:60px">Diff</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${tableRows}
+        </tbody>
+    </table>
+    ${disputeHtml}
+    <div style="margin-top:32px;display:grid;grid-template-columns:1fr 1fr;gap:40px">
+        <div>
+            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:32px"></div>
+            <div style="font-size:11px;color:#6b7280">Chef Signature / Date</div>
+        </div>
+        <div>
+            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:32px"></div>
+            <div style="font-size:11px;color:#6b7280">Store Signature / Date</div>
+        </div>
+    </div>
+    <div style="margin-top:24px;text-align:center;font-size:10px;color:#9ca3af">
+        Printed on ${new Date().toLocaleString('en-GB')} — Karibu Pantry Planner
+    </div>
+</body></html>`;
+
+        const printWin = window.open('', '_blank', 'width=800,height=900');
+        if (printWin) {
+            printWin.document.write(html);
+            printWin.document.close();
+            setTimeout(() => printWin.print(), 400);
+        } else {
+            showToast('Please allow popups to print', 'warning');
+        }
+    } catch (e) {
+        showToast('Failed to load order for printing: ' + (e.message || ''), 'error');
+    }
+}
+
 // ── Loading State ──
 function setLoading(el, loading) {
     if (loading) {
