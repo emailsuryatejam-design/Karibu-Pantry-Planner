@@ -23,10 +23,12 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
     </button>
 </div>
 
-<!-- Requisition Type Tabs (auto-created per type) -->
+<!-- Meal Type Tabs (one per meal type) -->
 <div class="flex gap-2 mb-3 overflow-x-auto pb-1" id="rqSessionTabs">
     <span class="text-[10px] text-gray-400 py-2">Loading...</span>
 </div>
+<!-- Sub-tabs for multiple orders within same meal type -->
+<div class="hidden flex gap-1.5 mb-3 overflow-x-auto pb-1" id="rqSubTabs"></div>
 
 <!-- Active Requisition Card -->
 <div id="rqSessionCard" class="hidden">
@@ -223,16 +225,28 @@ function rqRenderSessionTabs() {
     const container = document.getElementById('rqSessionTabs');
     if (!rqSessions.length) {
         container.innerHTML = '<span class="text-[10px] text-gray-400 py-2">No types configured</span>';
+        document.getElementById('rqSubTabs').classList.add('hidden');
         return;
     }
 
-    let html = '';
+    // Group sessions by meal type — show one tab per meal type
+    const mealGroups = {};
     rqSessions.forEach(s => {
-        const isActive = rqActiveSession && rqActiveSession.id === s.id;
-        const typeName = rqTypeName(s.meals);
-        const suppNum = parseInt(s.supplement_number) || 0;
-        const tabLabel = suppNum > 0 ? `${typeName} (${suppNum + 1})` : typeName;
-        const hasLines = parseInt(s.line_count) > 0;
+        if (!mealGroups[s.meals]) mealGroups[s.meals] = [];
+        mealGroups[s.meals].push(s);
+    });
+
+    const activeMeal = rqActiveSession ? rqActiveSession.meals : null;
+
+    let html = '';
+    for (const meals of Object.keys(mealGroups)) {
+        const group = mealGroups[meals];
+        const isActive = meals === activeMeal;
+        const typeName = rqTypeName(meals);
+        // Use "best" status for the tab color (highest priority status in the group)
+        const bestSession = group.find(s => s.status !== 'draft') || group[0];
+        const hasLines = group.some(s => parseInt(s.line_count) > 0);
+        const hasSubmitted = group.some(s => s.status !== 'draft');
 
         const statusColors = {
             draft: hasLines ? 'bg-orange-50 text-orange-700 border-orange-200' : 'bg-gray-100 text-gray-700 border-gray-200',
@@ -242,14 +256,59 @@ function rqRenderSessionTabs() {
             received: 'bg-green-100 text-green-700 border-green-200',
             closed: 'bg-gray-200 text-gray-500 border-gray-300'
         };
-        const color = isActive ? 'bg-orange-500 text-white border-orange-500' : (statusColors[s.status] || 'bg-gray-100 text-gray-700 border-gray-200');
+        const color = isActive ? 'bg-orange-500 text-white border-orange-500' : (statusColors[bestSession.status] || 'bg-gray-100 text-gray-700 border-gray-200');
 
-        html += `<button onclick="rqLoadSession(${s.id})" class="text-xs font-semibold px-3 py-1.5 rounded-full border ${color} whitespace-nowrap transition">
-            ${escHtml(tabLabel)}
-            ${s.status !== 'draft' ? '<span class="text-[9px] opacity-75 ml-0.5">&#10003;</span>' : ''}
+        // Click on meal tab → load first session of that meal group
+        html += `<button onclick="rqSelectMealTab('${escHtml(meals)}')" class="text-xs font-semibold px-3 py-1.5 rounded-full border ${color} whitespace-nowrap transition">
+            ${escHtml(typeName)}
+            ${hasSubmitted ? '<span class="text-[9px] opacity-75 ml-0.5">&#10003;</span>' : ''}
+        </button>`;
+    }
+
+    container.innerHTML = html;
+    rqRenderSubTabs();
+}
+
+// Select a meal type tab — loads the first (or currently active) order in that meal group
+function rqSelectMealTab(meals) {
+    const group = rqSessions.filter(s => s.meals === meals);
+    if (!group.length) return;
+    // If already on this meal, keep current sub-selection; otherwise pick first
+    if (rqActiveSession && rqActiveSession.meals === meals) return;
+    rqLoadSession(group[0].id);
+}
+
+// Render sub-tabs ("Order 1", "Order 2") when multiple orders exist for the active meal type
+function rqRenderSubTabs() {
+    const container = document.getElementById('rqSubTabs');
+    if (!rqActiveSession) { container.classList.add('hidden'); return; }
+
+    const group = rqSessions.filter(s => s.meals === rqActiveSession.meals);
+    if (group.length <= 1) {
+        container.classList.add('hidden');
+        return;
+    }
+
+    container.classList.remove('hidden');
+    let html = '';
+    group.forEach((s, idx) => {
+        const isActive = rqActiveSession.id === s.id;
+        const label = `Order ${idx + 1}`;
+        const statusDot = {
+            draft: 'bg-gray-400', submitted: 'bg-blue-500', processing: 'bg-amber-500',
+            fulfilled: 'bg-green-500', received: 'bg-green-500', closed: 'bg-gray-400'
+        };
+        const dot = statusDot[s.status] || 'bg-gray-400';
+        const color = isActive
+            ? 'bg-orange-100 text-orange-700 border-orange-300'
+            : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50';
+
+        html += `<button onclick="rqLoadSession(${s.id})" class="text-[11px] font-medium px-2.5 py-1 rounded-full border ${color} whitespace-nowrap transition flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full ${dot}"></span>
+            ${label}
+            <span class="text-[9px] opacity-60 capitalize">${s.status}</span>
         </button>`;
     });
-
     container.innerHTML = html;
 }
 
@@ -261,8 +320,8 @@ async function rqLoadSession(sessionId) {
         rqGuestCount = cached.guest_count || rqGuestCount;
         document.getElementById('rqGuestCount').value = rqGuestCount;
         const suppNum = parseInt(cached.supplement_number) || 0;
-        const typeLabel = suppNum > 0 ? `${rqTypeName(cached.meals)} (${suppNum + 1})` : rqTypeName(cached.meals);
-        document.getElementById('rqTypeName').textContent = typeLabel;
+        const orderLabel = suppNum > 0 ? ` — Order ${suppNum + 1}` : '';
+        document.getElementById('rqTypeName').textContent = rqTypeName(cached.meals) + orderLabel;
 
         const statusPill = document.getElementById('rqStatusPill');
         if (cached.status === 'draft') {
@@ -755,7 +814,7 @@ function rqRenderStatusBanner() {
 async function rqCreateSupplementary() {
     if (!rqActiveSession) return;
     const typeName = rqTypeName(rqActiveSession.meals);
-    if (!confirm(`Create a supplementary order for ${typeName}? This will add a new tab for additional items.`)) return;
+    if (!confirm(`Create a new order for ${typeName}? You can add forgotten items to it.`)) return;
 
     try {
         const data = await api('api/requisitions.php?action=create_supplementary', {
@@ -767,7 +826,7 @@ async function rqCreateSupplementary() {
         // Auto-select the new supplementary order
         const newId = data.requisition_id;
         if (newId) rqLoadSession(newId);
-        showToast(`Supplementary ${typeName} order created`, 'success');
+        showToast(`New ${typeName} order created — add your items`, 'success');
     } catch (e) {
         showToast(e.message || 'Failed to create supplementary order', 'error');
     }
