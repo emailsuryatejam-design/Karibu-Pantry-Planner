@@ -218,7 +218,9 @@ async function rqLoadSessions() {
         rqRenderSessionTabs();
 
         if (rqSessions.length > 0) {
-            rqLoadSession(rqSessions[0].id);
+            // Stay on the active session if it still exists, otherwise default to first
+            const targetId = rqActiveSession ? rqSessions.find(s => s.id == rqActiveSession.id)?.id : null;
+            rqLoadSession(targetId || rqSessions[0].id);
         } else {
             rqActiveSession = null;
             document.getElementById('rqSessionCard').classList.add('hidden');

@@ -108,6 +108,28 @@ switch ($action) {
                     INDEX idx_day_type (day_of_week, type_code)
                 )");
 
+                // 1b. Ensure notifications + push_subscriptions tables exist
+                $db->exec("CREATE TABLE IF NOT EXISTS notifications (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    kitchen_id INT DEFAULT NULL,
+                    user_id INT DEFAULT NULL,
+                    title VARCHAR(200) NOT NULL,
+                    body TEXT,
+                    type VARCHAR(50) DEFAULT 'info',
+                    ref_id INT DEFAULT NULL,
+                    is_read TINYINT(1) DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )");
+                $db->exec("CREATE TABLE IF NOT EXISTS push_subscriptions (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    kitchen_id INT DEFAULT NULL,
+                    endpoint TEXT NOT NULL,
+                    p256dh VARCHAR(500) NOT NULL,
+                    auth_key VARCHAR(500) NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )");
+
                 // 2. Add supplement_number column if missing
                 try {
                     $db->query("SELECT supplement_number FROM requisitions LIMIT 0");
@@ -376,24 +398,28 @@ switch ($action) {
 
         auditLog('requisition_submit', 'requisition', $reqId);
 
-        // Push notification to storekeepers
-        $kitchenName = '';
-        $kStmt = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
-        $kStmt->execute([$req['kitchen_id']]);
-        $kRow = $kStmt->fetch();
-        if ($kRow) $kitchenName = $kRow['name'];
+        // Push notification to storekeepers (non-critical — don't break submit if notifications fail)
+        try {
+            $kitchenName = '';
+            $kStmt = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
+            $kStmt->execute([$req['kitchen_id']]);
+            $kRow = $kStmt->fetch();
+            if ($kRow) $kitchenName = $kRow['name'];
 
-        $mealLabel = ucfirst($req['meals'] ?? 'order');
-        $suppNum = (int)($req['supplement_number'] ?? 0);
-        if ($suppNum > 0) $mealLabel .= ' (' . ($suppNum + 1) . ')';
-        $pushPayload = [
-            'title' => 'New Requisition',
-            'body'  => "{$user['name']} submitted {$mealLabel} for {$kitchenName}",
-            'url'   => '/app.php?page=store-dashboard',
-            'tag'   => 'req-submitted-' . $reqId,
-        ];
-        sendPushToKitchen((int)$req['kitchen_id'], $pushPayload, 'storekeeper', $user['id']);
-        storeNotification((int)$req['kitchen_id'], null, $pushPayload['title'], $pushPayload['body'], 'requisition_submitted', $reqId);
+            $mealLabel = ucfirst($req['meals'] ?? 'order');
+            $suppNum = (int)($req['supplement_number'] ?? 0);
+            if ($suppNum > 0) $mealLabel .= ' (' . ($suppNum + 1) . ')';
+            $pushPayload = [
+                'title' => 'New Requisition',
+                'body'  => "{$user['name']} submitted {$mealLabel} for {$kitchenName}",
+                'url'   => '/app.php?page=store-dashboard',
+                'tag'   => 'req-submitted-' . $reqId,
+            ];
+            sendPushToKitchen((int)$req['kitchen_id'], $pushPayload, 'storekeeper', $user['id']);
+            storeNotification((int)$req['kitchen_id'], null, $pushPayload['title'], $pushPayload['body'], 'requisition_submitted', $reqId);
+        } catch (Exception $e) {
+            error_log('Notification error on submit: ' . $e->getMessage());
+        }
 
         jsonResponse(['submitted' => true]);
 
@@ -425,24 +451,28 @@ switch ($action) {
 
         auditLog('requisition_fulfill', 'requisition', $reqId);
 
-        // Push notification to the chef who created this requisition
-        $kitchenName = '';
-        $kStmt2 = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
-        $kStmt2->execute([$req['kitchen_id']]);
-        $kRow2 = $kStmt2->fetch();
-        if ($kRow2) $kitchenName = $kRow2['name'];
+        // Push notification to the chef who created this requisition (non-critical)
+        try {
+            $kitchenName = '';
+            $kStmt2 = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
+            $kStmt2->execute([$req['kitchen_id']]);
+            $kRow2 = $kStmt2->fetch();
+            if ($kRow2) $kitchenName = $kRow2['name'];
 
-        $mealLabel = ucfirst($req['meals'] ?? 'order');
-        $suppNum = (int)($req['supplement_number'] ?? 0);
-        if ($suppNum > 0) $mealLabel .= ' (' . ($suppNum + 1) . ')';
-        $pushPayload = [
-            'title' => 'Order Fulfilled',
-            'body'  => "{$mealLabel} for {$kitchenName} has been fulfilled by store",
-            'url'   => '/app.php?page=day-close',
-            'tag'   => 'req-fulfilled-' . $reqId,
-        ];
-        sendPushToKitchen((int)$req['kitchen_id'], $pushPayload, 'chef', $user['id']);
-        storeNotification((int)$req['kitchen_id'], (int)$req['created_by'], $pushPayload['title'], $pushPayload['body'], 'requisition_fulfilled', $reqId);
+            $mealLabel = ucfirst($req['meals'] ?? 'order');
+            $suppNum = (int)($req['supplement_number'] ?? 0);
+            if ($suppNum > 0) $mealLabel .= ' (' . ($suppNum + 1) . ')';
+            $pushPayload = [
+                'title' => 'Order Fulfilled',
+                'body'  => "{$mealLabel} for {$kitchenName} has been fulfilled by store",
+                'url'   => '/app.php?page=day-close',
+                'tag'   => 'req-fulfilled-' . $reqId,
+            ];
+            sendPushToKitchen((int)$req['kitchen_id'], $pushPayload, 'chef', $user['id']);
+            storeNotification((int)$req['kitchen_id'], (int)$req['created_by'], $pushPayload['title'], $pushPayload['body'], 'requisition_fulfilled', $reqId);
+        } catch (Exception $e) {
+            error_log('Notification error on fulfill: ' . $e->getMessage());
+        }
 
         jsonResponse(['fulfilled' => true]);
 
