@@ -80,43 +80,78 @@ function sendPushNotification(array $subscription, array $payload): array {
  * Send push to all subscribers in a kitchen (or specific user)
  */
 function sendPushToKitchen(int $kitchenId, array $payload, ?string $targetRole = null, ?int $excludeUserId = null): int {
-    $db = getDB();
-    $sql = 'SELECT ps.*, u.role FROM push_subscriptions ps JOIN users u ON u.id = ps.user_id WHERE ps.kitchen_id = ?';
-    $params = [$kitchenId];
+    try {
+        $db = getDB();
 
-    if ($targetRole) {
-        $sql .= ' AND u.role = ?';
-        $params[] = $targetRole;
-    }
-    if ($excludeUserId) {
-        $sql .= ' AND ps.user_id != ?';
-        $params[] = $excludeUserId;
-    }
+        // Self-healing: create table if missing
+        $db->exec("CREATE TABLE IF NOT EXISTS push_subscriptions (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            kitchen_id INT DEFAULT NULL,
+            endpoint TEXT NOT NULL,
+            p256dh VARCHAR(500) NOT NULL,
+            auth_key VARCHAR(500) NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )");
 
-    $stmt = $db->prepare($sql);
-    $stmt->execute($params);
-    $subs = $stmt->fetchAll();
+        $sql = 'SELECT ps.*, u.role FROM push_subscriptions ps JOIN users u ON u.id = ps.user_id WHERE ps.kitchen_id = ?';
+        $params = [$kitchenId];
 
-    $sent = 0;
-    foreach ($subs as $sub) {
-        $result = sendPushNotification($sub, $payload);
-        if ($result['success']) {
-            $sent++;
-        } elseif ($result['status'] === 410) {
-            // Remove expired subscription
-            $db->prepare('DELETE FROM push_subscriptions WHERE id = ?')->execute([$sub['id']]);
+        if ($targetRole) {
+            $sql .= ' AND u.role = ?';
+            $params[] = $targetRole;
         }
+        if ($excludeUserId) {
+            $sql .= ' AND ps.user_id != ?';
+            $params[] = $excludeUserId;
+        }
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        $subs = $stmt->fetchAll();
+
+        $sent = 0;
+        foreach ($subs as $sub) {
+            $result = sendPushNotification($sub, $payload);
+            if ($result['success']) {
+                $sent++;
+            } elseif ($result['status'] === 410) {
+                // Remove expired subscription
+                $db->prepare('DELETE FROM push_subscriptions WHERE id = ?')->execute([$sub['id']]);
+            }
+        }
+        return $sent;
+    } catch (Exception $e) {
+        error_log('sendPushToKitchen error: ' . $e->getMessage());
+        return 0;
     }
-    return $sent;
 }
 
 /**
  * Store in-app notification
  */
 function storeNotification(int $kitchenId, ?int $userId, string $title, string $body, string $type = 'info', ?int $refId = null): void {
-    $db = getDB();
-    $stmt = $db->prepare('INSERT INTO notifications (kitchen_id, user_id, title, body, type, ref_id) VALUES (?, ?, ?, ?, ?, ?)');
-    $stmt->execute([$kitchenId, $userId, $title, $body, $type, $refId]);
+    try {
+        $db = getDB();
+
+        // Self-healing: create table if missing
+        $db->exec("CREATE TABLE IF NOT EXISTS notifications (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            kitchen_id INT DEFAULT NULL,
+            user_id INT DEFAULT NULL,
+            title VARCHAR(200) NOT NULL,
+            body TEXT,
+            type VARCHAR(50) DEFAULT 'info',
+            ref_id INT DEFAULT NULL,
+            is_read TINYINT(1) DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )");
+
+        $stmt = $db->prepare('INSERT INTO notifications (kitchen_id, user_id, title, body, type, ref_id) VALUES (?, ?, ?, ?, ?, ?)');
+        $stmt->execute([$kitchenId, $userId, $title, $body, $type, $refId]);
+    } catch (Exception $e) {
+        error_log('storeNotification error: ' . $e->getMessage());
+    }
 }
 
 // ── VAPID JWT Creation ──
