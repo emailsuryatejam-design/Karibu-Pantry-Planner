@@ -743,12 +743,16 @@ switch ($action) {
                 $recipeServings = (int)($dish['recipe_servings'] ?? 4);
                 if ($recipeServings < 1) $recipeServings = 4;
 
-                $scaleFactor = $guestCount / $recipeServings;
+                // Per-dish portions: each dish can have its own portion count
+                $dishPortions = (int)($dish['dish_portions'] ?? $guestCount);
+                if ($dishPortions < 1) $dishPortions = $guestCount;
+
+                $scaleFactor = $dishPortions / $recipeServings;
 
                 // Insert dish record
                 $dStmt = $db->prepare("INSERT INTO requisition_dishes (requisition_id, recipe_id, recipe_name, recipe_servings, scale_factor, guest_count)
                     VALUES (?, ?, ?, ?, ?, ?)");
-                $dStmt->execute([$reqId, $recipeId, $recipeName, $recipeServings, round($scaleFactor, 3), $guestCount]);
+                $dStmt->execute([$reqId, $recipeId, $recipeName, $recipeServings, round($scaleFactor, 3), $dishPortions]);
                 $dishId = $db->lastInsertId();
 
                 // Use pre-loaded ingredients (no per-dish query)
