@@ -73,7 +73,7 @@ switch ($action) {
         if (!$kid) jsonError('Kitchen ID required');
 
         // One-time self-healing: ensure missing tables exist, clean duplicates, add UNIQUE constraint
-        $migrated = cacheGet('uk_migration_v3_done', 86400 * 365);
+        $migrated = cacheGet('uk_migration_v4_done', 86400 * 365);
         if (!$migrated) {
             try {
                 // 1. Create missing tables that older deployments might not have
@@ -168,7 +168,7 @@ switch ($action) {
                     $db->exec("ALTER TABLE requisitions ADD UNIQUE KEY uk_kitchen_date_meals_supp (kitchen_id, req_date, meals, supplement_number)");
                 }
 
-                cacheSet('uk_migration_v3_done', true);
+                cacheSet('uk_migration_v4_done', true);
             } catch (Exception $e) {
                 // Do NOT cache on failure — retry next request
                 error_log('Karibu migration error: ' . $e->getMessage());
