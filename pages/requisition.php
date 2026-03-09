@@ -366,6 +366,21 @@ async function rqLoadSession(sessionId) {
         rqActiveSession = data.requisition;
         const lines = data.lines || [];
 
+        // Re-sync UI if status changed since instant phase (e.g. order was submitted from another device)
+        const freshIsDraft = rqActiveSession.status === 'draft';
+        document.getElementById('rqBottomBar').classList.toggle('hidden', !freshIsDraft);
+        document.getElementById('rqDishSearchWrap').classList.toggle('hidden', !freshIsDraft);
+        const printBtn = document.getElementById('rqPrintBtn');
+        if (printBtn) printBtn.classList.toggle('hidden', freshIsDraft);
+        // Update status pill
+        if (!freshIsDraft) {
+            const sc = {submitted:'bg-blue-100 text-blue-700',processing:'bg-amber-100 text-amber-700',fulfilled:'bg-green-100 text-green-700',received:'bg-green-100 text-green-700',closed:'bg-gray-200 text-gray-500'};
+            document.getElementById('rqStatusPill').innerHTML = `<span class="text-[10px] ${sc[rqActiveSession.status] || ''} px-2 py-0.5 rounded-full font-medium capitalize">${rqActiveSession.status}</span>`;
+        }
+        // Also update this session in the cached sessions array
+        const idx = rqSessions.findIndex(s => s.id == sessionId);
+        if (idx >= 0) rqSessions[idx] = { ...rqSessions[idx], ...rqActiveSession };
+
         // Update guest count from full data
         rqGuestCount = rqActiveSession.guest_count || 20;
         document.getElementById('rqGuestCount').value = rqGuestCount;
@@ -932,6 +947,20 @@ async function rqSaveAndSubmit() {
     setLoading(btn, true);
 
     try {
+        // Safety: verify the session is still draft (could have been submitted from another device)
+        const freshCheck = await api(`api/requisitions.php?action=get&id=${rqActiveSession.id}`);
+        if (freshCheck.requisition && freshCheck.requisition.status !== 'draft') {
+            showToast('This order was already ' + freshCheck.requisition.status + '. Refreshing...', 'warning');
+            rqActiveSession = freshCheck.requisition;
+            const sidx = rqSessions.findIndex(s => s.id == rqActiveSession.id);
+            if (sidx >= 0) rqSessions[sidx] = { ...rqSessions[sidx], ...rqActiveSession };
+            document.getElementById('rqBottomBar').classList.add('hidden');
+            rqRenderStatusBanner();
+            rqRenderSessionTabs();
+            setLoading(btn, false);
+            return;
+        }
+
         const dishList = Object.values(rqDishes);
         if (dishList.length === 0) {
             showToast('Add at least one dish before submitting', 'warning');

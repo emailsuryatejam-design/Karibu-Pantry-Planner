@@ -149,9 +149,36 @@ function debounce(fn, delay = 300) {
 }
 
 // ── Push Notification Helpers ──
+function pushIsIOS() { return /iPad|iPhone|iPod/.test(navigator.userAgent); }
+function pushIsStandalone() { return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true; }
+
 async function pushSubscribe() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
-        showToast('Push notifications not supported', 'warning');
+    // Check basic support
+    if (!('serviceWorker' in navigator)) {
+        showToast('Service Workers not supported on this browser', 'warning');
+        return false;
+    }
+
+    const isiOS = pushIsIOS();
+    const standalone = pushIsStandalone();
+
+    // iOS requires the app to be installed as PWA (Add to Home Screen) before push works
+    if (isiOS && !standalone) {
+        showToast('Install app first: tap Share ➜ Add to Home Screen, then enable notifications', 'warning');
+        return false;
+    }
+
+    if (!('PushManager' in window)) {
+        if (isiOS) {
+            showToast('Push notifications require iOS 16.4 or later', 'warning');
+        } else {
+            showToast('Push notifications not supported on this browser', 'warning');
+        }
+        return false;
+    }
+
+    if (!('Notification' in window)) {
+        showToast('Notifications not supported on this browser', 'warning');
         return false;
     }
 
@@ -165,6 +192,11 @@ async function pushSubscribe() {
         const reg = await navigator.serviceWorker.ready;
         const keyRes = await api('api/push.php?action=vapid_key');
         const vapidKey = keyRes.key;
+
+        if (!vapidKey) {
+            showToast('Push configuration error — contact admin', 'error');
+            return false;
+        }
 
         const sub = await reg.pushManager.subscribe({
             userVisibleOnly: true,
@@ -184,7 +216,16 @@ async function pushSubscribe() {
         showToast('Notifications enabled!', 'success');
         return true;
     } catch (err) {
-        showToast('Failed to subscribe: ' + err.message, 'error');
+        console.error('Push subscribe error:', err);
+        if (isiOS && !standalone) {
+            showToast('Install app to Home Screen first for notifications', 'warning');
+        } else if (err.name === 'NotAllowedError') {
+            showToast('Notification permission was denied. Check browser settings.', 'warning');
+        } else if (err.name === 'AbortError') {
+            showToast('Subscription cancelled. Please try again.', 'warning');
+        } else {
+            showToast('Failed to enable notifications: ' + (err.message || 'Unknown error'), 'error');
+        }
         return false;
     }
 }
