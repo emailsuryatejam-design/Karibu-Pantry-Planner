@@ -115,6 +115,13 @@ switch ($action) {
                     $db->exec("ALTER TABLE requisitions ADD COLUMN supplement_number INT DEFAULT 0");
                 }
 
+                // 2b. Add unused_qty column to requisition_lines if missing
+                try {
+                    $db->query("SELECT unused_qty FROM requisition_lines LIMIT 0");
+                } catch (Exception $e2) {
+                    $db->exec("ALTER TABLE requisition_lines ADD COLUMN unused_qty DECIMAL(10,2) DEFAULT 0");
+                }
+
                 // 3. Upgrade UNIQUE constraint to include supplement_number
                 // Drop old constraint if it exists, add new one
                 $indexes = $db->query("SHOW INDEX FROM requisitions WHERE Key_name = 'uk_kitchen_date_meals'")->fetchAll();
@@ -500,6 +507,64 @@ switch ($action) {
         auditLog('requisition_close', 'requisition', $reqId);
         jsonResponse(['closed' => true]);
 
+    // ── Close with unused quantities ──
+    case 'close_with_unused':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $date = $data['date'] ?? date('Y-m-d');
+        $kid = (int)($data['kitchen_id'] ?? $kitchenId);
+        $unusedLines = $data['unused_lines'] ?? []; // [{line_id, unused_qty}, ...]
+
+        // Self-healing: ensure unused_qty column exists
+        try {
+            $db->query("SELECT unused_qty FROM requisition_lines LIMIT 0");
+        } catch (Exception $e) {
+            $db->exec("ALTER TABLE requisition_lines ADD COLUMN unused_qty DECIMAL(10,2) DEFAULT 0");
+        }
+
+        $db->beginTransaction();
+        try {
+            // Save unused quantities and update item stock
+            $updateLine = $db->prepare("UPDATE requisition_lines SET unused_qty = ? WHERE id = ?");
+            $updateStock = $db->prepare("UPDATE items SET stock_qty = stock_qty + ? WHERE id = ?");
+
+            foreach ($unusedLines as $ul) {
+                $lineId = (int)($ul['line_id'] ?? 0);
+                $unusedQty = max(0, (float)($ul['unused_qty'] ?? 0));
+                if (!$lineId || $unusedQty <= 0) continue;
+
+                // Get the line's item_id and verify it belongs to a received requisition for this kitchen/date
+                $checkStmt = $db->prepare("SELECT rl.item_id, rl.received_qty FROM requisition_lines rl
+                    JOIN requisitions r ON r.id = rl.requisition_id
+                    WHERE rl.id = ? AND r.kitchen_id = ? AND r.req_date = ? AND r.status = 'received'");
+                $checkStmt->execute([$lineId, $kid, $date]);
+                $lineRow = $checkStmt->fetch();
+                if (!$lineRow) continue;
+
+                // Cap unused_qty to received_qty
+                $maxUnused = (float)$lineRow['received_qty'];
+                if ($unusedQty > $maxUnused) $unusedQty = $maxUnused;
+
+                $updateLine->execute([$unusedQty, $lineId]);
+                $updateStock->execute([$unusedQty, (int)$lineRow['item_id']]);
+            }
+
+            // Close all received requisitions for this date/kitchen
+            $db->prepare("UPDATE requisitions SET status = 'closed', updated_at = NOW() WHERE req_date = ? AND kitchen_id = ? AND status = 'received'")->execute([$date, $kid]);
+
+            $db->commit();
+
+            auditLog('requisition_close_with_unused', 'requisition', null, null, [
+                'date' => $date, 'kitchen_id' => $kid, 'unused_entries' => count($unusedLines)
+            ]);
+
+            jsonResponse(['closed' => true]);
+        } catch (Exception $e) {
+            $db->rollBack();
+            jsonError('Failed to close: ' . $e->getMessage());
+        }
+
     // ── Dashboard stats (chef) — single query ──
     case 'dashboard_stats':
         $kid = (int)($_GET['kitchen_id'] ?? $kitchenId);
@@ -572,7 +637,27 @@ switch ($action) {
             $summary[$r['status']]++;
         }
 
-        jsonResponse(['requisitions' => $reqs, 'summary' => $summary]);
+        // Load lines for received/closed requisitions (for day close unused entry)
+        $receivedIds = array_filter(array_map(fn($r) => in_array($r['status'], ['received', 'closed']) ? (int)$r['id'] : null, $reqs));
+        $linesByReq = [];
+        if (!empty($receivedIds)) {
+            $ph = implode(',', array_fill(0, count($receivedIds), '?'));
+            // Self-healing: ensure unused_qty column exists before querying
+            try {
+                $db->query("SELECT unused_qty FROM requisition_lines LIMIT 0");
+            } catch (Exception $e) {
+                $db->exec("ALTER TABLE requisition_lines ADD COLUMN unused_qty DECIMAL(10,2) DEFAULT 0");
+            }
+            $lStmt = $db->prepare("SELECT rl.id, rl.requisition_id, rl.item_id, rl.item_name, rl.uom,
+                rl.order_qty, rl.fulfilled_qty, rl.received_qty, rl.unused_qty
+                FROM requisition_lines rl WHERE rl.requisition_id IN ($ph) ORDER BY rl.item_name");
+            $lStmt->execute(array_values($receivedIds));
+            foreach ($lStmt->fetchAll() as $line) {
+                $linesByReq[(int)$line['requisition_id']][] = $line;
+            }
+        }
+
+        jsonResponse(['requisitions' => $reqs, 'summary' => $summary, 'lines_by_req' => $linesByReq ?: new \stdClass()]);
 
     // ── Get items for requisition form (cached) — legacy, kept for backward compat ──
     case 'get_items':

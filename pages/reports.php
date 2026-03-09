@@ -41,6 +41,14 @@ $kitchenId = $user['kitchen_id'] ?? 0;
         <div class="text-2xl font-bold text-red-600" id="rpDisputes">—</div>
         <div class="text-[10px] text-gray-400">Disputes</div>
     </div>
+    <div class="bg-white border border-gray-200 rounded-xl p-3">
+        <div class="text-2xl font-bold text-blue-600" id="rpConsumed">—</div>
+        <div class="text-[10px] text-gray-400">Consumed (kg)</div>
+    </div>
+    <div class="bg-white border border-gray-200 rounded-xl p-3">
+        <div class="text-2xl font-bold text-amber-500" id="rpUnused">—</div>
+        <div class="text-[10px] text-gray-400">Unused (kg)</div>
+    </div>
 </div>
 
 <!-- By Meal Type -->
@@ -95,8 +103,9 @@ async function rpLoad() {
     const to = document.getElementById('rpDateTo').value;
 
     let totalSessions = 0, totalKg = 0, totalFulfilled = 0, totalOrdered = 0, disputes = 0;
+    let totalReceived = 0, totalUnused = 0;
     let allReqs = [];         // full list of requisitions with lines
-    let mealTotals = {};      // { breakfast: {count, kg}, ... }
+    let mealTotals = {};      // { breakfast: {count, kg, unused}, ... }
     let itemTotals = {};
 
     // Show loading
@@ -122,7 +131,7 @@ async function rpLoad() {
                 if (isDispute) disputes++;
 
                 // Meal type totals
-                if (!mealTotals[meal]) mealTotals[meal] = { count: 0, kg: 0 };
+                if (!mealTotals[meal]) mealTotals[meal] = { count: 0, kg: 0, unused: 0 };
                 mealTotals[meal].count++;
                 mealTotals[meal].kg += kg;
 
@@ -134,10 +143,16 @@ async function rpLoad() {
                     lines.forEach(l => {
                         const oq = parseFloat(l.order_qty) || 0;
                         const fq = parseFloat(l.fulfilled_qty) || 0;
+                        const rq = parseFloat(l.received_qty) || 0;
+                        const uq = parseFloat(l.unused_qty) || 0;
                         totalOrdered += oq;
                         totalFulfilled += fq;
-                        if (!itemTotals[l.item_name]) itemTotals[l.item_name] = 0;
-                        itemTotals[l.item_name] += oq;
+                        totalReceived += rq;
+                        totalUnused += uq;
+                        if (!itemTotals[l.item_name]) itemTotals[l.item_name] = { ordered: 0, unused: 0 };
+                        itemTotals[l.item_name].ordered += oq;
+                        itemTotals[l.item_name].unused += uq;
+                        mealTotals[meal].unused += uq;
                     });
                 } catch(e) {}
 
@@ -161,6 +176,8 @@ async function rpLoad() {
         document.getElementById('rpTotalKg').textContent = totalKg.toFixed(1);
         document.getElementById('rpFulfillRate').textContent = totalOrdered > 0 ? Math.round((totalFulfilled / totalOrdered) * 100) + '%' : '—';
         document.getElementById('rpDisputes').textContent = disputes;
+        document.getElementById('rpConsumed').textContent = totalReceived > 0 ? (totalReceived - totalUnused).toFixed(1) : '—';
+        document.getElementById('rpUnused').textContent = totalUnused > 0 ? totalUnused.toFixed(1) : '—';
 
         // ── By Meal Type ──
         rpRenderMealType(mealTotals);
@@ -188,10 +205,11 @@ function rpRenderMealType(mealTotals) {
     entries.forEach(([meal, data]) => {
         const c = rpMealColors[meal] || { bg: 'bg-gray-50', text: 'text-gray-700', border: 'border-gray-200', bar: 'bg-gray-400' };
         const pct = Math.round((data.kg / maxKg) * 100);
+        const unusedLabel = data.unused > 0 ? ` &bull; <span class="text-amber-600">${data.unused.toFixed(1)} unused</span>` : '';
         html += `<div class="${c.bg} border ${c.border} rounded-lg px-3 py-2">
             <div class="flex items-center justify-between text-xs mb-1">
                 <span class="${c.text} font-semibold">${rpMealName(meal)}</span>
-                <span class="text-gray-500">${data.count} orders &bull; ${data.kg.toFixed(1)} kg</span>
+                <span class="text-gray-500">${data.count} orders &bull; ${data.kg.toFixed(1)} kg${unusedLabel}</span>
             </div>
             <div class="w-full bg-white/60 rounded-full h-1.5">
                 <div class="${c.bar} h-1.5 rounded-full transition-all" style="width: ${pct}%"></div>
@@ -259,7 +277,8 @@ function rpRenderReqList(allReqs) {
                                     <th class="text-left px-3 py-1.5 text-gray-500 font-semibold">Item</th>
                                     <th class="text-center px-2 py-1.5 text-blue-600 font-semibold">Req</th>
                                     <th class="text-center px-2 py-1.5 text-green-600 font-semibold">Sent</th>
-                                    <th class="text-center px-2 py-1.5 text-orange-600 font-semibold">Received</th>
+                                    <th class="text-center px-2 py-1.5 text-orange-600 font-semibold">Recv</th>
+                                    <th class="text-center px-2 py-1.5 text-amber-500 font-semibold">Unsd</th>
                                     <th class="text-center px-2 py-1.5 text-gray-600 font-semibold">Diff</th>
                                 </tr>
                             </thead>
@@ -269,6 +288,7 @@ function rpRenderReqList(allReqs) {
                     const oq = parseFloat(l.order_qty) || 0;
                     const fq = parseFloat(l.fulfilled_qty) || 0;
                     const rq = parseFloat(l.received_qty) || 0;
+                    const uq = parseFloat(l.unused_qty) || 0;
                     // Diff = received - ordered (negative means shortfall)
                     const diff = rq > 0 ? rq - oq : (fq > 0 ? fq - oq : 0);
                     const diffLabel = diff > 0 ? `+${diff.toFixed(1)}` : diff < 0 ? diff.toFixed(1) : '—';
@@ -280,6 +300,7 @@ function rpRenderReqList(allReqs) {
                         <td class="text-center px-2 py-1.5 text-blue-700 font-medium">${oq > 0 ? oq.toFixed(1) : '—'}</td>
                         <td class="text-center px-2 py-1.5 text-green-700 font-medium">${fq > 0 ? fq.toFixed(1) : '—'}</td>
                         <td class="text-center px-2 py-1.5 text-orange-700 font-medium">${rq > 0 ? rq.toFixed(1) : '—'}</td>
+                        <td class="text-center px-2 py-1.5 ${uq > 0 ? 'text-amber-600 font-semibold' : 'text-gray-300'}">${uq > 0 ? uq.toFixed(1) : '—'}</td>
                         <td class="text-center px-2 py-1.5 ${diffCls}">${diffLabel}</td>
                     </tr>`;
                 });
@@ -306,19 +327,20 @@ function rpToggleDetail(header) {
 
 function rpRenderTopItems(itemTotals) {
     const container = document.getElementById('rpTopItems');
-    const sorted = Object.entries(itemTotals).sort((a, b) => b[1] - a[1]).slice(0, 10);
+    const sorted = Object.entries(itemTotals).sort((a, b) => b[1].ordered - a[1].ordered).slice(0, 10);
     if (sorted.length === 0) {
         container.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No data</p>';
         return;
     }
-    const maxItem = sorted[0][1] || 1;
+    const maxItem = sorted[0][1].ordered || 1;
     let html = '';
-    sorted.forEach(([name, qty], i) => {
-        const pct = Math.round((qty / maxItem) * 100);
+    sorted.forEach(([name, data], i) => {
+        const pct = Math.round((data.ordered / maxItem) * 100);
+        const unusedLabel = data.unused > 0 ? `<span class="text-amber-500 text-[10px] ml-1">(${data.unused.toFixed(1)} unused)</span>` : '';
         html += `<div class="bg-white border border-gray-100 rounded-lg px-3 py-2">
             <div class="flex items-center justify-between text-xs mb-1">
                 <span class="text-gray-700 font-medium">${i + 1}. ${escHtml(name)}</span>
-                <span class="text-orange-600 font-semibold">${qty.toFixed(1)} kg</span>
+                <span class="text-orange-600 font-semibold">${data.ordered.toFixed(1)} kg ${unusedLabel}</span>
             </div>
             <div class="w-full bg-gray-100 rounded-full h-1.5">
                 <div class="bg-orange-400 h-1.5 rounded-full" style="width: ${pct}%"></div>

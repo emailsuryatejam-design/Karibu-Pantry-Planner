@@ -346,11 +346,14 @@ async function printOrder(reqId, kitchenNameOverride) {
         // Always show full flow: Requested → Sent → Received → Diff
         // Build table rows
         let tableRows = '';
+        let totalUnusedKg = 0;
         lines.forEach((l, i) => {
             const orderQty = parseFloat(l.order_qty) || 0;
             const reqKg = parseFloat(l.required_kg) || 0;
             const fulfilledQty = parseFloat(l.fulfilled_qty) || 0;
             const receivedQty = parseFloat(l.received_qty) || 0;
+            const unusedQty = parseFloat(l.unused_qty) || 0;
+            totalUnusedKg += unusedQty;
             const diff = receivedQty - fulfilledQty;
             const hasDiff = Math.abs(diff) > 0.01;
             const diffStyle = diff < 0 ? 'color:#dc2626;font-weight:bold' : (diff > 0 ? 'color:#16a34a;font-weight:bold' : 'color:#6b7280');
@@ -363,6 +366,7 @@ async function printOrder(reqId, kitchenNameOverride) {
                 <td style="padding:6px 8px;text-align:center">${orderQty}</td>
                 <td style="padding:6px 8px;text-align:center;font-weight:600;color:#2563eb">${fulfilledQty || '—'}</td>
                 <td style="padding:6px 8px;text-align:center;font-weight:600;color:#16a34a">${receivedQty || '—'}</td>
+                <td style="padding:6px 8px;text-align:center;${unusedQty > 0 ? 'color:#d97706;font-weight:bold' : 'color:#6b7280'}">${unusedQty > 0 ? unusedQty : '—'}</td>
                 <td style="padding:6px 8px;text-align:center;${diffStyle}">${hasDiff ? (diff > 0 ? '+' : '') + diff : '—'}</td>
             </tr>`;
         });
@@ -472,6 +476,7 @@ async function printOrder(reqId, kitchenNameOverride) {
                 <th class="center" style="width:70px">Requested</th>
                 <th class="center" style="width:70px">Sent</th>
                 <th class="center" style="width:70px">Received</th>
+                <th class="center" style="width:60px">Unused</th>
                 <th class="center" style="width:60px">Diff</th>
             </tr>
         </thead>
@@ -482,6 +487,9 @@ async function printOrder(reqId, kitchenNameOverride) {
 
     ${dishesHtml}
     ${disputeHtml}
+    ${totalUnusedKg > 0 ? `<div style="margin-top:12px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">
+        <span style="font-size:12px;font-weight:600;color:#d97706">Unused: ${totalUnusedKg.toFixed(1)} kg returned to inventory</span>
+    </div>` : ''}
 
     <!-- Signature area -->
     <div style="margin-top:32px;display:grid;grid-template-columns:1fr 1fr;gap:40px">
