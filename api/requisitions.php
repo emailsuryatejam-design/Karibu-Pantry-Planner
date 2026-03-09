@@ -641,6 +641,13 @@ switch ($action) {
             if ($kitchenRow && $kitchenRow['rounding_mode']) $roundingMode = $kitchenRow['rounding_mode'];
         } catch (Exception $e) { /* columns may not exist yet */ }
 
+        // Self-healing: add source tracking columns if missing
+        try {
+            $db->query("SELECT source_dish_id FROM requisition_lines LIMIT 0");
+        } catch (Exception $e) {
+            $db->exec("ALTER TABLE requisition_lines ADD COLUMN source_dish_id INT DEFAULT NULL, ADD COLUMN source_recipe_id INT DEFAULT NULL");
+        }
+
         $db->beginTransaction();
         try {
             // Clear old dish entries and lines for this requisition
