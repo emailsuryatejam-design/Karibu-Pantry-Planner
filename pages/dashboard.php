@@ -117,9 +117,8 @@ async function dbLoadSessions() {
             html += `<a href="app.php?page=requisition" class="block bg-white border border-gray-200 rounded-xl px-4 py-3 hover:border-orange-200 transition">
                 <div class="flex items-center justify-between">
                     <div>
-                        <span class="text-sm font-semibold text-gray-800">Requisition ${r.session_number}</span>
+                        <span class="text-sm font-semibold text-gray-800">${reqLabel(r)}</span>
                         <div class="flex items-center gap-2 mt-0.5">
-                            <span class="text-[10px] text-gray-400">${r.meals || '—'}</span>
                             <span class="text-[10px] text-gray-400">${r.line_count || 0} items</span>
                             <span class="text-[10px] text-gray-400">${parseFloat(r.total_kg || 0).toFixed(1)} kg</span>
                         </div>

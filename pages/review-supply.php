@@ -49,7 +49,7 @@ async function rsLoad() {
             html += `<div class="bg-white border border-gray-200 rounded-xl px-4 py-3">
                 <div class="flex items-center justify-between mb-2">
                     <div>
-                        <span class="text-sm font-semibold text-gray-800">Requisition ${r.session_number}</span>
+                        <span class="text-sm font-semibold text-gray-800">${reqLabel(r)}</span>
                         <span class="text-[10px] text-gray-400 ml-2">${r.line_count || 0} items</span>
                     </div>
                     <span class="text-[10px] bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-semibold">Fulfilled</span>

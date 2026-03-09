@@ -230,6 +230,8 @@ function rqRenderSessionTabs() {
     rqSessions.forEach(s => {
         const isActive = rqActiveSession && rqActiveSession.id === s.id;
         const typeName = rqTypeName(s.meals);
+        const suppNum = parseInt(s.supplement_number) || 0;
+        const tabLabel = suppNum > 0 ? `${typeName} (${suppNum + 1})` : typeName;
         const hasLines = parseInt(s.line_count) > 0;
 
         const statusColors = {
@@ -243,7 +245,7 @@ function rqRenderSessionTabs() {
         const color = isActive ? 'bg-orange-500 text-white border-orange-500' : (statusColors[s.status] || 'bg-gray-100 text-gray-700 border-gray-200');
 
         html += `<button onclick="rqLoadSession(${s.id})" class="text-xs font-semibold px-3 py-1.5 rounded-full border ${color} whitespace-nowrap transition">
-            ${escHtml(typeName)}
+            ${escHtml(tabLabel)}
             ${s.status !== 'draft' ? '<span class="text-[9px] opacity-75 ml-0.5">&#10003;</span>' : ''}
         </button>`;
     });
@@ -258,7 +260,9 @@ async function rqLoadSession(sessionId) {
         rqActiveSession = cached;
         rqGuestCount = cached.guest_count || rqGuestCount;
         document.getElementById('rqGuestCount').value = rqGuestCount;
-        document.getElementById('rqTypeName').textContent = rqTypeName(cached.meals);
+        const suppNum = parseInt(cached.supplement_number) || 0;
+        const typeLabel = suppNum > 0 ? `${rqTypeName(cached.meals)} (${suppNum + 1})` : rqTypeName(cached.meals);
+        document.getElementById('rqTypeName').textContent = typeLabel;
 
         const statusPill = document.getElementById('rqStatusPill');
         if (cached.status === 'draft') {
@@ -733,9 +737,40 @@ function rqRenderStatusBanner() {
         html += `<button onclick="rqShowReceiptSheet()" class="mt-2 w-full bg-green-500 text-white py-2 rounded-lg text-sm font-semibold hover:bg-green-600 transition">Confirm Receipt</button>`;
     }
 
+    // "Order More" button for non-draft statuses (chef forgot items)
+    if (['submitted', 'processing', 'fulfilled', 'received'].includes(rqActiveSession.status)) {
+        const typeName = rqTypeName(rqActiveSession.meals);
+        html += `<button onclick="rqCreateSupplementary()" class="mt-2 w-full bg-orange-50 text-orange-700 border border-orange-200 py-2 rounded-lg text-sm font-semibold hover:bg-orange-100 transition flex items-center justify-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            Order More for ${escHtml(typeName)}
+        </button>`;
+    }
+
     html += '</div>';
     banner.innerHTML = html;
     banner.classList.remove('hidden');
+}
+
+// ── Create supplementary order for same meal type ──
+async function rqCreateSupplementary() {
+    if (!rqActiveSession) return;
+    const typeName = rqTypeName(rqActiveSession.meals);
+    if (!confirm(`Create a supplementary order for ${typeName}? This will add a new tab for additional items.`)) return;
+
+    try {
+        const data = await api('api/requisitions.php', {
+            method: 'POST',
+            body: { action: 'create_supplementary', parent_id: rqActiveSession.id }
+        });
+        rqSessions = data.requisitions || [];
+        rqRenderSessionTabs();
+        // Auto-select the new supplementary order
+        const newId = data.requisition_id;
+        if (newId) rqLoadSession(newId);
+        showToast(`Supplementary ${typeName} order created`, 'success');
+    } catch (e) {
+        showToast(e.message || 'Failed to create supplementary order', 'error');
+    }
 }
 
 async function rqShowReceiptSheet() {
@@ -832,7 +867,9 @@ async function rqSaveAndSubmit() {
         });
 
         const typeName = rqTypeName(rqActiveSession.meals);
-        showToast(`${typeName} requisition submitted!`, 'success');
+        const suppNum = parseInt(rqActiveSession.supplement_number) || 0;
+        const submitLabel = suppNum > 0 ? `${typeName} (${suppNum + 1})` : typeName;
+        showToast(`${submitLabel} requisition submitted!`, 'success');
         voice.orderSubmitted(rqActiveSession.session_number, '<?= addslashes($kitchenName) ?>');
         rqLoadSessions();
 

@@ -31,7 +31,7 @@ switch ($action) {
             $sql .= " AND r.status = ?";
             $params[] = $status;
         }
-        $sql .= " ORDER BY r.session_number ASC";
+        $sql .= " ORDER BY r.session_number ASC, r.supplement_number ASC";
 
         $stmt = $db->prepare($sql);
         $stmt->execute($params);
@@ -73,7 +73,7 @@ switch ($action) {
         if (!$kid) jsonError('Kitchen ID required');
 
         // One-time self-healing: ensure missing tables exist, clean duplicates, add UNIQUE constraint
-        $migrated = cacheGet('uk_migration_v2_done', 86400 * 365);
+        $migrated = cacheGet('uk_migration_v3_done', 86400 * 365);
         if (!$migrated) {
             try {
                 // 1. Create missing tables that older deployments might not have
@@ -108,10 +108,24 @@ switch ($action) {
                     INDEX idx_day_type (day_of_week, type_code)
                 )");
 
-                // 2. Clean duplicate requisitions + add UNIQUE constraint
+                // 2. Add supplement_number column if missing
+                try {
+                    $db->query("SELECT supplement_number FROM requisitions LIMIT 0");
+                } catch (Exception $e2) {
+                    $db->exec("ALTER TABLE requisitions ADD COLUMN supplement_number INT DEFAULT 0");
+                }
+
+                // 3. Upgrade UNIQUE constraint to include supplement_number
+                // Drop old constraint if it exists, add new one
                 $indexes = $db->query("SHOW INDEX FROM requisitions WHERE Key_name = 'uk_kitchen_date_meals'")->fetchAll();
-                if (empty($indexes)) {
-                    $dupes = $db->query("SELECT kitchen_id, req_date, meals, GROUP_CONCAT(id ORDER BY id) AS ids, COUNT(*) AS cnt FROM requisitions GROUP BY kitchen_id, req_date, meals HAVING COUNT(*) > 1")->fetchAll();
+                if (!empty($indexes)) {
+                    // Old constraint without supplement_number — drop it
+                    $db->exec("ALTER TABLE requisitions DROP INDEX uk_kitchen_date_meals");
+                }
+                $indexes2 = $db->query("SHOW INDEX FROM requisitions WHERE Key_name = 'uk_kitchen_date_meals_supp'")->fetchAll();
+                if (empty($indexes2)) {
+                    // Clean duplicates before adding constraint
+                    $dupes = $db->query("SELECT kitchen_id, req_date, meals, supplement_number, GROUP_CONCAT(id ORDER BY id) AS ids, COUNT(*) AS cnt FROM requisitions GROUP BY kitchen_id, req_date, meals, supplement_number HAVING COUNT(*) > 1")->fetchAll();
                     foreach ($dupes as $dupe) {
                         $allIds = explode(',', $dupe['ids']);
                         array_shift($allIds); // keep lowest ID
@@ -122,10 +136,10 @@ switch ($action) {
                             $db->exec("DELETE FROM requisitions WHERE id IN ($ph)");
                         }
                     }
-                    $db->exec("ALTER TABLE requisitions ADD UNIQUE KEY uk_kitchen_date_meals (kitchen_id, req_date, meals)");
+                    $db->exec("ALTER TABLE requisitions ADD UNIQUE KEY uk_kitchen_date_meals_supp (kitchen_id, req_date, meals, supplement_number)");
                 }
 
-                cacheSet('uk_migration_v2_done', true);
+                cacheSet('uk_migration_v3_done', true);
             } catch (Exception $e) {
                 // Do NOT cache on failure — retry next request
                 error_log('Karibu migration error: ' . $e->getMessage());
@@ -151,12 +165,12 @@ switch ($action) {
             cacheClear('requisition_types');
         }
 
-        // INSERT IGNORE: UNIQUE constraint (kitchen_id, req_date, meals) silently skips duplicates.
+        // INSERT IGNORE: UNIQUE constraint (kitchen_id, req_date, meals, supplement_number) silently skips duplicates.
         // No need for a prior SELECT — race-condition safe.
         $created = 0;
         $insertStmt = $db->prepare("INSERT IGNORE INTO requisitions
-            (kitchen_id, req_date, session_number, guest_count, meals, status, created_by)
-            VALUES (?, ?, ?, ?, ?, 'draft', ?)");
+            (kitchen_id, req_date, session_number, guest_count, meals, supplement_number, status, created_by)
+            VALUES (?, ?, ?, ?, ?, 0, 'draft', ?)");
 
         foreach ($types as $type) {
             $insertStmt->execute([$kid, $reqDate, $type['sort_order'], $guestCount, $type['code'], $user['id']]);
@@ -174,11 +188,58 @@ switch ($action) {
             (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
             FROM requisitions r LEFT JOIN users u ON u.id = r.created_by
             WHERE r.req_date = ? AND r.kitchen_id = ?
-            ORDER BY r.session_number ASC");
+            ORDER BY r.session_number ASC, r.supplement_number ASC");
         $stmt->execute([$reqDate, $kid]);
         $reqs = $stmt->fetchAll();
 
         jsonResponse(['requisitions' => $reqs, 'created' => $created]);
+
+    // ── Create supplementary order for same meal type ──
+    case 'create_supplementary':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+
+        $parentId = (int)($data['parent_id'] ?? 0);
+        if (!$parentId) jsonError('Parent requisition ID required');
+
+        // Fetch parent requisition
+        $parentStmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND kitchen_id = ?");
+        $parentStmt->execute([$parentId, $kitchenId]);
+        $parent = $parentStmt->fetch();
+        if (!$parent) jsonError('Parent requisition not found');
+
+        // Only allow supplementary if parent is not draft
+        if ($parent['status'] === 'draft') jsonError('Cannot create supplementary for a draft order. Submit the original first.');
+
+        // Find next supplement_number for this (kitchen_id, req_date, meals)
+        $maxStmt = $db->prepare("SELECT COALESCE(MAX(supplement_number), 0) + 1 AS next_supp FROM requisitions WHERE kitchen_id = ? AND req_date = ? AND meals = ?");
+        $maxStmt->execute([$parent['kitchen_id'], $parent['req_date'], $parent['meals']]);
+        $nextSupp = (int)$maxStmt->fetch()['next_supp'];
+
+        $insertStmt = $db->prepare("INSERT INTO requisitions
+            (kitchen_id, req_date, session_number, guest_count, meals, supplement_number, status, created_by)
+            VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)");
+        $insertStmt->execute([
+            $parent['kitchen_id'], $parent['req_date'], $parent['session_number'],
+            $parent['guest_count'], $parent['meals'], $nextSupp, $user['id']
+        ]);
+        $newId = $db->lastInsertId();
+
+        auditLog('requisition_supplementary', 'requisition', $newId, null, [
+            'parent_id' => $parentId, 'supplement_number' => $nextSupp, 'meals' => $parent['meals']
+        ]);
+
+        // Return all requisitions for this date so frontend can refresh tabs
+        $allStmt = $db->prepare("SELECT r.*, u.name AS chef_name,
+            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
+            FROM requisitions r LEFT JOIN users u ON u.id = r.created_by
+            WHERE r.req_date = ? AND r.kitchen_id = ?
+            ORDER BY r.session_number ASC, r.supplement_number ASC");
+        $allStmt->execute([$parent['req_date'], $parent['kitchen_id']]);
+        $allReqs = $allStmt->fetchAll();
+
+        jsonResponse(['requisition_id' => $newId, 'requisitions' => $allReqs]);
 
     // ── Create new draft requisition ──
     case 'create':
@@ -315,9 +376,12 @@ switch ($action) {
         $kRow = $kStmt->fetch();
         if ($kRow) $kitchenName = $kRow['name'];
 
+        $mealLabel = ucfirst($req['meals'] ?? 'order');
+        $suppNum = (int)($req['supplement_number'] ?? 0);
+        if ($suppNum > 0) $mealLabel .= ' (' . ($suppNum + 1) . ')';
         $pushPayload = [
             'title' => 'New Requisition',
-            'body'  => "{$user['name']} submitted Requisition #{$req['session_number']} for {$kitchenName}",
+            'body'  => "{$user['name']} submitted {$mealLabel} for {$kitchenName}",
             'url'   => '/app.php?page=store-dashboard',
             'tag'   => 'req-submitted-' . $reqId,
         ];
