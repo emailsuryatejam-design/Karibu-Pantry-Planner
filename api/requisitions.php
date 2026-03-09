@@ -632,6 +632,15 @@ switch ($action) {
         $req = $stmt->fetch();
         if (!$req) jsonError('Requisition not found or not in draft status');
 
+        // Load kitchen rounding settings
+        $roundingMode = 'half';
+        try {
+            $settingsStmt = $db->prepare("SELECT rounding_mode FROM kitchens WHERE id = ?");
+            $settingsStmt->execute([$req['kitchen_id']]);
+            $kitchenRow = $settingsStmt->fetch();
+            if ($kitchenRow && $kitchenRow['rounding_mode']) $roundingMode = $kitchenRow['rounding_mode'];
+        } catch (Exception $e) { /* columns may not exist yet */ }
+
         $db->beginTransaction();
         try {
             // Clear old dish entries and lines for this requisition
@@ -713,10 +722,16 @@ switch ($action) {
             $totalKg = 0;
             $meal = $req['meals'] ?? 'lunch';
 
+            // Rounding helper per kitchen setting
+            $roundUp = function($val) use ($roundingMode) {
+                if ($roundingMode === 'none') return $val;
+                if ($roundingMode === 'whole') return ceil($val);
+                return ceil($val * 2) / 2; // 'half' — round up to nearest 0.5
+            };
+
             foreach ($aggregated as $itemId => $agg) {
-                $requiredKg = ceil($agg['total_qty'] * 2) / 2; // Round up to 0.5
-                $orderQty = max(0, $requiredKg - $agg['stock_qty']);
-                $orderQty = ceil($orderQty * 2) / 2;
+                $requiredKg = $roundUp($agg['total_qty']);
+                $orderQty = max(0, $roundUp($requiredKg - $agg['stock_qty']));
 
                 if ($requiredKg <= 0) continue;
 

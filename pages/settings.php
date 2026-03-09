@@ -83,6 +83,15 @@
         </div>
     </div>
 
+    <!-- Scaling & Portioning Settings (Admin only) -->
+    <div class="bg-white rounded-xl border border-gray-100 p-5">
+        <h3 class="font-semibold text-sm text-gray-800 mb-1">Scaling & Portioning</h3>
+        <p class="text-[10px] text-gray-400 mb-4">Configure how ingredients are calculated when scaling recipes</p>
+        <div id="scalingSettings" class="space-y-3">
+            <p class="text-xs text-gray-400 text-center py-4">Loading...</p>
+        </div>
+    </div>
+
     <!-- User Management (Admin only) -->
     <div class="bg-white rounded-xl border border-gray-100 p-5">
         <div class="flex items-center justify-between mb-4">
@@ -590,5 +599,73 @@ async function moveMealType(id, direction) {
 }
 
 loadMealTypes();
+
+// ── Scaling & Portioning Settings ──
+const SETTINGS_KITCHEN_ID = <?= (int)($user['kitchen_id'] ?? 0) ?>;
+
+async function loadScalingSettings() {
+    const container = document.getElementById('scalingSettings');
+    try {
+        const data = await api(`api/kitchens.php?action=get_settings&kitchen_id=${SETTINGS_KITCHEN_ID}`);
+        const s = data.settings;
+        renderScalingSettings(s);
+    } catch (err) {
+        container.innerHTML = `<p class="text-xs text-red-500 text-center py-4">${escHtml(err.message)}</p>`;
+    }
+}
+
+function renderScalingSettings(s) {
+    const roundingLabels = { half: 'Nearest 0.5 (e.g. 1.3 \u2192 1.5)', whole: 'Nearest whole (e.g. 1.3 \u2192 2)', none: 'No rounding (exact)' };
+    const container = document.getElementById('scalingSettings');
+    container.innerHTML = `
+        <div>
+            <label class="text-xs font-medium text-gray-600 mb-1 block">Default Guest Count</label>
+            <input type="number" id="scDefaultGuests" value="${s.default_guest_count}" min="1" max="500"
+                class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
+            <p class="text-[10px] text-gray-400 mt-1">Pre-filled when creating new requisitions</p>
+        </div>
+        <div>
+            <label class="text-xs font-medium text-gray-600 mb-1 block">Rounding Mode</label>
+            <select id="scRoundingMode" class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-200">
+                <option value="half" ${s.rounding_mode === 'half' ? 'selected' : ''}>Round up to nearest 0.5</option>
+                <option value="whole" ${s.rounding_mode === 'whole' ? 'selected' : ''}>Round up to nearest whole</option>
+                <option value="none" ${s.rounding_mode === 'none' ? 'selected' : ''}>No rounding (exact values)</option>
+            </select>
+            <p class="text-[10px] text-gray-400 mt-1">How ingredient quantities are rounded when scaling</p>
+        </div>
+        <div>
+            <label class="text-xs font-medium text-gray-600 mb-1 block">Minimum Order Quantity</label>
+            <input type="number" id="scMinOrderQty" value="${s.min_order_qty}" min="0" step="0.1"
+                class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
+            <p class="text-[10px] text-gray-400 mt-1">Smallest quantity that can be ordered (in base UOM)</p>
+        </div>
+        <button onclick="saveScalingSettings()" id="scSaveBtn"
+            class="w-full py-2.5 bg-orange-600 text-white text-sm font-semibold rounded-xl active:bg-orange-700 transition">
+            Save Scaling Settings
+        </button>`;
+}
+
+async function saveScalingSettings() {
+    const btn = document.getElementById('scSaveBtn');
+    setLoading(btn, true);
+    try {
+        await api('api/kitchens.php?action=save_settings', {
+            method: 'POST',
+            body: {
+                kitchen_id: SETTINGS_KITCHEN_ID,
+                default_guest_count: parseInt(document.getElementById('scDefaultGuests').value) || 20,
+                rounding_mode: document.getElementById('scRoundingMode').value,
+                min_order_qty: parseFloat(document.getElementById('scMinOrderQty').value) || 0.5
+            }
+        });
+        showToast('Scaling settings saved!', 'success');
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        setLoading(btn, false);
+    }
+}
+
+loadScalingSettings();
 </script>
 <?php endif; ?>

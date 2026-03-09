@@ -67,6 +67,61 @@ switch ($action) {
         auditLog('kitchen_toggle', 'kitchen', $id);
         jsonResponse(['toggled' => true]);
 
+    // ── Kitchen Scaling Settings ──
+    case 'get_settings':
+        $kid = (int)($_GET['kitchen_id'] ?? $user['kitchen_id'] ?? 0);
+        if (!$kid) jsonError('Kitchen ID required');
+
+        // Self-healing: add columns if missing
+        try {
+            $db->query("SELECT default_guest_count FROM kitchens LIMIT 0");
+        } catch (Exception $e) {
+            $db->exec("ALTER TABLE kitchens
+                ADD COLUMN default_guest_count INT DEFAULT 20,
+                ADD COLUMN rounding_mode VARCHAR(20) DEFAULT 'half',
+                ADD COLUMN min_order_qty DECIMAL(10,2) DEFAULT 0.5");
+        }
+
+        $stmt = $db->prepare("SELECT default_guest_count, rounding_mode, min_order_qty FROM kitchens WHERE id = ?");
+        $stmt->execute([$kid]);
+        $settings = $stmt->fetch();
+        if (!$settings) jsonError('Kitchen not found', 404);
+
+        jsonResponse(['settings' => [
+            'default_guest_count' => (int)($settings['default_guest_count'] ?? 20),
+            'rounding_mode'       => $settings['rounding_mode'] ?? 'half',
+            'min_order_qty'       => (float)($settings['min_order_qty'] ?? 0.5),
+        ]]);
+
+    case 'save_settings':
+        requireMethod('POST');
+        requireRole(['admin']);
+        $data = getJsonInput();
+
+        $kid = (int)($data['kitchen_id'] ?? $user['kitchen_id'] ?? 0);
+        if (!$kid) jsonError('Kitchen ID required');
+
+        $defaultGuests = max(1, (int)($data['default_guest_count'] ?? 20));
+        $roundingMode  = in_array($data['rounding_mode'] ?? '', ['half', 'whole', 'none']) ? $data['rounding_mode'] : 'half';
+        $minOrderQty   = max(0, (float)($data['min_order_qty'] ?? 0.5));
+
+        // Self-healing: add columns if missing
+        try {
+            $db->query("SELECT default_guest_count FROM kitchens LIMIT 0");
+        } catch (Exception $e) {
+            $db->exec("ALTER TABLE kitchens
+                ADD COLUMN default_guest_count INT DEFAULT 20,
+                ADD COLUMN rounding_mode VARCHAR(20) DEFAULT 'half',
+                ADD COLUMN min_order_qty DECIMAL(10,2) DEFAULT 0.5");
+        }
+
+        $stmt = $db->prepare("UPDATE kitchens SET default_guest_count = ?, rounding_mode = ?, min_order_qty = ? WHERE id = ?");
+        $stmt->execute([$defaultGuests, $roundingMode, $minOrderQty, $kid]);
+
+        cacheClear('kitchens');
+        auditLog('kitchen_settings_update', 'kitchen', $kid, null, $data);
+        jsonResponse(['saved' => true]);
+
     default:
         jsonError('Unknown action');
 }
