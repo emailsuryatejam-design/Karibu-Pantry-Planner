@@ -12,7 +12,7 @@ $page = $_GET['page'] ?? $defaultPage;
 
 // Valid pages per role
 $chefPages = ['dashboard', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'daily-groceries', 'recipes', 'reports', 'settings'];
-$storePages = ['store-dashboard', 'store-orders', 'store-history', 'settings'];
+$storePages = ['store-dashboard', 'store-orders', 'store-history', 'reports', 'settings'];
 $adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus']));
 
 $allowedPages = isAdmin() ? $adminPages : (isChef() ? $chefPages : $storePages);
@@ -156,6 +156,12 @@ $isAdminRole = isAdmin();
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
                     <span class="text-[9px] font-medium">History</span>
                 </a>
+                <!-- Store: Reports -->
+                <a href="app.php?page=reports"
+                   class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= $page === 'reports' ? 'text-green-600' : 'text-gray-400' ?>">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+                    <span class="text-[9px] font-medium">Reports</span>
+                </a>
             <?php endif; ?>
 
             <?php if (isAdmin()): ?>
@@ -183,11 +189,58 @@ $isAdminRole = isAdmin();
     </nav>
 
     <!-- PWA Install Banner -->
-    <div id="pwaInstallBanner" class="hidden fixed top-14 left-0 right-0 bg-orange-500 text-white px-4 py-2.5 z-30 flex items-center justify-between">
-        <span class="text-xs font-medium">Install Karibu Pantry for quick access</span>
-        <div class="flex gap-2">
-            <button onclick="pwaInstall()" class="bg-white text-orange-600 px-3 py-1 rounded-lg text-xs font-semibold">Install</button>
-            <button onclick="document.getElementById('pwaInstallBanner').classList.add('hidden')" class="text-white/80 text-xs">Later</button>
+    <div id="pwaInstallBanner" class="hidden fixed top-14 left-0 right-0 z-30">
+        <div class="mx-3 mt-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-3">
+            <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-semibold">Install Karibu Pantry</p>
+                <p class="text-[10px] text-white/80">Quick access from your home screen</p>
+            </div>
+            <div class="flex gap-2 shrink-0">
+                <button onclick="pwaInstall()" class="bg-white text-orange-600 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm">Install</button>
+                <button onclick="pwaInstallDismiss()" class="text-white/60 p-1">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- iOS Install Instructions Modal -->
+    <div id="pwaIOSModal" class="hidden fixed inset-0 z-50 flex items-end justify-center bg-black/40" onclick="if(event.target===this)this.classList.add('hidden')">
+        <div class="bg-white rounded-t-2xl w-full max-w-lg px-5 py-6 space-y-4 animate-slideUp">
+            <h3 class="text-base font-bold text-gray-900 text-center">Install Karibu Pantry</h3>
+            <div class="space-y-3">
+                <div class="flex items-center gap-3 bg-gray-50 rounded-xl p-3">
+                    <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></svg>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold text-gray-800">1. Tap the Share button</p>
+                        <p class="text-[10px] text-gray-500">The square with arrow at the bottom of Safari</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 bg-gray-50 rounded-xl p-3">
+                    <div class="w-8 h-8 bg-green-100 rounded-lg flex items-center justify-center shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8"/><path d="M8 12h8"/></svg>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold text-gray-800">2. Tap "Add to Home Screen"</p>
+                        <p class="text-[10px] text-gray-500">Scroll down in the share menu to find it</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3 bg-gray-50 rounded-xl p-3">
+                    <div class="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold text-gray-800">3. Tap "Add"</p>
+                        <p class="text-[10px] text-gray-500">The app icon will appear on your home screen</p>
+                    </div>
+                </div>
+            </div>
+            <button onclick="document.getElementById('pwaIOSModal').classList.add('hidden')" class="w-full bg-gray-100 text-gray-700 py-2.5 rounded-xl text-sm font-semibold">Got it</button>
         </div>
     </div>
 
@@ -277,20 +330,42 @@ $isAdminRole = isAdmin();
 
     // PWA Install
     let deferredPrompt;
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    const pwaInstallDismissed = sessionStorage.getItem('pwa-install-dismissed');
+
+    // Android/Chrome: capture beforeinstallprompt
     window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
         deferredPrompt = e;
-        document.getElementById('pwaInstallBanner').classList.remove('hidden');
+        if (!isStandalone && !pwaInstallDismissed) {
+            document.getElementById('pwaInstallBanner').classList.remove('hidden');
+        }
     });
+
+    // iOS: show banner if not installed and not dismissed
+    if (isIOS && !isStandalone && !pwaInstallDismissed) {
+        document.getElementById('pwaInstallBanner').classList.remove('hidden');
+    }
 
     function pwaInstall() {
         if (deferredPrompt) {
+            // Android/Chrome
             deferredPrompt.prompt();
             deferredPrompt.userChoice.then(() => {
                 document.getElementById('pwaInstallBanner').classList.add('hidden');
                 deferredPrompt = null;
             });
+        } else if (isIOS) {
+            // iOS: show instruction modal
+            document.getElementById('pwaInstallBanner').classList.add('hidden');
+            document.getElementById('pwaIOSModal').classList.remove('hidden');
         }
+    }
+
+    function pwaInstallDismiss() {
+        document.getElementById('pwaInstallBanner').classList.add('hidden');
+        sessionStorage.setItem('pwa-install-dismissed', '1');
     }
 
     // Register Service Worker

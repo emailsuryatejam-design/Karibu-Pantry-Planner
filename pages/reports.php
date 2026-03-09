@@ -258,7 +258,7 @@ function rpRenderReqList(allReqs) {
                                 <tr class="bg-gray-50">
                                     <th class="text-left px-3 py-1.5 text-gray-500 font-semibold">Item</th>
                                     <th class="text-center px-2 py-1.5 text-blue-600 font-semibold">Req</th>
-                                    <th class="text-center px-2 py-1.5 text-green-600 font-semibold">Issued</th>
+                                    <th class="text-center px-2 py-1.5 text-green-600 font-semibold">Sent</th>
                                     <th class="text-center px-2 py-1.5 text-orange-600 font-semibold">Received</th>
                                     <th class="text-center px-2 py-1.5 text-gray-600 font-semibold">Diff</th>
                                 </tr>
