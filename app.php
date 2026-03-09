@@ -193,6 +193,10 @@ $isAdminRole = isAdmin();
         style="animation-duration:2s;animation-iteration-count:3">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
     </button>
+    <!-- Dismiss × for FAB -->
+    <button id="pwaInstallDismiss" onclick="event.stopPropagation();pwaHideFab()" class="hidden fixed z-50 right-3 bottom-[132px] w-6 h-6 bg-gray-700 text-white rounded-full flex items-center justify-center shadow-md hover:bg-gray-900 transition" title="Don't show again">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    </button>
     <!-- Tooltip for FAB -->
     <div id="pwaInstallTooltip" class="hidden fixed z-40 right-20 bottom-[88px] bg-gray-900 text-white text-xs font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
         Install App
@@ -326,13 +330,27 @@ $isAdminRole = isAdmin();
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
 
     function pwaShowFab() {
+        if (localStorage.getItem('karibu_install_dismissed')) return;
         const fab = document.getElementById('pwaInstallFab');
         const tooltip = document.getElementById('pwaInstallTooltip');
+        const dismiss = document.getElementById('pwaInstallDismiss');
         fab.classList.remove('hidden');
         fab.classList.add('flex');
+        if (dismiss) dismiss.classList.remove('hidden');
         // Show tooltip for 4 seconds then hide
         tooltip.classList.remove('hidden');
         setTimeout(() => tooltip.classList.add('hidden'), 4000);
+    }
+
+    function pwaHideFab() {
+        localStorage.setItem('karibu_install_dismissed', '1');
+        const fab = document.getElementById('pwaInstallFab');
+        const tooltip = document.getElementById('pwaInstallTooltip');
+        const dismiss = document.getElementById('pwaInstallDismiss');
+        fab.classList.add('hidden');
+        fab.classList.remove('flex');
+        tooltip.classList.add('hidden');
+        if (dismiss) dismiss.classList.add('hidden');
     }
 
     // Android/Chrome: capture beforeinstallprompt
@@ -366,6 +384,8 @@ $isAdminRole = isAdmin();
     window.addEventListener('appinstalled', () => {
         document.getElementById('pwaInstallFab').classList.add('hidden');
         document.getElementById('pwaInstallFab').classList.remove('flex');
+        const dismiss = document.getElementById('pwaInstallDismiss');
+        if (dismiss) dismiss.classList.add('hidden');
         deferredPrompt = null;
     });
 
