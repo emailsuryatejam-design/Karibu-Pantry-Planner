@@ -2,6 +2,7 @@
 /**
  * Karibu Pantry Planner — Day Close
  * Supports unused portions tracking per item
+ * Allows editing unused on both received AND closed requisitions
  */
 $user = currentUser();
 $kitchenId = $user['kitchen_id'] ?? 0;
@@ -55,11 +56,18 @@ async function dcLoad() {
             received: 'bg-green-50 text-green-700 border border-green-200', closed: 'bg-gray-200 text-gray-500'
         };
 
+        // Separate empty drafts from real pending
+        const emptyDrafts = parseInt(summary.empty_drafts) || 0;
+        const realPending = (summary.submitted || 0) + (summary.processing || 0) + (summary.fulfilled || 0) + Math.max(0, (summary.draft || 0) - emptyDrafts);
+        const doneCount = (summary.received || 0) + (summary.closed || 0);
+        // Only count non-empty sessions in total
+        const realTotal = summary.total_sessions - emptyDrafts;
+
         let html = `<div class="bg-white border border-gray-200 rounded-xl p-3 mb-3">
             <div class="grid grid-cols-3 gap-2 text-center text-[10px]">
-                <div><div class="text-lg font-bold text-gray-800">${summary.total_sessions}</div>Requisitions</div>
-                <div><div class="text-lg font-bold text-green-600">${(summary.received || 0) + (summary.closed || 0)}</div>Done</div>
-                <div><div class="text-lg font-bold text-amber-600">${(summary.draft || 0) + (summary.submitted || 0) + (summary.processing || 0) + (summary.fulfilled || 0)}</div>Pending</div>
+                <div><div class="text-lg font-bold text-gray-800">${realTotal}</div>Requisitions</div>
+                <div><div class="text-lg font-bold text-green-600">${doneCount}</div>Done</div>
+                <div><div class="text-lg font-bold ${realPending > 0 ? 'text-amber-600' : 'text-gray-300'}">${realPending}</div>Pending</div>
             </div>
         </div>`;
 
@@ -68,10 +76,14 @@ async function dcLoad() {
             const color = statusColors[r.status] || 'bg-gray-100 text-gray-700';
             const isReceived = r.status === 'received';
             const isClosed = r.status === 'closed';
+            const isEmptyDraft = r.status === 'draft' && parseInt(r.line_count) === 0;
             const lines = dcLinesByReq[r.id] || [];
             const hasLines = lines.length > 0;
 
-            html += `<div class="bg-white border ${isReceived ? 'border-green-200' : 'border-gray-200'} rounded-xl overflow-hidden">`;
+            // Hide empty drafts completely
+            if (isEmptyDraft) return;
+
+            html += `<div class="bg-white border ${isReceived ? 'border-green-200' : isClosed ? 'border-gray-200' : 'border-gray-200'} rounded-xl overflow-hidden">`;
 
             // Header row - clickable to expand for received/closed
             if (hasLines) {
@@ -100,7 +112,7 @@ async function dcLoad() {
                                 <tr class="bg-gray-50">
                                     <th class="text-left px-3 py-1.5 text-gray-500 font-semibold">Item</th>
                                     <th class="text-center px-2 py-1.5 text-green-600 font-semibold w-16">Recv</th>
-                                    <th class="text-center px-2 py-1.5 text-orange-600 font-semibold w-20">${isReceived ? 'Unused' : 'Unused'}</th>
+                                    <th class="text-center px-2 py-1.5 text-orange-600 font-semibold w-20">Unused</th>
                                     <th class="text-center px-2 py-1.5 text-blue-600 font-semibold w-16">Used</th>
                                 </tr>
                             </thead>
@@ -111,22 +123,22 @@ async function dcLoad() {
                     const unused = parseFloat(l.unused_qty) || 0;
                     const used = Math.max(0, recv - unused);
 
-                    if (isReceived) {
-                        // Editable unused input
+                    if (isReceived || isClosed) {
+                        // Editable unused input for both received AND closed
                         html += `<tr>
                             <td class="px-3 py-1.5 text-gray-700">${escHtml(l.item_name)} <span class="text-gray-300">${l.uom || ''}</span></td>
                             <td class="text-center px-2 py-1.5 text-green-700 font-medium">${recv > 0 ? recv.toFixed(1) : '—'}</td>
                             <td class="text-center px-1 py-1">
                                 <input type="number" min="0" max="${recv}" step="0.1" value="${unused > 0 ? unused : ''}"
                                     placeholder="0"
-                                    data-line-id="${l.id}" data-max="${recv}"
+                                    data-line-id="${l.id}" data-max="${recv}" data-req-id="${r.id}"
                                     onchange="dcCapUnused(this)"
-                                    class="dc-unused-input w-16 text-center text-xs border border-gray-200 rounded-lg py-1 focus:border-orange-400 focus:ring-1 focus:ring-orange-200 outline-none">
+                                    class="dc-unused-input dc-unused-req-${r.id} w-16 text-center text-xs border border-gray-200 rounded-lg py-1 focus:border-orange-400 focus:ring-1 focus:ring-orange-200 outline-none">
                             </td>
-                            <td class="text-center px-2 py-1.5 text-blue-700 font-medium dc-used" data-recv="${recv}" data-line-id="${l.id}">${recv > 0 ? recv.toFixed(1) : '—'}</td>
+                            <td class="text-center px-2 py-1.5 text-blue-700 font-medium dc-used" data-recv="${recv}" data-line-id="${l.id}">${used > 0 ? used.toFixed(1) : '—'}</td>
                         </tr>`;
                     } else {
-                        // Read-only for closed
+                        // Read-only for other statuses
                         html += `<tr>
                             <td class="px-3 py-1.5 text-gray-700">${escHtml(l.item_name)} <span class="text-gray-300">${l.uom || ''}</span></td>
                             <td class="text-center px-2 py-1.5 text-green-700 font-medium">${recv > 0 ? recv.toFixed(1) : '—'}</td>
@@ -138,20 +150,22 @@ async function dcLoad() {
 
                 html += `</tbody></table></div>`;
 
-                // Show totals row for closed requisitions
+                // Show totals for closed requisitions (always, not just when unused > 0)
                 if (isClosed) {
                     const totRecv = lines.reduce((s, l) => s + (parseFloat(l.received_qty) || 0), 0);
                     const totUnused = lines.reduce((s, l) => s + (parseFloat(l.unused_qty) || 0), 0);
                     const totUsed = totRecv - totUnused;
-                    if (totUnused > 0) {
-                        html += `<div class="px-3 py-2 bg-orange-50 border-t border-orange-100 text-[10px]">
-                            <span class="text-orange-700 font-semibold">Unused: ${totUnused.toFixed(1)} kg</span>
-                            <span class="text-gray-400 mx-1">&bull;</span>
-                            <span class="text-blue-700 font-semibold">Consumed: ${totUsed.toFixed(1)} kg</span>
-                            <span class="text-gray-400 mx-1">&bull;</span>
-                            <span class="text-gray-500">Received: ${totRecv.toFixed(1)} kg</span>
-                        </div>`;
-                    }
+                    html += `<div class="px-3 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                        <div class="text-[10px]">
+                            <span class="text-gray-500">Recv: ${totRecv.toFixed(1)}</span>
+                            <span class="text-gray-300 mx-1">&bull;</span>
+                            <span class="text-blue-700 font-semibold">Used: ${totUsed.toFixed(1)}</span>
+                            ${totUnused > 0 ? `<span class="text-gray-300 mx-1">&bull;</span><span class="text-orange-600 font-semibold">Unused: ${totUnused.toFixed(1)}</span>` : ''}
+                        </div>
+                        <button onclick="dcUpdateUnused(${r.id})" class="text-[10px] bg-orange-100 text-orange-700 px-2 py-1 rounded-lg font-semibold hover:bg-orange-200 transition">
+                            Save Unused
+                        </button>
+                    </div>`;
                 }
 
                 html += `</div>`;
@@ -163,20 +177,20 @@ async function dcLoad() {
 
         // Close button only if there are received sessions
         const canClose = (summary.received || 0) > 0;
-        const allDone = (summary.draft || 0) === 0 && (summary.submitted || 0) === 0 && (summary.processing || 0) === 0 && (summary.fulfilled || 0) === 0;
+        const allDone = realPending === 0;
 
         if (canClose) {
             html += `<div class="bg-orange-50 border border-orange-200 rounded-xl p-3 mb-2">
-                <p class="text-[11px] text-orange-700 mb-1"><strong>Tip:</strong> Expand each received requisition above and enter any unused quantities. These will be added back to your kitchen inventory.</p>
+                <p class="text-[11px] text-orange-700 mb-1"><strong>Tip:</strong> Expand each received requisition above and enter any unused quantities before closing. These will be added back to your kitchen inventory.</p>
             </div>`;
             html += `<button onclick="dcCloseDay()" class="w-full bg-blue-500 text-white py-3 rounded-xl text-sm font-semibold hover:bg-blue-600 transition">
                 Close ${summary.received} Received Requisition${summary.received > 1 ? 's' : ''} & Update Inventory
             </button>`;
             if (!allDone) {
-                html += `<p class="text-[10px] text-amber-600 text-center mt-2">Note: ${(summary.draft || 0) + (summary.submitted || 0) + (summary.processing || 0) + (summary.fulfilled || 0)} requisition(s) still in progress</p>`;
+                html += `<p class="text-[10px] text-amber-600 text-center mt-2">Note: ${realPending} requisition(s) still in progress</p>`;
             }
-        } else if (summary.closed === summary.total_sessions) {
-            // Show consumption summary for fully closed days
+        } else if (doneCount > 0 && realPending === 0) {
+            // Show consumption summary when all non-empty requisitions are done
             let totalRecv = 0, totalUnused = 0;
             reqs.forEach(r => {
                 const lines = dcLinesByReq[r.id] || [];
@@ -197,6 +211,7 @@ async function dcLoad() {
                 </div>`;
             }
             html += `</div>`;
+            html += `<p class="text-[10px] text-gray-400 text-center mt-2">Expand any closed requisition to edit unused quantities</p>`;
         } else {
             html += `<div class="text-center py-4"><span class="text-xs text-gray-400">No requisitions ready to close (must be received first)</span></div>`;
         }
@@ -229,12 +244,11 @@ function dcCapUnused(input) {
         const recv = parseFloat(usedCell.dataset.recv) || 0;
         const used = recv - val;
         usedCell.textContent = used > 0 ? used.toFixed(1) : '—';
-        usedCell.className = `text-center px-2 py-1.5 font-medium dc-used ${val > 0 ? 'text-blue-700' : 'text-blue-700'}`;
     }
 }
 
 async function dcCloseDay() {
-    // Collect all unused quantities from inputs
+    // Collect all unused quantities from received requisition inputs
     const inputs = document.querySelectorAll('.dc-unused-input');
     const unusedLines = [];
     inputs.forEach(inp => {
@@ -259,11 +273,11 @@ async function dcCloseDay() {
     try {
         await api('api/requisitions.php?action=close_with_unused', {
             method: 'POST',
-            body: JSON.stringify({
+            body: {
                 date: dcDate,
                 kitchen_id: DC_KID,
                 unused_lines: unusedLines
-            })
+            }
         });
         const msg = hasUnused
             ? `Day closed! ${totalUnusedKg.toFixed(1)} kg returned to inventory.`
@@ -272,5 +286,29 @@ async function dcCloseDay() {
         voice.dayClosed(formatDate(dcDate));
         dcLoad();
     } catch(e) { showToast(e.message || 'Failed', 'error'); }
+}
+
+async function dcUpdateUnused(reqId) {
+    // Collect unused quantities for this specific closed requisition
+    const inputs = document.querySelectorAll(`.dc-unused-req-${reqId}`);
+    const unusedLines = [];
+    inputs.forEach(inp => {
+        unusedLines.push({
+            line_id: parseInt(inp.dataset.lineId),
+            unused_qty: parseFloat(inp.value) || 0
+        });
+    });
+
+    try {
+        await api('api/requisitions.php?action=update_unused', {
+            method: 'POST',
+            body: {
+                requisition_id: reqId,
+                unused_lines: unusedLines
+            }
+        });
+        showToast('Unused quantities updated & inventory adjusted', 'success');
+        dcLoad();
+    } catch(e) { showToast(e.message || 'Failed to update', 'error'); }
 }
 </script>

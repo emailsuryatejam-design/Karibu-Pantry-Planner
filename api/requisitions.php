@@ -432,9 +432,12 @@ switch ($action) {
         $kRow2 = $kStmt2->fetch();
         if ($kRow2) $kitchenName = $kRow2['name'];
 
+        $mealLabel = ucfirst($req['meals'] ?? 'order');
+        $suppNum = (int)($req['supplement_number'] ?? 0);
+        if ($suppNum > 0) $mealLabel .= ' (' . ($suppNum + 1) . ')';
         $pushPayload = [
             'title' => 'Order Fulfilled',
-            'body'  => "Requisition #{$req['session_number']} for {$kitchenName} has been fulfilled by store",
+            'body'  => "{$mealLabel} for {$kitchenName} has been fulfilled by store",
             'url'   => '/app.php?page=review-supply',
             'tag'   => 'req-fulfilled-' . $reqId,
         ];
@@ -565,24 +568,86 @@ switch ($action) {
             jsonError('Failed to close: ' . $e->getMessage());
         }
 
+    // ── Update unused quantities on already-closed requisitions ──
+    case 'update_unused':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        $unusedLines = $data['unused_lines'] ?? [];
+        if (!$reqId) jsonError('Requisition ID required');
+
+        // Verify requisition is closed and belongs to this kitchen
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'closed' AND kitchen_id = ?");
+        $stmt->execute([$reqId, $kitchenId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Requisition not found or not closed');
+
+        $db->beginTransaction();
+        try {
+            $updateLine = $db->prepare("UPDATE requisition_lines SET unused_qty = ? WHERE id = ? AND requisition_id = ?");
+            $adjustStock = $db->prepare("UPDATE items SET stock_qty = stock_qty + ? WHERE id = ?");
+
+            foreach ($unusedLines as $ul) {
+                $lineId = (int)($ul['line_id'] ?? 0);
+                $newUnused = max(0, (float)($ul['unused_qty'] ?? 0));
+                if (!$lineId) continue;
+
+                // Get current unused and item_id
+                $checkStmt = $db->prepare("SELECT item_id, received_qty, unused_qty FROM requisition_lines WHERE id = ? AND requisition_id = ?");
+                $checkStmt->execute([$lineId, $reqId]);
+                $lineRow = $checkStmt->fetch();
+                if (!$lineRow) continue;
+
+                $maxUnused = (float)$lineRow['received_qty'];
+                if ($newUnused > $maxUnused) $newUnused = $maxUnused;
+
+                $oldUnused = (float)$lineRow['unused_qty'];
+                $delta = $newUnused - $oldUnused; // positive = more returned, negative = less returned
+
+                if (abs($delta) < 0.001) continue; // no change
+
+                $updateLine->execute([$newUnused, $lineId, $reqId]);
+                $adjustStock->execute([$delta, (int)$lineRow['item_id']]);
+            }
+
+            $db->commit();
+
+            auditLog('requisition_update_unused', 'requisition', $reqId, null, [
+                'entries' => count($unusedLines)
+            ]);
+
+            jsonResponse(['updated' => true]);
+        } catch (Exception $e) {
+            $db->rollBack();
+            jsonError('Failed to update: ' . $e->getMessage());
+        }
+
     // ── Dashboard stats (chef) — single query ──
     case 'dashboard_stats':
         $kid = (int)($_GET['kitchen_id'] ?? $kitchenId);
         $today = date('Y-m-d');
 
-        $stmt = $db->prepare("SELECT status, COUNT(*) AS cnt FROM requisitions WHERE req_date = ? AND kitchen_id = ? GROUP BY status");
+        // Count by status, excluding empty drafts (0 items) from active count
+        $stmt = $db->prepare("SELECT r.status, COUNT(*) AS cnt,
+            SUM(CASE WHEN r.status = 'draft' AND (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) = 0 THEN 1 ELSE 0 END) AS empty_drafts
+            FROM requisitions r WHERE r.req_date = ? AND r.kitchen_id = ? GROUP BY r.status");
         $stmt->execute([$today, $kid]);
         $rows = $stmt->fetchAll();
 
         $counts = [];
         $total = 0;
+        $emptyDrafts = 0;
         foreach ($rows as $r) {
             $counts[$r['status']] = (int)$r['cnt'];
             $total += (int)$r['cnt'];
+            if ($r['status'] === 'draft') $emptyDrafts = (int)$r['empty_drafts'];
         }
 
+        // Active = non-empty drafts + submitted + processing (exclude empty drafts)
+        $activeDrafts = max(0, ($counts['draft'] ?? 0) - $emptyDrafts);
         $stats = [
-            'active_sessions' => ($counts['draft'] ?? 0) + ($counts['submitted'] ?? 0) + ($counts['processing'] ?? 0),
+            'active_sessions' => $activeDrafts + ($counts['submitted'] ?? 0) + ($counts['processing'] ?? 0),
             'awaiting_supply' => $counts['submitted'] ?? 0,
             'ready_receive'   => $counts['fulfilled'] ?? 0,
             'ready_close'     => $counts['received'] ?? 0,
@@ -623,18 +688,22 @@ switch ($action) {
             FROM requisitions r
             LEFT JOIN users u ON u.id = r.created_by
             WHERE r.req_date = ? AND r.kitchen_id = ?
-            ORDER BY r.session_number");
+            ORDER BY r.session_number ASC, r.supplement_number ASC");
         $stmt->execute([$date, $kid]);
         $reqs = $stmt->fetchAll();
 
-        // Summary
+        // Summary — track empty drafts separately
         $summary = [
             'total_sessions' => count($reqs),
             'draft' => 0, 'submitted' => 0, 'processing' => 0,
-            'fulfilled' => 0, 'received' => 0, 'closed' => 0
+            'fulfilled' => 0, 'received' => 0, 'closed' => 0,
+            'empty_drafts' => 0
         ];
         foreach ($reqs as $r) {
             $summary[$r['status']]++;
+            if ($r['status'] === 'draft' && (int)$r['line_count'] === 0) {
+                $summary['empty_drafts']++;
+            }
         }
 
         // Load lines for received/closed requisitions (for day close unused entry)

@@ -94,7 +94,10 @@ async function dbLoadSessions() {
         const reqs = data.requisitions || [];
         const container = document.getElementById('dbSessionList');
 
-        if (reqs.length === 0) {
+        // Filter out empty drafts (0 items)
+        const visibleReqs = reqs.filter(r => !(r.status === 'draft' && parseInt(r.line_count) === 0));
+
+        if (visibleReqs.length === 0) {
             container.innerHTML = `<div class="text-center py-6">
                 <p class="text-xs text-gray-400 mb-2">No requisitions today</p>
                 <a href="app.php?page=requisition" class="text-xs text-orange-500 font-semibold hover:text-orange-600">+ Create Requisition</a>
@@ -112,7 +115,7 @@ async function dbLoadSessions() {
         };
 
         let html = '';
-        reqs.forEach(r => {
+        visibleReqs.forEach(r => {
             const color = statusColors[r.status] || 'bg-gray-100 text-gray-700';
             html += `<a href="app.php?page=requisition" class="block bg-white border border-gray-200 rounded-xl px-4 py-3 hover:border-orange-200 transition">
                 <div class="flex items-center justify-between">
