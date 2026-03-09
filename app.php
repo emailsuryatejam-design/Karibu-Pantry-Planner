@@ -379,7 +379,67 @@ $isAdminRole = isAdmin();
                     voice.say(d.body || d.title || 'New notification', 'high');
                 }
             });
+
+            // Auto-prompt for push notifications if never asked
+            setTimeout(() => {
+                if ('Notification' in window && 'PushManager' in window && Notification.permission === 'default') {
+                    const dismissed = localStorage.getItem('karibu_push_dismissed');
+                    if (!dismissed) {
+                        showPushBanner();
+                    }
+                }
+            }, 2000);
         }).catch(() => {});
+    }
+
+    function showPushBanner() {
+        const banner = document.createElement('div');
+        banner.id = 'pushPromptBanner';
+        banner.className = 'fixed top-0 left-0 right-0 z-[250] animate-fade-in';
+        banner.innerHTML = `
+            <div class="mx-3 mt-3 bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl shadow-xl p-4">
+                <div class="flex items-start gap-3">
+                    <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+                    </div>
+                    <div class="flex-1">
+                        <p class="text-white font-semibold text-sm">Enable Notifications</p>
+                        <p class="text-white/80 text-xs mt-0.5">Get instant alerts when orders are submitted, fulfilled, or received.</p>
+                    </div>
+                    <button onclick="dismissPushBanner()" class="text-white/60 hover:text-white p-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                </div>
+                <div class="flex gap-2 mt-3">
+                    <button onclick="enablePushFromBanner()" class="flex-1 bg-white text-green-700 font-semibold text-sm py-2 rounded-xl hover:bg-green-50 transition">
+                        Enable Now
+                    </button>
+                    <button onclick="dismissPushBanner()" class="px-4 text-white/70 text-sm font-medium hover:text-white transition">
+                        Later
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(banner);
+    }
+
+    async function enablePushFromBanner() {
+        const banner = document.getElementById('pushPromptBanner');
+        if (banner) banner.remove();
+        localStorage.setItem('karibu_push_dismissed', '1');
+        const ok = await pushSubscribe();
+        if (ok) {
+            showToast('Notifications enabled!', 'success');
+        }
+    }
+
+    function dismissPushBanner() {
+        const banner = document.getElementById('pushPromptBanner');
+        if (banner) {
+            banner.classList.add('animate-fade-out');
+            setTimeout(() => banner.remove(), 300);
+        }
+        localStorage.setItem('karibu_push_dismissed', '1');
     }
     </script>
 </body>

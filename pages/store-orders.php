@@ -160,27 +160,17 @@ async function soOpenDetail(orderId) {
             <div class="flex-1 overflow-y-auto px-5 py-4 scroll-touch">`;
 
         if (canSend) {
-            // Column header for pending orders
+            // ── Pending: editable layout — Requested (locked) → Issuing (editable) ──
             html += `
                 <div class="grid grid-cols-[1fr_80px_100px] gap-2 px-1 mb-1">
                     <span class="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Item</span>
                     <span class="text-[9px] text-orange-500 uppercase tracking-wider font-semibold text-center">Requested</span>
                     <span class="text-[9px] text-green-600 uppercase tracking-wider font-semibold text-center">Issuing</span>
                 </div>`;
-        }
-
-        html += `<div class="space-y-1.5">`;
-
-        lines.forEach(line => {
-            const reqQty = parseFloat(line.requested_qty) || 0;
-            const sentQty = line.fulfilled_qty !== null ? parseFloat(line.fulfilled_qty) : reqQty;
-            const unitSize = line.unit_size ? parseFloat(line.unit_size) : null;
-
-            html += `<div class="bg-gray-50 rounded-xl px-3 py-2.5">`;
-
-            if (canSend) {
-                // ── Pending: table-like layout — Requested (locked) → Issuing (editable) ──
-                html += `
+            html += `<div class="space-y-1.5">`;
+            lines.forEach(line => {
+                const reqQty = parseFloat(line.requested_qty) || 0;
+                html += `<div class="bg-gray-50 rounded-xl px-3 py-2.5">
                     <div class="grid grid-cols-[1fr_80px_100px] gap-2 items-center">
                         <div class="min-w-0">
                             <p class="font-semibold text-sm text-gray-800 truncate">${line.item_name}</p>
@@ -204,68 +194,40 @@ async function soOpenDetail(orderId) {
                                 class="w-12 text-center text-[11px] border border-gray-200 rounded px-0.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-green-200 compact-btn bg-white">
                             <span class="text-[10px] text-gray-400">${line.uom}</span>
                         </div>
-                    </div>`;
-            } else if (order.status === 'received') {
-                // ── Received: show Sent vs Chef Received vs Diff (dispute view) ──
-                const recvQty = line.received_qty !== null ? parseFloat(line.received_qty) : sentQty;
-                const diff = recvQty - sentQty;
-                const diffLabel = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '—';
-                const diffColor = diff > 0 ? 'text-blue-600' : diff < 0 ? 'text-red-600' : 'text-gray-400';
-                const diffBg = diff !== 0 ? 'bg-red-50' : 'bg-gray-50';
-                const isDispute = Math.abs(diff) > 0.01;
-
-                html += `
-                    <div class="flex items-center justify-between mb-2">
-                        <p class="font-semibold text-sm text-gray-800 truncate flex-1">${line.item_name}</p>
-                        ${isDispute ? '<span class="text-[10px] text-red-600 font-semibold">⚠ Dispute</span>' : ''}
-                        ${unitSize ? `<span class="text-[10px] text-gray-400 ml-1">${unitSize} ${line.uom} packs</span>` : ''}
                     </div>
-                    <div class="grid grid-cols-3 gap-2 text-center">
-                        <div class="bg-green-50 rounded-lg py-1.5">
-                            <p class="text-[9px] text-gray-500 uppercase tracking-wider font-medium">I Sent</p>
-                            <p class="text-sm font-bold text-green-700">${sentQty} <span class="text-[10px] font-normal text-green-500">${line.uom}</span></p>
-                        </div>
-                        <div class="${isDispute ? 'bg-red-50 border border-red-200' : 'bg-orange-50'} rounded-lg py-1.5">
-                            <p class="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Chef Got</p>
-                            <p class="text-sm font-bold ${isDispute ? 'text-red-700' : 'text-orange-700'}">${recvQty} <span class="text-[10px] font-normal ${isDispute ? 'text-red-500' : 'text-orange-500'}">${line.uom}</span></p>
-                        </div>
-                        <div class="${diffBg} rounded-lg py-1.5">
-                            <p class="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Diff</p>
-                            <p class="text-sm font-bold ${diffColor}">${diffLabel}</p>
-                        </div>
-                    </div>`;
-            } else {
-                // ── Fulfilled (sent but not yet received): show Asked vs Issued vs Diff ──
-                const diff = sentQty - reqQty;
-                const diffLabel = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '—';
-                const diffColor = diff > 0 ? 'text-blue-600' : diff < 0 ? 'text-red-600' : 'text-gray-400';
-                const diffBg = diff > 0 ? 'bg-blue-50' : diff < 0 ? 'bg-red-50' : 'bg-gray-50';
-
-                html += `
-                    <div class="flex items-center justify-between mb-2">
-                        <p class="font-semibold text-sm text-gray-800 truncate flex-1">${line.item_name}</p>
-                        ${unitSize ? `<span class="text-[10px] text-gray-400">${unitSize} ${line.uom} packs</span>` : ''}
-                    </div>
-                    <div class="grid grid-cols-3 gap-2 text-center">
-                        <div class="bg-orange-50 rounded-lg py-1.5">
-                            <p class="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Asked</p>
-                            <p class="text-sm font-bold text-orange-700">${reqQty} <span class="text-[10px] font-normal text-orange-500">${line.uom}</span></p>
-                        </div>
-                        <div class="bg-green-50 rounded-lg py-1.5">
-                            <p class="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Issued</p>
-                            <p class="text-sm font-bold text-green-700">${sentQty} <span class="text-[10px] font-normal text-green-500">${line.uom}</span></p>
-                        </div>
-                        <div class="${diffBg} rounded-lg py-1.5">
-                            <p class="text-[9px] text-gray-500 uppercase tracking-wider font-medium">Diff</p>
-                            <p class="text-sm font-bold ${diffColor}">${diffLabel}</p>
-                        </div>
-                    </div>`;
-            }
-
+                </div>`;
+            });
             html += `</div>`;
-        });
-
-        html += `</div>`;
+        } else {
+            // ── Fulfilled / Received: unified table (Req | Sent | Received | Diff) ──
+            html += `<div class="max-h-[55vh] overflow-y-auto">
+                <table class="w-full text-[11px]">
+                    <thead><tr class="bg-gray-50">
+                        <th class="text-left px-2 py-1.5 text-gray-500 font-semibold">Item</th>
+                        <th class="text-center px-1 py-1.5 text-blue-600 font-semibold">Req</th>
+                        <th class="text-center px-1 py-1.5 text-green-600 font-semibold">Sent</th>
+                        <th class="text-center px-1 py-1.5 text-orange-600 font-semibold">Received</th>
+                        <th class="text-center px-1 py-1.5 text-gray-600 font-semibold">Diff</th>
+                    </tr></thead>
+                    <tbody>`;
+            lines.forEach(line => {
+                const oq = parseFloat(line.requested_qty) || 0;
+                const fq = line.fulfilled_qty !== null ? parseFloat(line.fulfilled_qty) : 0;
+                const rq = line.received_qty !== null ? parseFloat(line.received_qty) : 0;
+                const diff = rq > 0 ? rq - oq : (fq > 0 ? fq - oq : 0);
+                const diffLabel = diff > 0 ? '+' + diff.toFixed(1) : diff < 0 ? diff.toFixed(1) : '—';
+                const diffCls = diff > 0 ? 'text-blue-600 font-semibold' : diff < 0 ? 'text-red-600 font-semibold' : 'text-gray-300';
+                const rowBg = Math.abs(diff) > 0.01 ? 'bg-red-50/50' : '';
+                html += `<tr class="${rowBg}">
+                    <td class="px-2 py-1.5 text-gray-700">${line.item_name} <span class="text-gray-300 text-[9px]">${line.uom || ''}</span></td>
+                    <td class="text-center px-1 py-1.5 text-blue-700 font-medium">${oq > 0 ? oq.toFixed(1) : '—'}</td>
+                    <td class="text-center px-1 py-1.5 text-green-700 font-medium">${fq > 0 ? fq.toFixed(1) : '—'}</td>
+                    <td class="text-center px-1 py-1.5 text-orange-700 font-medium">${rq > 0 ? rq.toFixed(1) : '—'}</td>
+                    <td class="text-center px-1 py-1.5 ${diffCls}">${diffLabel}</td>
+                </tr>`;
+            });
+            html += `</tbody></table></div>`;
+        }
 
         // Send button (only for pending orders)
         if (canSend) {
@@ -287,7 +249,6 @@ async function soOpenDetail(orderId) {
         if (order.status === 'received') {
             const hasDispute = parseInt(order.has_dispute) === 1;
             if (hasDispute) {
-                // Count disputed lines
                 const disputeCount = lines.filter(l => {
                     const sent = l.fulfilled_qty !== null ? parseFloat(l.fulfilled_qty) : parseFloat(l.requested_qty);
                     const recv = l.received_qty !== null ? parseFloat(l.received_qty) : sent;
@@ -305,11 +266,11 @@ async function soOpenDetail(orderId) {
             }
         }
 
-        // Download/Print button for all statuses
+        // Print button — uses global printOrder() from app.js for unified format
         html += `
-            <button onclick="soDownloadOrder(${order.id})" class="w-full bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 py-2.5 rounded-xl text-xs font-medium transition mt-3 flex items-center justify-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Download / Print
+            <button onclick="printOrder(${order.id})" class="w-full bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 py-2.5 rounded-xl text-xs font-medium transition mt-3 flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+                Print Order
             </button>`;
 
         html += `</div>`;
@@ -326,76 +287,6 @@ function soAdjLine(lineId, field, delta) {
     if (input) {
         const step = field === 'qty' ? 1 : 0.5;
         input.value = Math.max(field === 'qty' ? 0 : 0.1, (parseFloat(input.value) || 0) + delta * step);
-    }
-}
-
-// ── Download / Print order ──
-async function soDownloadOrder(orderId) {
-    try {
-        const res = await api(`api/store-orders.php?action=get&id=${orderId}`);
-        const order = res.order;
-        const lines = res.lines || [];
-        const date = formatDate(order.order_date);
-        const hasDispute = parseInt(order.has_dispute) === 1;
-        const statusLabel = order.status.charAt(0).toUpperCase() + order.status.slice(1);
-
-        let headerRow = '';
-        let bodyRows = '';
-
-        if (order.status === 'received') {
-            // Received: show Sent vs Chef Got vs Diff
-            headerRow = '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd">Item</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">UOM</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Sent</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Chef Got</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Diff</th>';
-            lines.forEach(l => {
-                const sent = l.fulfilled_qty !== null ? parseFloat(l.fulfilled_qty) : parseFloat(l.requested_qty);
-                const recv = l.received_qty !== null ? parseFloat(l.received_qty) : sent;
-                const diff = recv - sent;
-                const diffStr = diff > 0 ? `+${diff}` : diff < 0 ? `${diff}` : '—';
-                const diffStyle = Math.abs(diff) > 0.01 ? (diff > 0 ? 'color:#2563eb;font-weight:700' : 'color:#dc2626;font-weight:700') : 'color:#999';
-                const rowBg = Math.abs(diff) > 0.01 ? 'background:#fef2f2' : '';
-                bodyRows += `<tr style="${rowBg}"><td style="padding:5px 8px;border-bottom:1px solid #eee">${l.item_name}${Math.abs(diff) > 0.01 ? ' ⚠' : ''}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${l.uom}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${sent}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-weight:600">${recv}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;${diffStyle}">${diffStr}</td></tr>`;
-            });
-        } else if (order.status === 'fulfilled') {
-            // Fulfilled: show Requested vs Issued
-            headerRow = '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd">Item</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">UOM</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Requested</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Issued</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Pack Size</th>';
-            lines.forEach(l => {
-                const req = parseFloat(l.requested_qty) || 0;
-                const sent = l.fulfilled_qty !== null ? parseFloat(l.fulfilled_qty) : req;
-                const pack = l.unit_size ? parseFloat(l.unit_size) : '';
-                bodyRows += `<tr><td style="padding:5px 8px;border-bottom:1px solid #eee">${l.item_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${l.uom}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${req}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-weight:600">${sent}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${pack ? pack + ' ' + l.uom : ''}</td></tr>`;
-            });
-        } else {
-            // Pending: show requested items
-            headerRow = '<th style="text-align:left;padding:6px 8px;border-bottom:2px solid #ddd">Item</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">UOM</th><th style="padding:6px 8px;border-bottom:2px solid #ddd;text-align:center">Requested Qty</th>';
-            lines.forEach(l => {
-                bodyRows += `<tr><td style="padding:5px 8px;border-bottom:1px solid #eee">${l.item_name}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${l.uom}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center;font-weight:600">${parseFloat(l.requested_qty) || 0}</td></tr>`;
-            });
-        }
-
-        const disputeNote = hasDispute ? '<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px;margin-top:16px;font-size:12px;color:#b91c1c;font-weight:600">⚠ This order has disputed items — Chef received different quantities than sent</div>' : '';
-
-        const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Order #${order.id}</title><style>
-            body{font-family:Arial,sans-serif;margin:20px;color:#333}
-            h1{font-size:18px;margin:0 0 4px}
-            .sub{font-size:12px;color:#666;margin-bottom:16px}
-            table{width:100%;border-collapse:collapse;font-size:13px}
-            th{background:#f9fafb;font-size:11px;text-transform:uppercase;letter-spacing:0.5px;color:#666}
-            .footer{margin-top:20px;font-size:11px;color:#999;border-top:1px solid #eee;padding-top:10px}
-            @media print{body{margin:10px}button{display:none!important}}
-        </style></head><body>
-            <div style="display:flex;justify-content:space-between;align-items:start">
-                <div><h1>Store Order #${order.id}</h1><div class="sub">${date} · ${statusLabel} · ${lines.length} items · From ${order.chef_name || 'Chef'}</div></div>
-                <button onclick="window.print()" style="padding:8px 16px;background:#16a34a;color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer">Print</button>
-            </div>
-            <table><thead><tr>${headerRow}</tr></thead><tbody>${bodyRows}</tbody></table>
-            ${disputeNote}
-            <div class="footer">Karibu Pantry Planner · Printed ${new Date().toLocaleString()}</div>
-        </body></html>`;
-
-        const win = window.open('', '_blank');
-        win.document.write(html);
-        win.document.close();
-    } catch (err) {
-        showToast('Failed to generate printout', 'error');
     }
 }
 

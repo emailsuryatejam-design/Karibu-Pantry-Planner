@@ -346,7 +346,6 @@ async function printOrder(reqId, kitchenNameOverride) {
         // Always show full flow: Requested → Sent → Received → Diff
         // Build table rows
         let tableRows = '';
-        let totalOrdered = 0, totalFulfilled = 0, totalReceived = 0;
         lines.forEach((l, i) => {
             const orderQty = parseFloat(l.order_qty) || 0;
             const reqKg = parseFloat(l.required_kg) || 0;
@@ -356,10 +355,6 @@ async function printOrder(reqId, kitchenNameOverride) {
             const hasDiff = Math.abs(diff) > 0.01;
             const diffStyle = diff < 0 ? 'color:#dc2626;font-weight:bold' : (diff > 0 ? 'color:#16a34a;font-weight:bold' : 'color:#6b7280');
             const rowBg = hasDiff ? 'background:#fef2f2;' : '';
-
-            totalOrdered += orderQty;
-            totalFulfilled += fulfilledQty;
-            totalReceived += receivedQty;
 
             tableRows += `<tr style="border-bottom:1px solid #e5e7eb;${rowBg}">
                 <td style="padding:6px 8px;text-align:center;color:#6b7280">${i + 1}</td>
@@ -371,16 +366,6 @@ async function printOrder(reqId, kitchenNameOverride) {
                 <td style="padding:6px 8px;text-align:center;${diffStyle}">${hasDiff ? (diff > 0 ? '+' : '') + diff : '—'}</td>
             </tr>`;
         });
-
-        // Total row
-        const totalDiff = totalReceived - totalFulfilled;
-        tableRows += `<tr style="border-top:2px solid #374151;font-weight:700;background:#f9fafb">
-            <td style="padding:8px" colspan="3">TOTAL</td>
-            <td style="padding:8px;text-align:center">${totalOrdered.toFixed(1)}</td>
-            <td style="padding:8px;text-align:center;color:#2563eb">${totalFulfilled.toFixed(1)}</td>
-            <td style="padding:8px;text-align:center;color:#16a34a">${totalReceived.toFixed(1)}</td>
-            <td style="padding:8px;text-align:center;${Math.abs(totalDiff) > 0.01 ? 'color:#dc2626;font-weight:bold' : ''}">${Math.abs(totalDiff) > 0.01 ? totalDiff.toFixed(1) : '—'}</td>
-        </tr>`;
 
         // Dishes list with per-dish portions
         let dishesHtml = '';
