@@ -46,9 +46,12 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
         </div>
     </div>
 
-    <!-- Guest Count -->
+    <!-- Default Guest Count -->
     <div class="bg-white rounded-xl border border-gray-200 p-3 mb-3 flex items-center justify-between">
-        <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Guest Count</div>
+        <div>
+            <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Default Guest Count</div>
+            <div class="text-[9px] text-gray-400">New dishes start with this count</div>
+        </div>
         <input type="number" id="rqGuestCount" value="20" min="1" onchange="rqSetGuests(this.value)"
             class="w-20 text-center text-lg font-bold text-gray-800 border border-gray-200 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
     </div>
@@ -379,6 +382,7 @@ async function rqLoadSession(sessionId) {
                 recipe_id: d.recipe_id,
                 recipe_name: d.recipe_name,
                 recipe_servings: d.recipe_servings || 4,
+                dish_portions: parseInt(d.guest_count) || rqGuestCount,
                 ingredients: ingredientsByRecipe[d.recipe_id] || []
             };
         }
@@ -414,10 +418,26 @@ async function rqLoadSession(sessionId) {
 // ── Guests ──
 function rqSetGuests(val) {
     if (!rqActiveSession || rqActiveSession.status !== 'draft') return;
+    const oldGuestCount = rqGuestCount;
     rqGuestCount = Math.max(1, parseInt(val) || 1);
     document.getElementById('rqGuestCount').value = rqGuestCount;
+    // Update dishes that still had the old default guest count
+    for (const dish of Object.values(rqDishes)) {
+        if (dish.dish_portions === oldGuestCount) {
+            dish.dish_portions = rqGuestCount;
+        }
+    }
     rqRecalcAggregated();
     rqRenderDishView();
+    rqUpdateSummary();
+}
+
+// ── Per-dish portions ──
+function rqSetDishPortions(recipeId, val) {
+    if (!rqDishes[recipeId]) return;
+    rqDishes[recipeId].dish_portions = Math.max(1, parseInt(val) || 1);
+    rqRecalcAggregated();
+    rqRenderAggregatedItemsList(true);
     rqUpdateSummary();
 }
 
@@ -488,6 +508,7 @@ async function rqAddDish(recipeId) {
             recipe_id: recipe.id,
             recipe_name: recipe.name,
             recipe_servings: parseInt(recipe.servings) || 4,
+            dish_portions: rqGuestCount, // Per-dish portion count (defaults to global guest count)
             ingredients: ingredients
         };
 
@@ -518,7 +539,9 @@ function rqRecalcAggregated() {
     const newAgg = {};
 
     for (const [recipeId, dish] of Object.entries(rqDishes)) {
-        const scaleFactor = rqGuestCount / (dish.recipe_servings || 4);
+        // Use per-dish portions instead of global guest count
+        const dishPortions = dish.dish_portions || rqGuestCount;
+        const scaleFactor = dishPortions / (dish.recipe_servings || 4);
 
         dish.ingredients.forEach(ing => {
             const itemId = ing.item_id;
@@ -585,7 +608,8 @@ function rqRenderSelectedDishes(isDraft) {
     html += '<div class="space-y-2">';
 
     dishList.forEach(d => {
-        const scaleFactor = (rqGuestCount / (d.recipe_servings || 4)).toFixed(1);
+        const dishPortions = d.dish_portions || rqGuestCount;
+        const scaleFactor = (dishPortions / (d.recipe_servings || 4)).toFixed(1);
         const scaledTotal = d.ingredients.length;
         html += `<div class="bg-white rounded-xl border border-gray-200 px-3 py-2.5">
             <div class="flex items-center justify-between">
@@ -596,13 +620,20 @@ function rqRenderSelectedDishes(isDraft) {
                     <div class="min-w-0">
                         <div class="text-sm font-medium text-gray-800 truncate">${escHtml(d.recipe_name)}</div>
                         <div class="text-[10px] text-gray-400">
-                            Std: ${d.recipe_servings} portions &bull; Scaled: &times;${scaleFactor} for ${rqGuestCount} guests &bull; ${scaledTotal} items
+                            Std: ${d.recipe_servings} &bull; &times;${scaleFactor} &bull; ${scaledTotal} items
                         </div>
                     </div>
                 </div>
-                ${isDraft ? `<button onclick="rqRemoveDish(${d.recipe_id})" class="text-gray-300 hover:text-red-500 transition p-1">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
-                </button>` : ''}
+                <div class="flex items-center gap-1.5 shrink-0">
+                    ${isDraft ? `<div class="flex items-center gap-1 bg-orange-50 rounded-lg px-1.5 py-0.5">
+                        <span class="text-[9px] text-orange-600 font-medium">Portions</span>
+                        <input type="number" value="${dishPortions}" min="1" onchange="rqSetDishPortions(${d.recipe_id}, this.value)"
+                            class="w-12 text-center text-sm font-bold text-orange-700 border border-orange-200 rounded py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-orange-300">
+                    </div>` : `<span class="text-xs font-semibold text-orange-600">${dishPortions} pax</span>`}
+                    ${isDraft ? `<button onclick="rqRemoveDish(${d.recipe_id})" class="text-gray-300 hover:text-red-500 transition p-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
+                    </button>` : ''}
+                </div>
             </div>
         </div>`;
     });
@@ -734,6 +765,7 @@ async function rqLoadSetMenuDishes() {
                 recipe_id: md.recipe_id,
                 recipe_name: md.recipe_name,
                 recipe_servings: parseInt(md.recipe_servings) || 4,
+                dish_portions: rqGuestCount,
                 ingredients: ingredients
             };
             loaded++;
@@ -921,7 +953,8 @@ async function rqSaveAndSubmit() {
                 dishes: dishList.map(d => ({
                     recipe_id: d.recipe_id,
                     recipe_name: d.recipe_name,
-                    recipe_servings: d.recipe_servings
+                    recipe_servings: d.recipe_servings,
+                    dish_portions: d.dish_portions || rqGuestCount
                 })),
                 guest_count: rqGuestCount,
                 adjustments: adjustments

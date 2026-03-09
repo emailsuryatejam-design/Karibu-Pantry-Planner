@@ -382,12 +382,18 @@ async function printOrder(reqId, kitchenNameOverride) {
             <td style="padding:8px;text-align:center;${Math.abs(totalDiff) > 0.01 ? 'color:#dc2626;font-weight:bold' : ''}">${Math.abs(totalDiff) > 0.01 ? totalDiff.toFixed(1) : '—'}</td>
         </tr>`;
 
-        // Dishes list
+        // Dishes list with per-dish portions
         let dishesHtml = '';
         if (dishes.length > 0) {
+            const dishItems = dishes.map(d => {
+                const portions = d.guest_count || guestCount;
+                return `<span style="display:inline-block;margin:2px 4px 2px 0;padding:3px 8px;background:#fef3c7;border-radius:6px;font-size:12px">
+                    ${escHtml(d.recipe_name)} <strong style="color:#92400e">(${portions} pax)</strong>
+                </span>`;
+            }).join('');
             dishesHtml = `<div style="margin-top:16px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">
-                <div style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:4px">DISHES (${dishes.length})</div>
-                <div style="font-size:12px;color:#78350f">${dishes.map(d => escHtml(d.recipe_name)).join(' &bull; ')}</div>
+                <div style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:6px">DISHES (${dishes.length})</div>
+                <div>${dishItems}</div>
             </div>`;
         }
 
