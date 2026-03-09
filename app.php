@@ -188,23 +188,15 @@ $isAdminRole = isAdmin();
         </div>
     </nav>
 
-    <!-- PWA Install Banner -->
-    <div id="pwaInstallBanner" class="hidden fixed top-14 left-0 right-0 z-30">
-        <div class="mx-3 mt-2 bg-gradient-to-r from-orange-500 to-orange-600 text-white px-4 py-3 rounded-xl shadow-lg flex items-center gap-3">
-            <div class="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center shrink-0">
-                <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
-            </div>
-            <div class="flex-1 min-w-0">
-                <p class="text-sm font-semibold">Install Karibu Pantry</p>
-                <p class="text-[10px] text-white/80">Quick access from your home screen</p>
-            </div>
-            <div class="flex gap-2 shrink-0">
-                <button onclick="pwaInstall()" class="bg-white text-orange-600 px-3 py-1.5 rounded-lg text-xs font-bold shadow-sm">Install</button>
-                <button onclick="pwaInstallDismiss()" class="text-white/60 p-1">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                </button>
-            </div>
-        </div>
+    <!-- PWA Install Floating Button -->
+    <button id="pwaInstallFab" onclick="pwaInstall()" class="hidden fixed z-40 right-4 bottom-20 w-14 h-14 bg-gradient-to-br from-orange-500 to-orange-600 text-white rounded-full shadow-lg flex items-center justify-center animate-bounce hover:scale-110 active:scale-95 transition-transform"
+        style="animation-duration:2s;animation-iteration-count:3">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+    </button>
+    <!-- Tooltip for FAB -->
+    <div id="pwaInstallTooltip" class="hidden fixed z-40 right-20 bottom-[88px] bg-gray-900 text-white text-xs font-medium px-3 py-1.5 rounded-lg shadow-lg whitespace-nowrap">
+        Install App
+        <div class="absolute top-1/2 -right-1 -translate-y-1/2 w-2 h-2 bg-gray-900 rotate-45"></div>
     </div>
 
     <!-- iOS Install Instructions Modal -->
@@ -332,41 +324,50 @@ $isAdminRole = isAdmin();
     let deferredPrompt;
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-    const pwaInstallDismissed = sessionStorage.getItem('pwa-install-dismissed');
+
+    function pwaShowFab() {
+        const fab = document.getElementById('pwaInstallFab');
+        const tooltip = document.getElementById('pwaInstallTooltip');
+        fab.classList.remove('hidden');
+        fab.classList.add('flex');
+        // Show tooltip for 4 seconds then hide
+        tooltip.classList.remove('hidden');
+        setTimeout(() => tooltip.classList.add('hidden'), 4000);
+    }
 
     // Android/Chrome: capture beforeinstallprompt
     window.addEventListener('beforeinstallprompt', (e) => {
         e.preventDefault();
         deferredPrompt = e;
-        if (!isStandalone && !pwaInstallDismissed) {
-            document.getElementById('pwaInstallBanner').classList.remove('hidden');
-        }
+        if (!isStandalone) pwaShowFab();
     });
 
-    // iOS: show banner if not installed and not dismissed
-    if (isIOS && !isStandalone && !pwaInstallDismissed) {
-        document.getElementById('pwaInstallBanner').classList.remove('hidden');
-    }
+    // iOS: show fab if not installed
+    if (isIOS && !isStandalone) pwaShowFab();
 
     function pwaInstall() {
         if (deferredPrompt) {
             // Android/Chrome
             deferredPrompt.prompt();
-            deferredPrompt.userChoice.then(() => {
-                document.getElementById('pwaInstallBanner').classList.add('hidden');
+            deferredPrompt.userChoice.then((choice) => {
+                if (choice.outcome === 'accepted') {
+                    document.getElementById('pwaInstallFab').classList.add('hidden');
+                    document.getElementById('pwaInstallFab').classList.remove('flex');
+                }
                 deferredPrompt = null;
             });
         } else if (isIOS) {
             // iOS: show instruction modal
-            document.getElementById('pwaInstallBanner').classList.add('hidden');
             document.getElementById('pwaIOSModal').classList.remove('hidden');
         }
     }
 
-    function pwaInstallDismiss() {
-        document.getElementById('pwaInstallBanner').classList.add('hidden');
-        sessionStorage.setItem('pwa-install-dismissed', '1');
-    }
+    // Hide FAB once app is installed
+    window.addEventListener('appinstalled', () => {
+        document.getElementById('pwaInstallFab').classList.add('hidden');
+        document.getElementById('pwaInstallFab').classList.remove('flex');
+        deferredPrompt = null;
+    });
 
     // Register Service Worker
     if ('serviceWorker' in navigator) {
