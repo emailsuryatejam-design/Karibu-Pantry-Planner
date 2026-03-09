@@ -123,17 +123,120 @@ rqInit();
 const rqSearchDishesDebounced = debounce(() => rqSearchDishes(), 350);
 
 async function rqInit() {
-    // Load kitchen settings + types in parallel, then sessions
-    const [settingsData] = await Promise.all([
-        api(`api/kitchens.php?action=get_settings&kitchen_id=${RQ_KITCHEN_ID}`).catch(() => null),
-        rqLoadTypes()
-    ]);
-    if (settingsData && settingsData.settings) {
-        rqSettings = settingsData.settings;
-        rqGuestCount = rqSettings.default_guest_count || 20;
-        document.getElementById('rqGuestCount').value = rqGuestCount;
+    try {
+        // ── Fast path: single API call returns settings + types + sessions + first session data ──
+        const initData = await api('api/requisitions.php?action=page_init', {
+            method: 'POST',
+            body: JSON.stringify({
+                req_date: rqDate,
+                kitchen_id: RQ_KITCHEN_ID,
+                guest_count: rqGuestCount
+            })
+        });
+
+        // 1. Apply settings
+        if (initData.settings) {
+            rqSettings = initData.settings;
+            rqGuestCount = rqSettings.default_guest_count || 20;
+            document.getElementById('rqGuestCount').value = rqGuestCount;
+        }
+
+        // 2. Apply types
+        rqTypes = initData.types || [];
+
+        // 3. Apply sessions
+        rqSessions = initData.requisitions || [];
+        rqRenderSessionTabs();
+
+        // 4. Load first session from preloaded data (zero extra API calls)
+        if (rqSessions.length > 0 && initData.first_session) {
+            const fs = initData.first_session;
+            rqActiveSession = fs.requisition;
+            rqGuestCount = parseInt(rqActiveSession.guest_count) || rqGuestCount;
+            document.getElementById('rqGuestCount').value = rqGuestCount;
+
+            // Update UI header
+            const suppNum = parseInt(rqActiveSession.supplement_number) || 0;
+            const orderLabel = suppNum > 0 ? ` — Order ${suppNum + 1}` : '';
+            document.getElementById('rqTypeName').textContent = rqTypeName(rqActiveSession.meals) + orderLabel;
+
+            const isDraft = rqActiveSession.status === 'draft';
+            document.getElementById('rqSessionCard').classList.remove('hidden');
+            document.getElementById('rqBottomBar').classList.toggle('hidden', !isDraft);
+            document.getElementById('rqDishSearchWrap').classList.toggle('hidden', !isDraft);
+            const printBtn = document.getElementById('rqPrintBtn');
+            if (printBtn) printBtn.classList.toggle('hidden', isDraft);
+
+            // Status pill
+            if (isDraft) {
+                document.getElementById('rqStatusPill').innerHTML = '<span class="text-[10px] bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full font-medium">Draft</span>';
+            } else {
+                const sc = {submitted:'bg-blue-100 text-blue-700',processing:'bg-amber-100 text-amber-700',fulfilled:'bg-green-100 text-green-700',received:'bg-green-100 text-green-700',closed:'bg-gray-200 text-gray-500'};
+                document.getElementById('rqStatusPill').innerHTML = `<span class="text-[10px] ${sc[rqActiveSession.status] || ''} px-2 py-0.5 rounded-full font-medium capitalize">${rqActiveSession.status}</span>`;
+            }
+
+            // Process dishes + ingredients from preloaded data
+            rqDishes = {};
+            rqAggregatedItems = {};
+            const savedDishes = fs.dishes || [];
+            const ingredientsByRecipe = fs.ingredients_by_recipe || {};
+
+            for (const d of savedDishes) {
+                rqDishes[d.recipe_id] = {
+                    recipe_id: d.recipe_id,
+                    recipe_name: d.recipe_name,
+                    recipe_servings: d.recipe_servings || 4,
+                    dish_portions: parseInt(d.guest_count) || rqGuestCount,
+                    ingredients: ingredientsByRecipe[d.recipe_id] || []
+                };
+            }
+
+            rqRecalcAggregated();
+
+            // Restore adjustments from saved lines
+            const lines = fs.lines || [];
+            lines.forEach(l => {
+                const agg = rqAggregatedItems[l.item_id];
+                if (agg) {
+                    const diff = parseFloat(l.required_kg) - agg.total_qty_raw;
+                    if (Math.abs(diff) > 0.01) {
+                        agg.adjustment = diff;
+                        agg.total_qty = agg.total_qty_raw + diff;
+                    }
+                }
+            });
+
+            // Auto-load set menu if draft + empty
+            if (isDraft && savedDishes.length === 0 && lines.length === 0 && !rqSetMenuLoadedFor[rqActiveSession.id]) {
+                await rqLoadSetMenuDishes();
+            }
+
+            rqRenderStatusBanner();
+            rqRenderSessionTabs();
+            rqRenderDishView();
+            rqUpdateSummary();
+        } else if (rqSessions.length > 0) {
+            // Preloaded data missing — load first session normally
+            rqLoadSession(rqSessions[0].id);
+        } else {
+            rqActiveSession = null;
+            document.getElementById('rqSessionCard').classList.add('hidden');
+            document.getElementById('rqBottomBar').classList.add('hidden');
+        }
+    } catch (e) {
+        // ── Fallback: old sequential flow if page_init not available ──
+        console.warn('page_init failed, falling back:', e);
+        const [settingsData] = await Promise.all([
+            api(`api/kitchens.php?action=get_settings&kitchen_id=${RQ_KITCHEN_ID}`).catch(() => null),
+            rqLoadTypes()
+        ]);
+        if (settingsData && settingsData.settings) {
+            rqSettings = settingsData.settings;
+            rqGuestCount = rqSettings.default_guest_count || 20;
+            document.getElementById('rqGuestCount').value = rqGuestCount;
+        }
+        await rqLoadSessions();
     }
-    await rqLoadSessions();
 }
 
 // ── Date Navigation ──

@@ -61,6 +61,112 @@ switch ($action) {
 
         jsonResponse(['requisition' => $req, 'lines' => $lineData]);
 
+    // ── Page init: single call for everything the requisition page needs ──
+    case 'page_init':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+
+        $reqDate = $data['req_date'] ?? date('Y-m-d');
+        $kid = (int)($data['kitchen_id'] ?? $kitchenId);
+        $guestCount = (int)($data['guest_count'] ?? 20);
+        if (!$kid) jsonError('Kitchen ID required');
+
+        // 1. Kitchen settings
+        $initSettings = ['default_guest_count' => 20, 'rounding_mode' => 'half', 'min_order_qty' => 0.5];
+        try {
+            $sStmt = $db->prepare("SELECT default_guest_count, rounding_mode, min_order_qty FROM kitchens WHERE id = ?");
+            $sStmt->execute([$kid]);
+            $sRow = $sStmt->fetch();
+            if ($sRow) {
+                $initSettings = [
+                    'default_guest_count' => (int)($sRow['default_guest_count'] ?? 20),
+                    'rounding_mode' => $sRow['rounding_mode'] ?? 'half',
+                    'min_order_qty' => (float)($sRow['min_order_qty'] ?? 0.5),
+                ];
+            }
+        } catch (Exception $e) { /* columns may not exist yet */ }
+
+        // Apply settings to guest count if not explicitly set
+        if ($guestCount === 20 && $initSettings['default_guest_count'] !== 20) {
+            $guestCount = $initSettings['default_guest_count'];
+        }
+
+        // 2. Active types
+        $initTypes = $db->query("SELECT id, name, code, sort_order FROM requisition_types WHERE is_active = 1 ORDER BY sort_order, name")->fetchAll();
+        if (empty($initTypes)) {
+            $defaults = [['Breakfast', 'breakfast', 1], ['Lunch', 'lunch', 2], ['Dinner', 'dinner', 3]];
+            $seedStmt = $db->prepare("INSERT IGNORE INTO requisition_types (name, code, sort_order) VALUES (?, ?, ?)");
+            foreach ($defaults as $d) $seedStmt->execute($d);
+            $initTypes = $db->query("SELECT id, name, code, sort_order FROM requisition_types WHERE is_active = 1 ORDER BY sort_order, name")->fetchAll();
+        }
+
+        // 3. Auto-create requisitions (INSERT IGNORE — safe for duplicates)
+        $initCreated = 0;
+        $insertStmt = $db->prepare("INSERT IGNORE INTO requisitions
+            (kitchen_id, req_date, session_number, guest_count, meals, supplement_number, status, created_by)
+            VALUES (?, ?, ?, ?, ?, 0, 'draft', ?)");
+        foreach ($initTypes as $type) {
+            $insertStmt->execute([$kid, $reqDate, $type['sort_order'], $guestCount, $type['code'], $user['id']]);
+            if ($insertStmt->rowCount() > 0) $initCreated++;
+        }
+
+        // 4. Fetch all sessions for this date
+        $rStmt = $db->prepare("SELECT r.*, u.name AS chef_name,
+            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
+            FROM requisitions r LEFT JOIN users u ON u.id = r.created_by
+            WHERE r.req_date = ? AND r.kitchen_id = ?
+            ORDER BY r.session_number ASC, r.supplement_number ASC");
+        $rStmt->execute([$reqDate, $kid]);
+        $initReqs = $rStmt->fetchAll();
+
+        // 5. Preload first session's full data (lines + dishes + ingredients)
+        $firstSession = null;
+        $targetId = (int)($data['active_session_id'] ?? 0);
+        $firstReq = $targetId ? array_values(array_filter($initReqs, fn($r) => (int)$r['id'] === $targetId))[0] ?? $initReqs[0] ?? null : $initReqs[0] ?? null;
+        if ($firstReq) {
+            $fid = (int)$firstReq['id'];
+            // Lines
+            $lStmt = $db->prepare("SELECT rl.*, i.stock_qty AS current_stock FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? ORDER BY rl.item_name");
+            $lStmt->execute([$fid]);
+            $fLines = $lStmt->fetchAll();
+
+            // Dishes + ingredients
+            $dStmt = $db->prepare("SELECT rd.recipe_id, rd.recipe_name, rd.recipe_servings, rd.scale_factor, rd.guest_count
+                FROM requisition_dishes rd WHERE rd.requisition_id = ? ORDER BY rd.created_at");
+            $dStmt->execute([$fid]);
+            $fDishes = $dStmt->fetchAll();
+
+            $fIngredients = new \stdClass();
+            if (!empty($fDishes)) {
+                $recipeIds = array_unique(array_column($fDishes, 'recipe_id'));
+                $ph = implode(',', array_fill(0, count($recipeIds), '?'));
+                $iStmt = $db->prepare("SELECT ri.recipe_id, ri.item_id, ri.qty, ri.uom, ri.is_primary,
+                    i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
+                    FROM recipe_ingredients ri LEFT JOIN items i ON i.id = ri.item_id
+                    WHERE ri.recipe_id IN ($ph) ORDER BY ri.recipe_id, ri.is_primary DESC, i.name");
+                $iStmt->execute(array_values($recipeIds));
+                $byRecipe = [];
+                foreach ($iStmt->fetchAll() as $ing) $byRecipe[$ing['recipe_id']][] = $ing;
+                $fIngredients = $byRecipe ?: new \stdClass();
+            }
+
+            $firstSession = [
+                'requisition' => $firstReq,
+                'lines' => $fLines,
+                'dishes' => $fDishes,
+                'ingredients_by_recipe' => $fIngredients,
+            ];
+        }
+
+        jsonResponse([
+            'settings' => $initSettings,
+            'types' => $initTypes,
+            'requisitions' => $initReqs,
+            'created' => $initCreated,
+            'first_session' => $firstSession,
+        ]);
+
     // ── Auto-create requisitions for all active types on a date ──
     case 'auto_create_for_date':
         requireMethod('POST');
