@@ -144,9 +144,16 @@ async function rLoadDetail(id) {
 
         let html = '<div class="border-t border-gray-100">';
 
-        // Meta row (prep, cook, difficulty, servings)
+        // Standardized badge
+        if (r.servings) {
+            html += `<div class="flex items-center gap-2 px-4 py-2 bg-blue-50 border-b border-blue-100">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                <span class="text-[11px] font-semibold text-blue-700">Standardized for ${r.servings} portions</span>
+            </div>`;
+        }
+
+        // Meta row (prep, cook, difficulty)
         html += `<div class="flex items-center gap-3 px-4 py-2 bg-gray-50/50 text-[10px] text-gray-500 flex-wrap">`;
-        if (r.servings) html += `<span class="flex items-center gap-1"><svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg> ${r.servings} servings</span>`;
         if (r.prep_time) html += `<span>Prep: ${r.prep_time}min</span>`;
         if (r.cook_time) html += `<span>Cook: ${r.cook_time}min</span>`;
         html += `<span class="${diffColors[r.difficulty] || ''} font-medium">${(r.difficulty || 'medium').charAt(0).toUpperCase() + (r.difficulty || 'medium').slice(1)}</span>`;
@@ -167,11 +174,15 @@ async function rLoadDetail(id) {
             html += `<p class="text-xs text-gray-400">No ingredients yet — add items from the pantry</p>`;
         } else {
             html += `<div class="space-y-1">`;
+            const servings = parseInt(r.servings) || 1;
             ings.forEach(ing => {
+                const totalQty = parseFloat(ing.qty);
+                const perPortion = (totalQty / servings).toFixed(3).replace(/\.?0+$/, '');
                 html += `<div class="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-50">
                     <span class="w-1.5 h-1.5 rounded-full shrink-0 ${ing.is_primary ? 'bg-orange-400' : 'bg-gray-300'}"></span>
                     <span class="text-xs text-gray-800 truncate flex-1">${ing.item_name}</span>
-                    <span class="text-[10px] text-gray-500 shrink-0">${parseFloat(ing.qty)} ${ing.uom}</span>
+                    <span class="text-[10px] text-gray-500 shrink-0">${totalQty} ${ing.uom}</span>
+                    <span class="text-[9px] text-blue-500 shrink-0 bg-blue-50 px-1 py-0.5 rounded">${perPortion}/${ing.uom} pp</span>
                     <button onclick="rRemoveIngredient(${ing.id}, ${id})" class="text-gray-300 hover:text-red-500 transition compact-btn p-0.5" title="Remove">
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                     </button>

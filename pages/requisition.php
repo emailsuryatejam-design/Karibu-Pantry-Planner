@@ -96,6 +96,16 @@ let rqSetMenuLoadedFor = {}; // Track per-session: { sessionId: true }
 const RQ_MAX_DAYS_AHEAD = 7;
 const RQ_KITCHEN_ID = <?= (int)$kitchenId ?>;
 
+// Kitchen scaling settings (loaded from admin config)
+let rqSettings = { default_guest_count: 20, rounding_mode: 'half', min_order_qty: 0.5 };
+
+// Rounding helper — uses admin-configured mode
+function rqRound(qty) {
+    if (rqSettings.rounding_mode === 'none') return qty;
+    if (rqSettings.rounding_mode === 'whole') return Math.ceil(qty);
+    return Math.ceil(qty * 2) / 2; // 'half' — round up to nearest 0.5
+}
+
 // ── Init ──
 rqRenderDate();
 rqInit();
@@ -103,8 +113,16 @@ rqInit();
 const rqSearchDishesDebounced = debounce(() => rqSearchDishes(), 350);
 
 async function rqInit() {
-    // Load types first, then sessions (which auto-creates if needed)
-    await rqLoadTypes();
+    // Load kitchen settings + types in parallel, then sessions
+    const [settingsData] = await Promise.all([
+        api(`api/kitchens.php?action=get_settings&kitchen_id=${RQ_KITCHEN_ID}`).catch(() => null),
+        rqLoadTypes()
+    ]);
+    if (settingsData && settingsData.settings) {
+        rqSettings = settingsData.settings;
+        rqGuestCount = rqSettings.default_guest_count || 20;
+        document.getElementById('rqGuestCount').value = rqGuestCount;
+    }
     await rqLoadSessions();
 }
 
@@ -462,6 +480,8 @@ function rqRecalcAggregated() {
     rqAggregatedItems = newAgg;
 }
 
+let rqShowIngredients = false; // Chef sees dishes only by default
+
 function rqRenderDishView() {
     const isDraft = rqActiveSession && rqActiveSession.status === 'draft';
     rqRenderSelectedDishes(isDraft);
@@ -487,21 +507,26 @@ function rqRenderSelectedDishes(isDraft) {
 
     let html = `<div class="flex items-center justify-between mb-2">
         <span class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Selected Dishes (${dishList.length})</span>
-        ${rqActiveSession && rqSetMenuLoadedFor[rqActiveSession.id] ? '<span class="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">From Set Menu</span>' : ''}
+        <div class="flex items-center gap-2">
+            ${rqActiveSession && rqSetMenuLoadedFor[rqActiveSession.id] ? '<span class="text-[9px] bg-blue-50 text-blue-600 px-1.5 py-0.5 rounded-full font-medium">Set Menu</span>' : ''}
+        </div>
     </div>`;
     html += '<div class="space-y-2">';
 
     dishList.forEach(d => {
         const scaleFactor = (rqGuestCount / (d.recipe_servings || 4)).toFixed(1);
+        const scaledTotal = d.ingredients.length;
         html += `<div class="bg-white rounded-xl border border-gray-200 px-3 py-2.5">
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2 flex-1 min-w-0">
-                    <div class="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
+                    <div class="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
                     </div>
                     <div class="min-w-0">
                         <div class="text-sm font-medium text-gray-800 truncate">${escHtml(d.recipe_name)}</div>
-                        <div class="text-[10px] text-gray-400">${d.ingredients.length} ingredients &bull; serves ${d.recipe_servings} &bull; &times;${scaleFactor} scale</div>
+                        <div class="text-[10px] text-gray-400">
+                            Std: ${d.recipe_servings} portions &bull; Scaled: &times;${scaleFactor} for ${rqGuestCount} guests &bull; ${scaledTotal} items
+                        </div>
                     </div>
                 </div>
                 ${isDraft ? `<button onclick="rqRemoveDish(${d.recipe_id})" class="text-gray-300 hover:text-red-500 transition p-1">
@@ -512,6 +537,16 @@ function rqRenderSelectedDishes(isDraft) {
     });
 
     html += '</div>';
+
+    // Toggle for ingredient details
+    const items = Object.entries(rqAggregatedItems);
+    if (items.length > 0) {
+        html += `<button onclick="rqShowIngredients=!rqShowIngredients;rqRenderDishView()" class="w-full mt-3 flex items-center justify-center gap-1.5 py-2 text-[11px] font-medium ${rqShowIngredients ? 'text-orange-600' : 'text-gray-400'} hover:text-orange-600 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="transition-transform ${rqShowIngredients ? 'rotate-180' : ''}"><path d="m6 9 6 6 6-6"/></svg>
+            ${rqShowIngredients ? 'Hide' : 'View'} ingredient breakdown (${items.length} items)
+        </button>`;
+    }
+
     container.innerHTML = html;
 }
 
@@ -519,7 +554,7 @@ function rqRenderAggregatedItemsList(isDraft) {
     const container = document.getElementById('rqAggregatedItems');
     const items = Object.entries(rqAggregatedItems);
 
-    if (items.length === 0) {
+    if (items.length === 0 || !rqShowIngredients) {
         container.innerHTML = '';
         return;
     }
@@ -539,8 +574,8 @@ function rqRenderAggregatedItemsList(isDraft) {
 
         catItems.forEach(agg => {
             const totalQty = Math.max(0, agg.total_qty);
-            const requiredKg = Math.ceil(totalQty * 2) / 2;
-            const orderQty = Math.max(0, Math.ceil((requiredKg - agg.stock_qty) * 2) / 2);
+            const requiredKg = rqRound(totalQty);
+            const orderQty = Math.max(0, rqRound(requiredKg - agg.stock_qty));
 
             let stockBadge = '';
             if (requiredKg > 0) {
@@ -656,9 +691,9 @@ function rqUpdateSummary() {
 
     for (const [itemId, agg] of Object.entries(rqAggregatedItems)) {
         const totalQty = Math.max(0, agg.total_qty);
-        const requiredKg = Math.ceil(totalQty * 2) / 2;
+        const requiredKg = rqRound(totalQty);
         if (requiredKg <= 0) continue;
-        const orderQty = Math.max(0, Math.ceil((requiredKg - agg.stock_qty) * 2) / 2);
+        const orderQty = Math.max(0, rqRound(requiredKg - agg.stock_qty));
         if (orderQty > 0) {
             totalItems++;
             totalKg += orderQty;
