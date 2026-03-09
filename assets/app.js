@@ -322,6 +322,207 @@ if ('speechSynthesis' in window) {
     speechSynthesis.onvoiceschanged = () => speechSynthesis.getVoices();
 }
 
+// ── Print Order ──
+async function printOrder(reqId, kitchenNameOverride) {
+    try {
+        const data = await api(`api/requisitions.php?action=get&id=${reqId}`);
+        const req = data.requisition;
+        const lines = data.lines || [];
+
+        // Also load dishes for this requisition
+        let dishes = [];
+        try {
+            const dData = await api(`api/requisitions.php?action=get_dishes_with_ingredients&requisition_id=${reqId}`);
+            dishes = dData.dishes || [];
+        } catch {}
+
+        const mealLabel = reqLabel(req);
+        const chefName = req.chef_name || 'Chef';
+        const date = formatDate(req.req_date);
+        const guestCount = req.guest_count || 20;
+        const status = (req.status || 'draft').toUpperCase();
+        const kitchenName = kitchenNameOverride || '';
+
+        // Always show full flow: Requested → Sent → Received → Diff
+        // Build table rows
+        let tableRows = '';
+        let totalOrdered = 0, totalFulfilled = 0, totalReceived = 0;
+        lines.forEach((l, i) => {
+            const orderQty = parseFloat(l.order_qty) || 0;
+            const reqKg = parseFloat(l.required_kg) || 0;
+            const fulfilledQty = parseFloat(l.fulfilled_qty) || 0;
+            const receivedQty = parseFloat(l.received_qty) || 0;
+            const diff = receivedQty - fulfilledQty;
+            const hasDiff = Math.abs(diff) > 0.01;
+            const diffStyle = diff < 0 ? 'color:#dc2626;font-weight:bold' : (diff > 0 ? 'color:#16a34a;font-weight:bold' : 'color:#6b7280');
+            const rowBg = hasDiff ? 'background:#fef2f2;' : '';
+
+            totalOrdered += orderQty;
+            totalFulfilled += fulfilledQty;
+            totalReceived += receivedQty;
+
+            tableRows += `<tr style="border-bottom:1px solid #e5e7eb;${rowBg}">
+                <td style="padding:6px 8px;text-align:center;color:#6b7280">${i + 1}</td>
+                <td style="padding:6px 8px;font-weight:500">${escHtml(l.item_name)}</td>
+                <td style="padding:6px 8px;text-align:center;color:#6b7280;font-size:11px">${escHtml(l.uom || 'kg')}</td>
+                <td style="padding:6px 8px;text-align:center">${orderQty}</td>
+                <td style="padding:6px 8px;text-align:center;font-weight:600;color:#2563eb">${fulfilledQty || '—'}</td>
+                <td style="padding:6px 8px;text-align:center;font-weight:600;color:#16a34a">${receivedQty || '—'}</td>
+                <td style="padding:6px 8px;text-align:center;${diffStyle}">${hasDiff ? (diff > 0 ? '+' : '') + diff : '—'}</td>
+            </tr>`;
+        });
+
+        // Total row
+        const totalDiff = totalReceived - totalFulfilled;
+        tableRows += `<tr style="border-top:2px solid #374151;font-weight:700;background:#f9fafb">
+            <td style="padding:8px" colspan="3">TOTAL</td>
+            <td style="padding:8px;text-align:center">${totalOrdered.toFixed(1)}</td>
+            <td style="padding:8px;text-align:center;color:#2563eb">${totalFulfilled.toFixed(1)}</td>
+            <td style="padding:8px;text-align:center;color:#16a34a">${totalReceived.toFixed(1)}</td>
+            <td style="padding:8px;text-align:center;${Math.abs(totalDiff) > 0.01 ? 'color:#dc2626;font-weight:bold' : ''}">${Math.abs(totalDiff) > 0.01 ? totalDiff.toFixed(1) : '—'}</td>
+        </tr>`;
+
+        // Dishes list
+        let dishesHtml = '';
+        if (dishes.length > 0) {
+            dishesHtml = `<div style="margin-top:16px;padding:10px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px">
+                <div style="font-size:11px;font-weight:600;color:#92400e;margin-bottom:4px">DISHES (${dishes.length})</div>
+                <div style="font-size:12px;color:#78350f">${dishes.map(d => escHtml(d.recipe_name)).join(' &bull; ')}</div>
+            </div>`;
+        }
+
+        // Dispute flag
+        let disputeHtml = '';
+        if (req.has_dispute == 1) {
+            disputeHtml = `<div style="margin-top:12px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px">
+                <span style="font-size:12px;font-weight:600;color:#dc2626">⚠ DISPUTE: Quantity differences detected between issued and received items</span>
+            </div>`;
+        }
+
+        const html = `<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<title>${mealLabel} — ${date}</title>
+<style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { font-family: 'Segoe UI', Arial, sans-serif; padding: 24px; color: #1f2937; font-size: 13px; }
+    @media print {
+        body { padding: 12px; }
+        .no-print { display: none !important; }
+        @page { margin: 15mm; size: A4; }
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th { background: #f3f4f6; text-align: left; padding: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #374151; border-bottom: 2px solid #d1d5db; }
+    th.center { text-align: center; }
+</style>
+</head><body>
+    <!-- Print button -->
+    <div class="no-print" style="margin-bottom:16px;text-align:right">
+        <button onclick="window.print()" style="background:#ea580c;color:white;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">
+            🖨 Print
+        </button>
+        <button onclick="window.close()" style="background:#e5e7eb;color:#374151;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-left:8px">
+            ✕ Close
+        </button>
+    </div>
+
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #ea580c;padding-bottom:12px;margin-bottom:16px">
+        <div>
+            <h1 style="font-size:20px;font-weight:700;color:#ea580c">Karibu Pantry Planner</h1>
+            ${kitchenName ? `<div style="font-size:12px;color:#6b7280;margin-top:2px">${escHtml(kitchenName)}</div>` : ''}
+        </div>
+        <div style="text-align:right">
+            <div style="font-size:16px;font-weight:700;color:#1f2937">REQUISITION ORDER</div>
+            <div style="font-size:11px;color:#6b7280">#${req.id}</div>
+        </div>
+    </div>
+
+    <!-- Info Grid -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:16px">
+        <div style="background:#f9fafb;padding:10px 12px;border-radius:8px;border:1px solid #e5e7eb">
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">Date</div>
+            <div style="font-size:14px;font-weight:600;color:#1f2937;margin-top:2px">${date}</div>
+        </div>
+        <div style="background:#f9fafb;padding:10px 12px;border-radius:8px;border:1px solid #e5e7eb">
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">Meal Type</div>
+            <div style="font-size:14px;font-weight:600;color:#1f2937;margin-top:2px">${mealLabel}</div>
+        </div>
+        <div style="background:#f9fafb;padding:10px 12px;border-radius:8px;border:1px solid #e5e7eb">
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">Chef</div>
+            <div style="font-size:14px;font-weight:600;color:#1f2937;margin-top:2px">${escHtml(chefName)}</div>
+        </div>
+        <div style="background:#f9fafb;padding:10px 12px;border-radius:8px;border:1px solid #e5e7eb">
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">Guests</div>
+            <div style="font-size:14px;font-weight:600;color:#1f2937;margin-top:2px">${guestCount}</div>
+        </div>
+    </div>
+
+    <!-- Status badge -->
+    <div style="margin-bottom:12px">
+        <span style="display:inline-block;padding:4px 12px;border-radius:999px;font-size:11px;font-weight:600;background:${
+            req.status === 'draft' ? '#f3f4f6;color:#374151' :
+            req.status === 'submitted' ? '#dbeafe;color:#1d4ed8' :
+            req.status === 'fulfilled' ? '#dcfce7;color:#15803d' :
+            req.status === 'received' ? '#dcfce7;color:#15803d' :
+            req.status === 'closed' ? '#e5e7eb;color:#4b5563' :
+            '#fef3c7;color:#92400e'
+        }">${status}</span>
+        <span style="font-size:12px;color:#6b7280;margin-left:8px">${lines.length} items</span>
+    </div>
+
+    <!-- Items Table -->
+    <table>
+        <thead>
+            <tr>
+                <th style="width:36px;text-align:center">#</th>
+                <th>Item</th>
+                <th class="center" style="width:50px">UOM</th>
+                <th class="center" style="width:70px">Requested</th>
+                <th class="center" style="width:70px">Sent</th>
+                <th class="center" style="width:70px">Received</th>
+                <th class="center" style="width:60px">Diff</th>
+            </tr>
+        </thead>
+        <tbody>
+            ${tableRows}
+        </tbody>
+    </table>
+
+    ${dishesHtml}
+    ${disputeHtml}
+
+    <!-- Signature area -->
+    <div style="margin-top:32px;display:grid;grid-template-columns:1fr 1fr;gap:40px">
+        <div>
+            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:32px"></div>
+            <div style="font-size:11px;color:#6b7280">Chef Signature / Date</div>
+        </div>
+        <div>
+            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:32px"></div>
+            <div style="font-size:11px;color:#6b7280">Store Signature / Date</div>
+        </div>
+    </div>
+
+    <div style="margin-top:24px;text-align:center;font-size:10px;color:#9ca3af">
+        Printed on ${new Date().toLocaleString('en-GB')} — Karibu Pantry Planner
+    </div>
+</body></html>`;
+
+        const printWin = window.open('', '_blank', 'width=800,height=900');
+        if (printWin) {
+            printWin.document.write(html);
+            printWin.document.close();
+            // Auto-print after a short delay
+            setTimeout(() => printWin.print(), 400);
+        } else {
+            showToast('Please allow popups to print', 'warning');
+        }
+    } catch (e) {
+        showToast('Failed to load order for printing: ' + (e.message || ''), 'error');
+    }
+}
+
 // ── Loading State ──
 function setLoading(el, loading) {
     if (loading) {
