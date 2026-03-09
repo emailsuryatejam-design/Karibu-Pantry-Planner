@@ -79,9 +79,14 @@ async function sdLoadIncoming() {
                     <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${isNew ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}">${r.status}</span>
                 </div>
                 <div class="text-[10px] text-gray-400 mb-2">${r.line_count} items</div>
-                <button onclick="sdFulfill(${r.id})" class="w-full bg-green-500 text-white py-2 rounded-lg text-sm font-semibold hover:bg-green-600 transition">
-                    ${isNew ? 'Start Fulfilling' : 'Continue'}
-                </button>
+                <div class="flex gap-2">
+                    <button onclick="sdFulfill(${r.id})" class="flex-1 bg-green-500 text-white py-2 rounded-lg text-sm font-semibold hover:bg-green-600 transition">
+                        ${isNew ? 'Start Fulfilling' : 'Continue'}
+                    </button>
+                    <button onclick="printOrder(${r.id}, '<?= addslashes($kitchenName) ?>')" class="bg-gray-100 text-gray-600 px-3 py-2 rounded-lg hover:bg-gray-200 transition" title="Print">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+                    </button>
+                </div>
             </div>`;
         });
         container.innerHTML = html;
@@ -120,7 +125,12 @@ async function sdFulfill(reqId) {
         });
 
         html += `</div>
-            <button onclick="sdDoFulfill(${reqId})" class="mt-3 w-full bg-green-500 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-green-600 transition">Mark as Fulfilled</button>
+            <div class="flex gap-2 mt-3">
+                <button onclick="sdDoFulfill(${reqId})" class="flex-1 bg-green-500 text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-green-600 transition">Mark as Fulfilled</button>
+                <button onclick="printOrder(${reqId}, '<?= addslashes($kitchenName) ?>')" class="bg-gray-100 text-gray-600 px-4 py-2.5 rounded-xl hover:bg-gray-200 transition" title="Print">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+                </button>
+            </div>
         </div>`;
         openSheet(html);
     } catch(e) {

@@ -38,7 +38,12 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
             <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider" id="rqTypeLabel">Requisition</div>
             <div class="text-sm font-bold text-gray-800" id="rqTypeName"></div>
         </div>
-        <div id="rqStatusPill"></div>
+        <div class="flex items-center gap-2">
+            <button id="rqPrintBtn" onclick="printOrder(rqActiveSession?.id, '<?= addslashes($kitchenName) ?>')" class="hidden p-1.5 text-gray-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition" title="Print Order">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+            </button>
+            <div id="rqStatusPill"></div>
+        </div>
     </div>
 
     <!-- Guest Count -->
@@ -335,6 +340,9 @@ async function rqLoadSession(sessionId) {
         document.getElementById('rqSessionCard').classList.remove('hidden');
         document.getElementById('rqBottomBar').classList.toggle('hidden', !isDraft);
         document.getElementById('rqDishSearchWrap').classList.toggle('hidden', !isDraft);
+        // Show print button for non-draft orders that have lines
+        const printBtn = document.getElementById('rqPrintBtn');
+        if (printBtn) printBtn.classList.toggle('hidden', isDraft);
         rqRenderSessionTabs();
         rqRenderStatusBanner();
 
