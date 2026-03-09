@@ -308,18 +308,24 @@ async function rDeleteRecipe(id, name) {
 // ── Ingredient Management ──
 let riSelectedItem = null;
 let riSearchTimer = null;
+let riCurrentRecipeId = null;
+let riAddedItems = [];
 
 function rShowAddIngredient(recipeId) {
     riSelectedItem = null;
+    riCurrentRecipeId = recipeId;
     openSheet(`
         <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
         <div class="px-5 py-3 border-b border-gray-100">
-            <h3 class="text-sm font-bold text-gray-900">Add Ingredient</h3>
-            <p class="text-[10px] text-gray-400 mt-0.5">Search pantry items to add</p>
+            <h3 class="text-sm font-bold text-gray-900">Add Ingredients</h3>
+            <p class="text-[10px] text-gray-400 mt-0.5">Search & add pantry items</p>
+        </div>
+        <div id="riAddedList" class="px-5 pt-2 hidden">
+            <div id="riAddedItems" class="flex flex-wrap gap-1"></div>
         </div>
         <div class="px-5 py-4 space-y-3">
             <div class="relative">
-                <input type="text" id="riSearch" placeholder="Search items..." oninput="riDoSearch()"
+                <input type="text" id="riSearch" placeholder="Search items..." oninput="riDoSearch()" autocomplete="off"
                     class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
                 <div id="riResults" class="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-20 max-h-40 overflow-y-auto hidden"></div>
             </div>
@@ -346,8 +352,12 @@ function rShowAddIngredient(recipeId) {
                 class="w-full bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-lg text-sm font-semibold transition">
                 Add Ingredient
             </button>
+            <button onclick="riFinish()" class="w-full bg-gray-100 text-gray-600 py-2 rounded-lg text-sm font-medium hover:bg-gray-200 transition">
+                Done
+            </button>
         </div>
     `);
+    setTimeout(() => document.getElementById('riSearch')?.focus(), 200);
 }
 
 function riDoSearch() {
@@ -380,14 +390,15 @@ function riSelectItem(id, name, uom) {
     document.getElementById('riSelected').classList.remove('hidden');
     document.getElementById('riSelectedName').textContent = name;
     document.getElementById('riResults').classList.add('hidden');
-    document.getElementById('riSearch').value = name;
+    document.getElementById('riSearch').parentElement.classList.add('hidden');
     document.getElementById('riUom').value = uom || 'kg';
-    document.getElementById('riQty').focus();
+    setTimeout(() => document.getElementById('riQty').focus(), 100);
 }
 
 function riClearSelection() {
     riSelectedItem = null;
     document.getElementById('riSelected').classList.add('hidden');
+    document.getElementById('riSearch').parentElement.classList.remove('hidden');
     document.getElementById('riSearch').value = '';
     document.getElementById('riSearch').focus();
 }
@@ -410,13 +421,37 @@ async function riSave(recipeId) {
             uom: document.getElementById('riUom').value,
             is_primary: document.getElementById('riPrimary').checked ? 1 : 0
         }});
-        closeSheet();
-        showToast('Ingredient added');
-        rLoadDetail(recipeId);
+
+        // Show added item as chip instead of closing
+        riAddedItems.push(riSelectedItem.name);
+        const addedList = document.getElementById('riAddedList');
+        const addedContainer = document.getElementById('riAddedItems');
+        addedList.classList.remove('hidden');
+        addedContainer.innerHTML = riAddedItems.map(n =>
+            `<span class="text-[10px] bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">✓ ${escHtml(n)}</span>`
+        ).join('');
+
+        // Reset form for next ingredient (keep sheet open)
+        riSelectedItem = null;
+        document.getElementById('riSelected').classList.add('hidden');
+        document.getElementById('riSearch').parentElement.classList.remove('hidden');
+        document.getElementById('riSearch').value = '';
+        document.getElementById('riQty').value = '';
+        document.getElementById('riUom').value = 'kg';
+        document.getElementById('riSearch').focus();
+        setLoading(btn, false);
+
+        showToast('Added! Search next or tap Done');
     } catch(e) {
         showToast(e.message || 'Failed', 'error');
         setLoading(btn, false);
     }
+}
+
+function riFinish() {
+    riAddedItems = [];
+    closeSheet();
+    if (riCurrentRecipeId) rLoadDetail(riCurrentRecipeId);
 }
 
 async function rRemoveIngredient(ingredientId, recipeId) {
