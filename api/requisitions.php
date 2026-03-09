@@ -438,7 +438,7 @@ switch ($action) {
         $pushPayload = [
             'title' => 'Order Fulfilled',
             'body'  => "{$mealLabel} for {$kitchenName} has been fulfilled by store",
-            'url'   => '/app.php?page=review-supply',
+            'url'   => '/app.php?page=day-close',
             'tag'   => 'req-fulfilled-' . $reqId,
         ];
         sendPushToKitchen((int)$req['kitchen_id'], $pushPayload, 'chef', $user['id']);
@@ -498,13 +498,21 @@ switch ($action) {
         $reqId = (int)($data['requisition_id'] ?? 0);
 
         if ($reqId) {
-            // Close single
-            $db->prepare("UPDATE requisitions SET status = 'closed', updated_at = NOW() WHERE id = ? AND status = 'received'")->execute([$reqId]);
+            // Close single — auto-set received_qty = fulfilled_qty if fulfilled
+            $db->prepare("UPDATE requisition_lines rl
+                JOIN requisitions r ON r.id = rl.requisition_id
+                SET rl.received_qty = rl.fulfilled_qty
+                WHERE r.id = ? AND r.status = 'fulfilled' AND (rl.received_qty IS NULL OR rl.received_qty = 0)")->execute([$reqId]);
+            $db->prepare("UPDATE requisitions SET status = 'closed', updated_at = NOW() WHERE id = ? AND status IN ('received', 'fulfilled')")->execute([$reqId]);
         } else {
-            // Close all received for a date
+            // Close all received/fulfilled for a date
             $date = $data['date'] ?? date('Y-m-d');
             $kid = (int)($data['kitchen_id'] ?? $kitchenId);
-            $db->prepare("UPDATE requisitions SET status = 'closed', updated_at = NOW() WHERE req_date = ? AND kitchen_id = ? AND status = 'received'")->execute([$date, $kid]);
+            $db->prepare("UPDATE requisition_lines rl
+                JOIN requisitions r ON r.id = rl.requisition_id
+                SET rl.received_qty = rl.fulfilled_qty
+                WHERE r.req_date = ? AND r.kitchen_id = ? AND r.status = 'fulfilled' AND (rl.received_qty IS NULL OR rl.received_qty = 0)")->execute([$date, $kid]);
+            $db->prepare("UPDATE requisitions SET status = 'closed', updated_at = NOW() WHERE req_date = ? AND kitchen_id = ? AND status IN ('received', 'fulfilled')")->execute([$date, $kid]);
         }
 
         auditLog('requisition_close', 'requisition', $reqId);
@@ -537,24 +545,30 @@ switch ($action) {
                 $unusedQty = max(0, (float)($ul['unused_qty'] ?? 0));
                 if (!$lineId || $unusedQty <= 0) continue;
 
-                // Get the line's item_id and verify it belongs to a received requisition for this kitchen/date
-                $checkStmt = $db->prepare("SELECT rl.item_id, rl.received_qty FROM requisition_lines rl
+                // Get the line's item_id and verify it belongs to a received/fulfilled requisition for this kitchen/date
+                $checkStmt = $db->prepare("SELECT rl.item_id, rl.received_qty, rl.fulfilled_qty FROM requisition_lines rl
                     JOIN requisitions r ON r.id = rl.requisition_id
-                    WHERE rl.id = ? AND r.kitchen_id = ? AND r.req_date = ? AND r.status = 'received'");
+                    WHERE rl.id = ? AND r.kitchen_id = ? AND r.req_date = ? AND r.status IN ('received', 'fulfilled')");
                 $checkStmt->execute([$lineId, $kid, $date]);
                 $lineRow = $checkStmt->fetch();
                 if (!$lineRow) continue;
 
-                // Cap unused_qty to received_qty
-                $maxUnused = (float)$lineRow['received_qty'];
+                // Use received_qty if set, otherwise fulfilled_qty
+                $maxUnused = (float)$lineRow['received_qty'] ?: (float)$lineRow['fulfilled_qty'];
                 if ($unusedQty > $maxUnused) $unusedQty = $maxUnused;
 
                 $updateLine->execute([$unusedQty, $lineId]);
                 $updateStock->execute([$unusedQty, (int)$lineRow['item_id']]);
             }
 
-            // Close all received requisitions for this date/kitchen
-            $db->prepare("UPDATE requisitions SET status = 'closed', updated_at = NOW() WHERE req_date = ? AND kitchen_id = ? AND status = 'received'")->execute([$date, $kid]);
+            // Auto-set received_qty = fulfilled_qty for fulfilled orders (skipping confirm_receipt)
+            $db->prepare("UPDATE requisition_lines rl
+                JOIN requisitions r ON r.id = rl.requisition_id
+                SET rl.received_qty = rl.fulfilled_qty
+                WHERE r.req_date = ? AND r.kitchen_id = ? AND r.status = 'fulfilled' AND (rl.received_qty IS NULL OR rl.received_qty = 0)")->execute([$date, $kid]);
+
+            // Close all received AND fulfilled requisitions for this date/kitchen
+            $db->prepare("UPDATE requisitions SET status = 'closed', updated_at = NOW() WHERE req_date = ? AND kitchen_id = ? AND status IN ('received', 'fulfilled')")->execute([$date, $kid]);
 
             $db->commit();
 
@@ -577,11 +591,11 @@ switch ($action) {
         $unusedLines = $data['unused_lines'] ?? [];
         if (!$reqId) jsonError('Requisition ID required');
 
-        // Verify requisition is closed and belongs to this kitchen
-        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'closed' AND kitchen_id = ?");
+        // Verify requisition is closed/fulfilled and belongs to this kitchen
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('closed', 'fulfilled', 'received') AND kitchen_id = ?");
         $stmt->execute([$reqId, $kitchenId]);
         $req = $stmt->fetch();
-        if (!$req) jsonError('Requisition not found or not closed');
+        if (!$req) jsonError('Requisition not found or not in closeable status');
 
         $db->beginTransaction();
         try {
@@ -594,12 +608,12 @@ switch ($action) {
                 if (!$lineId) continue;
 
                 // Get current unused and item_id
-                $checkStmt = $db->prepare("SELECT item_id, received_qty, unused_qty FROM requisition_lines WHERE id = ? AND requisition_id = ?");
+                $checkStmt = $db->prepare("SELECT item_id, received_qty, fulfilled_qty, unused_qty FROM requisition_lines WHERE id = ? AND requisition_id = ?");
                 $checkStmt->execute([$lineId, $reqId]);
                 $lineRow = $checkStmt->fetch();
                 if (!$lineRow) continue;
 
-                $maxUnused = (float)$lineRow['received_qty'];
+                $maxUnused = (float)$lineRow['received_qty'] ?: (float)$lineRow['fulfilled_qty'];
                 if ($newUnused > $maxUnused) $newUnused = $maxUnused;
 
                 $oldUnused = (float)$lineRow['unused_qty'];
@@ -649,8 +663,7 @@ switch ($action) {
         $stats = [
             'active_sessions' => $activeDrafts + ($counts['submitted'] ?? 0) + ($counts['processing'] ?? 0),
             'awaiting_supply' => $counts['submitted'] ?? 0,
-            'ready_receive'   => $counts['fulfilled'] ?? 0,
-            'ready_close'     => $counts['received'] ?? 0,
+            'ready_close'     => ($counts['fulfilled'] ?? 0) + ($counts['received'] ?? 0),
             'total_sessions'  => $total,
         ];
 
@@ -706,8 +719,8 @@ switch ($action) {
             }
         }
 
-        // Load lines for received/closed requisitions (for day close unused entry)
-        $receivedIds = array_filter(array_map(fn($r) => in_array($r['status'], ['received', 'closed']) ? (int)$r['id'] : null, $reqs));
+        // Load lines for fulfilled/received/closed requisitions (for day close unused entry)
+        $receivedIds = array_filter(array_map(fn($r) => in_array($r['status'], ['fulfilled', 'received', 'closed']) ? (int)$r['id'] : null, $reqs));
         $linesByReq = [];
         if (!empty($receivedIds)) {
             $ph = implode(',', array_fill(0, count($receivedIds), '?'));

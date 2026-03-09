@@ -120,7 +120,7 @@ async function rpLoad() {
             const reqs = data.requisitions || [];
 
             for (const r of reqs) {
-                if (r.status === 'draft') { d = changeDate(d, 1); continue; }
+                if (r.status === 'draft') continue;
 
                 totalSessions++;
                 const kg = parseFloat(r.total_kg || 0);
