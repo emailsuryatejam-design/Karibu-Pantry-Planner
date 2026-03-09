@@ -108,23 +108,35 @@ async function shDetail(reqId) {
         let html = `<div class="p-4">
             <h3 class="text-sm font-semibold text-gray-800 mb-1">${reqLabel(req)} Details</h3>
             <p class="text-[10px] text-gray-400 mb-3">${req.chef_name || 'Chef'}</p>
-            <div class="space-y-1 max-h-[55vh] overflow-y-auto">
-                <div class="grid grid-cols-[1fr_55px_55px_55px] gap-1 text-[9px] font-semibold text-gray-500 px-2 py-1 bg-gray-50 rounded-lg">
-                    <span>Item</span><span class="text-center">Order</span><span class="text-center">Sent</span><span class="text-center">Got</span>
-                </div>`;
+            <div class="max-h-[55vh] overflow-y-auto">
+                <table class="w-full text-[11px]">
+                    <thead><tr class="bg-gray-50">
+                        <th class="text-left px-2 py-1.5 text-gray-500 font-semibold">Item</th>
+                        <th class="text-center px-1 py-1.5 text-blue-600 font-semibold">Req</th>
+                        <th class="text-center px-1 py-1.5 text-green-600 font-semibold">Sent</th>
+                        <th class="text-center px-1 py-1.5 text-orange-600 font-semibold">Received</th>
+                        <th class="text-center px-1 py-1.5 text-gray-600 font-semibold">Diff</th>
+                    </tr></thead>
+                    <tbody>`;
 
         lines.forEach(l => {
-            const order = parseFloat(l.order_qty) || 0;
-            const fulfilled = parseFloat(l.fulfilled_qty) || 0;
-            const received = parseFloat(l.received_qty) ?? '-';
-            const diff = received !== '-' && Math.abs(fulfilled - received) > 0.01;
-            html += `<div class="grid grid-cols-[1fr_55px_55px_55px] gap-1 text-xs px-2 py-1.5 ${diff ? 'bg-red-50' : ''}">
-                <span class="text-gray-800 truncate">${l.item_name}</span>
-                <span class="text-center text-gray-500">${order}</span>
-                <span class="text-center text-gray-700 font-medium">${fulfilled}</span>
-                <span class="text-center ${diff ? 'text-red-600 font-bold' : 'text-gray-700'}">${received}</span>
-            </div>`;
+            const oq = parseFloat(l.order_qty) || 0;
+            const fq = parseFloat(l.fulfilled_qty) || 0;
+            const rq = parseFloat(l.received_qty) || 0;
+            const diff = rq > 0 ? rq - oq : (fq > 0 ? fq - oq : 0);
+            const diffLabel = diff > 0 ? '+' + diff.toFixed(1) : diff < 0 ? diff.toFixed(1) : '—';
+            const diffCls = diff > 0 ? 'text-blue-600 font-semibold' : diff < 0 ? 'text-red-600 font-semibold' : 'text-gray-300';
+            const rowBg = Math.abs(diff) > 0.01 ? 'bg-red-50/50' : '';
+            html += `<tr class="${rowBg}">
+                <td class="px-2 py-1.5 text-gray-700">${l.item_name} <span class="text-gray-300 text-[9px]">${l.uom || ''}</span></td>
+                <td class="text-center px-1 py-1.5 text-blue-700 font-medium">${oq > 0 ? oq.toFixed(1) : '—'}</td>
+                <td class="text-center px-1 py-1.5 text-green-700 font-medium">${fq > 0 ? fq.toFixed(1) : '—'}</td>
+                <td class="text-center px-1 py-1.5 text-orange-700 font-medium">${rq > 0 ? rq.toFixed(1) : '—'}</td>
+                <td class="text-center px-1 py-1.5 ${diffCls}">${diffLabel}</td>
+            </tr>`;
         });
+
+        html += `</tbody></table>`;
 
         html += `</div>
             <button onclick="printOrder(${reqId})" class="mt-3 w-full bg-gray-100 text-gray-700 py-2.5 rounded-xl text-sm font-semibold hover:bg-gray-200 transition flex items-center justify-center gap-2">
