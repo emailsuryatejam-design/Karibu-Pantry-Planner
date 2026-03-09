@@ -402,6 +402,12 @@ $isAdminRole = isAdmin();
 
             // Auto-prompt for push notifications if never asked
             setTimeout(() => {
+                const isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+                const standalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+
+                // On iOS, only show push prompt if running as installed PWA
+                if (isiOS && !standalone) return;
+
                 if ('Notification' in window && 'PushManager' in window && Notification.permission === 'default') {
                     const dismissed = localStorage.getItem('karibu_push_dismissed');
                     if (!dismissed) {
