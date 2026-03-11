@@ -119,13 +119,15 @@ function soRender() {
         const hasDispute = parseInt(order.has_dispute) === 1;
         const borderCls = hasDispute ? 'border-red-200 shadow-sm' : isNew ? 'border-green-200 shadow-sm' : 'border-gray-100';
 
+        const mealLabel = typeof reqLabel === 'function' ? reqLabel(order) : (order.meals || 'Order');
+
         return `
             <div onclick="soOpenDetail(${order.id})"
                  class="bg-white rounded-xl border ${borderCls} p-4 active:bg-gray-50 cursor-pointer transition">
                 <div class="flex items-start justify-between mb-2">
                     <div>
-                        <p class="font-semibold text-sm text-gray-800">${date}</p>
-                        <p class="text-xs text-gray-500 mt-0.5">${order.total_items} item${order.total_items !== 1 ? 's' : ''}</p>
+                        <p class="font-semibold text-sm text-gray-800">${mealLabel}</p>
+                        <p class="text-xs text-gray-500 mt-0.5">${date} &middot; ${order.total_items} item${order.total_items !== 1 ? 's' : ''}</p>
                     </div>
                     <div class="flex flex-wrap gap-1 justify-end">${soStatusBadge(order.status, hasDispute)}</div>
                 </div>
