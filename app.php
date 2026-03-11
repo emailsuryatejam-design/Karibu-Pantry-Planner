@@ -1,5 +1,11 @@
 <?php
 require_once __DIR__ . '/config.php';
+
+// Prevent LiteSpeed/proxy caching — dynamic content per user
+header('Cache-Control: no-cache, no-store, must-revalidate');
+header('Pragma: no-cache');
+header('X-LiteSpeed-Cache-Control: no-cache');
+
 requireLogin();
 
 $user = currentUser();
