@@ -12,11 +12,11 @@ $input = $_SERVER['REQUEST_METHOD'] === 'POST' ? getJsonInput() : [];
 $action = $_GET['action'] ?? ($input['action'] ?? ($_POST['action'] ?? ''));
 
 // Map store-orders statuses to requisition statuses
-// Store view: pending = submitted, fulfilled = fulfilled, received = received
 $statusMap = [
     'pending'   => 'submitted',
     'fulfilled' => 'fulfilled',
     'received'  => 'received',
+    'closed'    => 'closed',
 ];
 
 switch ($action) {
@@ -36,7 +36,7 @@ switch ($action) {
                 FROM requisitions r
                 LEFT JOIN users u ON u.id = r.created_by
                 WHERE r.kitchen_id = ?
-                AND r.status IN ('submitted','fulfilled','received')";
+                AND r.status IN ('submitted','processing','fulfilled','received','closed')";
         $params = [$kitchenId];
 
         if ($status !== 'all' && isset($statusMap[$status])) {
@@ -50,19 +50,19 @@ switch ($action) {
         $stmt->execute($params);
         $orders = $stmt->fetchAll();
 
-        // Remap status names for frontend: submitted → pending
+        // Remap status names for frontend: submitted/processing → pending
         foreach ($orders as &$o) {
-            if ($o['status'] === 'submitted') $o['status'] = 'pending';
+            if ($o['status'] === 'submitted' || $o['status'] === 'processing') $o['status'] = 'pending';
         }
         unset($o);
 
         // Get counts per status for this kitchen
         $countStmt = $db->prepare("SELECT status, COUNT(*) AS count FROM requisitions
-            WHERE kitchen_id = ? AND status IN ('submitted','fulfilled','received') GROUP BY status");
+            WHERE kitchen_id = ? AND status IN ('submitted','processing','fulfilled','received','closed') GROUP BY status");
         $countStmt->execute([$kitchenId]);
         $counts = $countStmt->fetchAll();
 
-        $statusCounts = ['all' => 0, 'pending' => 0, 'fulfilled' => 0, 'received' => 0];
+        $statusCounts = ['all' => 0, 'pending' => 0, 'fulfilled' => 0, 'received' => 0, 'closed' => 0];
         foreach ($counts as $c) {
             $mapped = $c['status'] === 'submitted' ? 'pending' : $c['status'];
             $statusCounts[$mapped] = (int)$c['count'];

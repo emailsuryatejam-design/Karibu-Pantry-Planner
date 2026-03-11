@@ -29,6 +29,10 @@
             class="so-tab flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600">
             Received <span id="so-count-received" class="text-[10px] opacity-80">0</span>
         </button>
+        <button onclick="soFilter('closed')" id="so-tab-closed"
+            class="so-tab flex items-center gap-1.5 px-3 py-2 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600">
+            Closed <span id="so-count-closed" class="text-[10px] opacity-80">0</span>
+        </button>
     </div>
 
     <!-- Loading -->
@@ -70,6 +74,7 @@ function soStatusBadge(status, hasDispute) {
         pending: { cls: 'bg-amber-100 text-amber-700', label: 'New' },
         fulfilled: { cls: 'bg-emerald-100 text-emerald-700', label: 'Sent' },
         received: { cls: 'bg-green-100 text-green-700', label: 'Received' },
+        closed: { cls: 'bg-gray-100 text-gray-600', label: 'Closed' },
     };
     const s = map[status] || { cls: 'bg-gray-100 text-gray-600', label: status };
     let badge = `<span class="inline-flex px-2 py-0.5 rounded-full text-[10px] font-semibold ${s.cls}">${s.label}</span>`;
@@ -89,7 +94,7 @@ async function soLoad() {
         soOrders = res.orders || [];
 
         const counts = res.counts || {};
-        ['all', 'pending', 'fulfilled', 'received'].forEach(s => {
+        ['all', 'pending', 'fulfilled', 'received', 'closed'].forEach(s => {
             const el = document.getElementById('so-count-' + s);
             if (el) el.textContent = counts[s] || 0;
         });

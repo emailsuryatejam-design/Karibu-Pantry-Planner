@@ -145,7 +145,7 @@ function currentUser() {
     if (time() - $lastRefresh > 60) {
         try {
             $db = getDB();
-            $stmt = $db->prepare("SELECT * FROM users WHERE id = ? AND is_active = 1");
+            $stmt = $db->prepare("SELECT u.*, k.name AS kitchen_name FROM users u LEFT JOIN kitchens k ON k.id = u.kitchen_id WHERE u.id = ? AND u.is_active = 1");
             $stmt->execute([$_SESSION['user']['id']]);
             $fresh = $stmt->fetch();
             if ($fresh) {
