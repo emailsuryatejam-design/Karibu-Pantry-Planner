@@ -256,7 +256,7 @@ $isAdminRole = isAdmin();
                     <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V9Z"/><path d="m3 9 2.45-4.9A2 2 0 0 1 7.24 3h9.52a2 2 0 0 1 1.8 1.1L21 9"/><path d="M12 3v6"/></svg>
                     </div>
-                    <div><div class="text-sm font-semibold text-gray-800">Kitchen Management</div><div class="text-[10px] text-gray-400">Manage 6 kitchens</div></div>
+                    <div><div class="text-sm font-semibold text-gray-800">Kitchen Management</div><div class="text-[10px] text-gray-400">Manage <?php $kc = getDB()->query("SELECT COUNT(*) FROM kitchens")->fetchColumn(); echo $kc; ?> kitchen<?php echo $kc != 1 ? 's' : ''; ?></div></div>
                 </a>
                 <a href="app.php?page=admin-req-types" class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-orange-50 transition">
                     <div class="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
