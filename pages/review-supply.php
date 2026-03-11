@@ -72,10 +72,20 @@ async function rsConfirm(reqId) {
     try {
         const data = await api(`api/requisitions.php?action=get&id=${reqId}`);
         const lines = data.lines || [];
+        const dishes = data.dishes || [];
 
         let html = `<div class="p-4">
-            <h3 class="text-sm font-semibold text-gray-800 mb-3">Confirm Receipt</h3>
-            <div class="space-y-2 max-h-[55vh] overflow-y-auto">`;
+            <h3 class="text-sm font-semibold text-gray-800 mb-3">Confirm Receipt</h3>`;
+
+        if (dishes.length > 0) {
+            html += `<div class="flex flex-wrap gap-1 mb-3">`;
+            dishes.forEach(d => {
+                html += `<span class="text-[10px] bg-amber-50 text-amber-700 px-2 py-0.5 rounded-full font-medium">${d.recipe_name} (${d.guest_count || '?'} pax)</span>`;
+            });
+            html += `</div>`;
+        }
+
+        html += `<div class="space-y-2 max-h-[55vh] overflow-y-auto">`;
 
         lines.forEach(l => {
             const fulfilled = parseFloat(l.fulfilled_qty) || 0;
