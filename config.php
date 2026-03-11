@@ -139,7 +139,27 @@ function getJsonInput() {
 
 // ── Auth Helpers ──
 function currentUser() {
-    return $_SESSION['user'] ?? null;
+    if (!isset($_SESSION['user'])) return null;
+    // Refresh user data from DB periodically (every 60s) to pick up role/kitchen changes
+    $lastRefresh = $_SESSION['user_refreshed'] ?? 0;
+    if (time() - $lastRefresh > 60) {
+        try {
+            $db = getDB();
+            $stmt = $db->prepare("SELECT * FROM users WHERE id = ? AND is_active = 1");
+            $stmt->execute([$_SESSION['user']['id']]);
+            $fresh = $stmt->fetch();
+            if ($fresh) {
+                unset($fresh['password_hash'], $fresh['pin_hash']);
+                $_SESSION['user'] = $fresh;
+                $_SESSION['user_refreshed'] = time();
+            } else {
+                // User deactivated or deleted
+                unset($_SESSION['user']);
+                return null;
+            }
+        } catch (Exception $e) { /* keep cached data on DB error */ }
+    }
+    return $_SESSION['user'];
 }
 
 function isLoggedIn() {
