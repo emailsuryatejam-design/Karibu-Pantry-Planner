@@ -59,7 +59,13 @@ switch ($action) {
         $lines->execute([$id]);
         $lineData = $lines->fetchAll();
 
-        jsonResponse(['requisition' => $req, 'lines' => $lineData]);
+        // Include dishes with per-dish portions
+        $dStmt = $db->prepare("SELECT rd.recipe_id, rd.recipe_name, rd.recipe_servings, rd.scale_factor, rd.guest_count
+            FROM requisition_dishes rd WHERE rd.requisition_id = ? ORDER BY rd.created_at");
+        $dStmt->execute([$id]);
+        $dishData = $dStmt->fetchAll();
+
+        jsonResponse(['requisition' => $req, 'lines' => $lineData, 'dishes' => $dishData]);
 
     // ── Page init: single call for everything the requisition page needs ──
     case 'page_init':
@@ -1134,7 +1140,7 @@ switch ($action) {
             // Insert aggregated lines
             $insertStmt = $db->prepare("INSERT INTO requisition_lines
                 (requisition_id, item_id, item_name, meal, order_mode, portions, portion_weight, required_kg, stock_qty, order_qty, uom, source_dish_id, source_recipe_id)
-                VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)");
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
 
             $totalItems = 0;
             $totalKg = 0;
@@ -1159,7 +1165,7 @@ switch ($action) {
 
                 $insertStmt->execute([
                     $reqId, $itemId, $agg['item_name'], $meal, $agg['order_mode'],
-                    $agg['portion_weight'], $requiredKg, $agg['stock_qty'], $orderQty,
+                    $guestCount, $agg['portion_weight'], $requiredKg, $agg['stock_qty'], $orderQty,
                     $agg['uom'], $sourceDishId, $sourceRecipeId
                 ]);
 
@@ -1189,7 +1195,7 @@ switch ($action) {
         if (!$reqId) jsonError('Requisition ID required');
 
         // Get dishes
-        $dStmt = $db->prepare("SELECT rd.recipe_id, rd.recipe_name, rd.recipe_servings, rd.scale_factor
+        $dStmt = $db->prepare("SELECT rd.recipe_id, rd.recipe_name, rd.recipe_servings, rd.scale_factor, rd.guest_count
             FROM requisition_dishes rd WHERE rd.requisition_id = ? ORDER BY rd.created_at");
         $dStmt->execute([$reqId]);
         $dishes = $dStmt->fetchAll();
