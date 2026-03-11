@@ -1176,6 +1176,18 @@ switch ($action) {
 
         jsonResponse(['dishes' => $dishes, 'ingredients_by_recipe' => $ingredientsByRecipe ?: new \stdClass()]);
 
+    // ── Admin: reset all orders for a clean start ──
+    case 'reset_all_orders':
+        requireMethod('POST');
+        requireRole(['admin']);
+
+        $db->exec("DELETE FROM requisition_lines");
+        $db->exec("DELETE FROM requisition_dishes");
+        $db->exec("DELETE FROM requisitions");
+        $db->exec("DELETE FROM notifications");
+
+        jsonResponse(['message' => 'All orders, lines, dishes, and notifications cleared']);
+
     default:
         jsonError('Unknown action');
 }
