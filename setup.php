@@ -105,33 +105,6 @@ $tables = [
         FOREIGN KEY (dish_id) REFERENCES menu_dishes(id) ON DELETE CASCADE
     )",
 
-    'grocery_orders' => "CREATE TABLE IF NOT EXISTS grocery_orders (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        order_date DATE NOT NULL,
-        meal ENUM('lunch', 'dinner') NOT NULL,
-        status ENUM('pending', 'reviewing', 'approved', 'partial', 'rejected', 'fulfilled', 'received') DEFAULT 'pending',
-        total_items INT DEFAULT 0,
-        notes TEXT,
-        created_by INT DEFAULT NULL,
-        reviewed_by INT DEFAULT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-    )",
-
-    'grocery_order_lines' => "CREATE TABLE IF NOT EXISTS grocery_order_lines (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        order_id INT NOT NULL,
-        item_id INT DEFAULT NULL,
-        item_name VARCHAR(200) NOT NULL,
-        requested_qty DECIMAL(10,2) NOT NULL,
-        approved_qty DECIMAL(10,2) DEFAULT NULL,
-        fulfilled_qty DECIMAL(10,2) DEFAULT NULL,
-        uom VARCHAR(20) DEFAULT 'kg',
-        status ENUM('pending', 'approved', 'adjusted', 'rejected') DEFAULT 'pending',
-        store_notes TEXT,
-        FOREIGN KEY (order_id) REFERENCES grocery_orders(id) ON DELETE CASCADE
-    )",
-
     'audit_log' => "CREATE TABLE IF NOT EXISTS audit_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
         user_id INT DEFAULT NULL,
@@ -157,9 +130,7 @@ foreach ($tables as $name => $sql) {
 // ── Migrations (alter existing tables) ──
 echo "\n--- Running migrations ---\n";
 
-$migrations = [
-    "ALTER TABLE grocery_orders MODIFY COLUMN status ENUM('pending', 'reviewing', 'approved', 'partial', 'rejected', 'fulfilled', 'received') DEFAULT 'pending'",
-];
+$migrations = [];
 
 foreach ($migrations as $sql) {
     try {

@@ -17,7 +17,7 @@ if (isStorekeeper()) $defaultPage = 'store-dashboard';
 $page = $_GET['page'] ?? $defaultPage;
 
 // Valid pages per role
-$chefPages = ['dashboard', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'daily-groceries', 'recipes', 'reports', 'settings'];
+$chefPages = ['dashboard', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'recipes', 'reports', 'settings'];
 $storePages = ['store-dashboard', 'store-orders', 'store-inventory', 'store-history', 'reports', 'settings'];
 $adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus']));
 
@@ -33,7 +33,7 @@ $pageTitles = [
     'review-supply' => 'Review Supply',
     'day-close' => 'Day Close',
     'menu-plan' => 'Menu Plan',
-    'daily-groceries' => 'Daily Groceries',
+
     'recipes' => 'Recipes',
     'reports' => 'Reports',
     'store-dashboard' => 'Store Dashboard',
@@ -306,7 +306,7 @@ $isAdminRole = isAdmin();
         'store-dashboard': 'Store', 'store-orders': 'Orders', 'store-inventory': 'Inventory', 'store-history': 'History',
         'settings': 'Settings', 'admin-items': 'Items', 'admin-kitchens': 'Kitchens', 'admin-req-types': 'Req Types',
         'admin-set-menus': 'Set Menus', 'review-supply': 'Supply', 'day-close': 'Close', 'reports': 'Reports',
-        'menu-plan': 'Plan', 'daily-groceries': 'Groceries'
+        'menu-plan': 'Plan'
     };
 
     document.addEventListener('DOMContentLoaded', function() {
