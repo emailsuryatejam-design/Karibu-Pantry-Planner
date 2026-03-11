@@ -797,18 +797,6 @@ function rqRenderAggregatedItemsList(isDraft) {
         catItems.forEach(agg => {
             const totalQty = Math.max(0, agg.total_qty);
             const requiredKg = rqRound(totalQty);
-            const orderQty = Math.max(0, rqRound(requiredKg - agg.stock_qty));
-
-            let stockBadge = '';
-            if (requiredKg > 0) {
-                if (agg.stock_qty >= requiredKg) {
-                    stockBadge = '<span class="text-[9px] bg-green-100 text-green-700 px-1 py-0.5 rounded">In Stock</span>';
-                } else if (agg.stock_qty > 0) {
-                    stockBadge = `<span class="text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded">Partial ${agg.stock_qty}${escHtml(agg.uom)}</span>`;
-                } else {
-                    stockBadge = '<span class="text-[9px] bg-red-100 text-red-700 px-1 py-0.5 rounded">No Stock</span>';
-                }
-            }
 
             html += `<div class="bg-white border border-gray-100 rounded-lg px-3 py-2 mb-1">
                 <div class="flex items-center justify-between mb-1">
@@ -816,16 +804,11 @@ function rqRenderAggregatedItemsList(isDraft) {
                         <span class="text-sm font-medium text-gray-800 truncate block">${escHtml(agg.item_name)}</span>
                         <div class="flex items-center gap-2 mt-0.5 flex-wrap">
                             <span class="text-[9px] text-gray-400">From: ${agg.sources.map(s => escHtml(s)).join(', ')}</span>
-                            ${stockBadge}
                         </div>
                     </div>
-                    ${requiredKg > 0 && orderQty > 0 ? `<div class="text-right ml-2">
-                        <div class="text-xs font-bold text-orange-600">${orderQty} ${escHtml(agg.uom)}</div>
-                        <div class="text-[9px] text-gray-400">to order</div>
-                    </div>` : (requiredKg > 0 ? `<div class="text-right ml-2">
-                        <div class="text-xs font-bold text-green-600">0 ${escHtml(agg.uom)}</div>
-                        <div class="text-[9px] text-gray-400">covered</div>
-                    </div>` : '')}
+                    ${requiredKg > 0 ? `<div class="text-right ml-2">
+                        <div class="text-xs font-bold text-orange-600">${requiredKg} ${escHtml(agg.uom)}</div>
+                    </div>` : ''}
                 </div>
                 <div class="flex items-center justify-between">
                     <span class="text-[10px] text-gray-500">Need: ${requiredKg} ${escHtml(agg.uom)}</span>
@@ -916,11 +899,8 @@ function rqUpdateSummary() {
         const totalQty = Math.max(0, agg.total_qty);
         const requiredKg = rqRound(totalQty);
         if (requiredKg <= 0) continue;
-        const orderQty = Math.max(0, rqRound(requiredKg - agg.stock_qty));
-        if (orderQty > 0) {
-            totalItems++;
-            totalKg += orderQty;
-        }
+        totalItems++;
+        totalKg += requiredKg;
     }
 
     const dishCount = Object.keys(rqDishes).length;
