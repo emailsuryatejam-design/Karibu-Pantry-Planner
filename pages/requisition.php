@@ -206,8 +206,8 @@ async function rqInit() {
                 }
             });
 
-            // Auto-load set menu if draft + empty
-            if (isDraft && savedDishes.length === 0 && lines.length === 0 && !rqSetMenuLoadedFor[rqActiveSession.id]) {
+            // Auto-load set menu if draft — merges with any saved dishes (skips duplicates)
+            if (isDraft && lines.length === 0 && !rqSetMenuLoadedFor[rqActiveSession.id]) {
                 await rqLoadSetMenuDishes();
             }
 
@@ -522,8 +522,8 @@ async function rqLoadSession(sessionId) {
             }
         });
 
-        // Auto-load from rotational set menu if draft, no saved dishes, no lines, and not already loaded for this session
-        if (rqActiveSession.status === 'draft' && !hasSavedDishes && lines.length === 0 && !rqSetMenuLoadedFor[sessionId]) {
+        // Auto-load from rotational set menu if draft and not already loaded — merges with any saved dishes
+        if (rqActiveSession.status === 'draft' && lines.length === 0 && !rqSetMenuLoadedFor[sessionId]) {
             await rqLoadSetMenuDishes();
         }
 
