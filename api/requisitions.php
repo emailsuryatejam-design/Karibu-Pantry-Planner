@@ -179,7 +179,7 @@ switch ($action) {
         if (!$kid) jsonError('Kitchen ID required');
 
         // One-time self-healing: ensure missing tables exist, clean duplicates, add UNIQUE constraint
-        $migrated = cacheGet('uk_migration_v4_done', 86400 * 365);
+        $migrated = cacheGet('uk_migration_v5_done', 86400 * 365);
         if (!$migrated) {
             try {
                 // 1. Create missing tables that older deployments might not have
@@ -208,8 +208,8 @@ switch ($action) {
                     type_code VARCHAR(50) NOT NULL DEFAULT 'lunch',
                     recipe_id INT NOT NULL,
                     recipe_name VARCHAR(200) NOT NULL,
-                    servings INT DEFAULT 4,
                     sort_order INT DEFAULT 0,
+                    is_active TINYINT(1) DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     INDEX idx_day_type (day_of_week, type_code)
                 )");
@@ -243,7 +243,21 @@ switch ($action) {
                     $db->exec("ALTER TABLE requisitions ADD COLUMN supplement_number INT DEFAULT 0");
                 }
 
-                // 2b. Add unused_qty column to requisition_lines if missing
+                // 2b. Add is_active to recipes if missing
+                try {
+                    $db->query("SELECT is_active FROM recipes LIMIT 0");
+                } catch (Exception $e2) {
+                    $db->exec("ALTER TABLE recipes ADD COLUMN is_active TINYINT(1) DEFAULT 1");
+                }
+
+                // 2c. Add is_active to set_menu_items if missing
+                try {
+                    $db->query("SELECT is_active FROM set_menu_items LIMIT 0");
+                } catch (Exception $e2) {
+                    $db->exec("ALTER TABLE set_menu_items ADD COLUMN is_active TINYINT(1) DEFAULT 1");
+                }
+
+                // 2d. Add unused_qty column to requisition_lines if missing
                 try {
                     $db->query("SELECT unused_qty FROM requisition_lines LIMIT 0");
                 } catch (Exception $e2) {
@@ -274,7 +288,7 @@ switch ($action) {
                     $db->exec("ALTER TABLE requisitions ADD UNIQUE KEY uk_kitchen_date_meals_supp (kitchen_id, req_date, meals, supplement_number)");
                 }
 
-                cacheSet('uk_migration_v4_done', true);
+                cacheSet('uk_migration_v5_done', true);
             } catch (Exception $e) {
                 // Do NOT cache on failure — retry next request
                 error_log('Karibu migration error: ' . $e->getMessage());
