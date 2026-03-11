@@ -1,6 +1,11 @@
 <?php
 require_once __DIR__ . '/config.php';
 
+// Prevent LiteSpeed/proxy caching — user list must always be fresh
+header('Cache-Control: no-cache, no-store, must-revalidate');
+header('Pragma: no-cache');
+header('X-LiteSpeed-Cache-Control: no-cache');
+
 // Already logged in? Go to app
 if (isLoggedIn()) {
     header('Location: app.php');
