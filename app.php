@@ -18,7 +18,7 @@ $page = $_GET['page'] ?? $defaultPage;
 
 // Valid pages per role
 $chefPages = ['dashboard', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'daily-groceries', 'recipes', 'reports', 'settings'];
-$storePages = ['store-dashboard', 'store-orders', 'store-history', 'reports', 'settings'];
+$storePages = ['store-dashboard', 'store-orders', 'store-inventory', 'store-history', 'reports', 'settings'];
 $adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus']));
 
 $allowedPages = isAdmin() ? $adminPages : (isChef() ? $chefPages : $storePages);
@@ -38,6 +38,7 @@ $pageTitles = [
     'reports' => 'Reports',
     'store-dashboard' => 'Store Dashboard',
     'store-orders' => 'Store Orders',
+    'store-inventory' => 'Inventory',
     'store-history' => 'History',
     'admin-items' => 'Items',
     'admin-kitchens' => 'Kitchens',
@@ -155,6 +156,12 @@ $isAdminRole = isAdmin();
                    class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= $page === 'store-orders' ? 'text-green-600' : 'text-gray-400' ?>">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5"/><path d="M12 22V12"/></svg>
                     <span class="text-[9px] font-medium">Orders</span>
+                </a>
+                <!-- Store: Inventory -->
+                <a href="app.php?page=store-inventory"
+                   class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= $page === 'store-inventory' ? 'text-green-600' : 'text-gray-400' ?>">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m20 7-8.5 8.5-4-4L2 17"/><path d="M23 7h-6v6"/></svg>
+                    <span class="text-[9px] font-medium">Inventory</span>
                 </a>
                 <!-- Store: History -->
                 <a href="app.php?page=store-history"
@@ -296,7 +303,7 @@ $isAdminRole = isAdmin();
     // Page transition
     const pageNames = {
         'dashboard': 'Dashboard', 'requisition': 'Order', 'recipes': 'Recipes',
-        'store-dashboard': 'Store', 'store-orders': 'Orders', 'store-history': 'History',
+        'store-dashboard': 'Store', 'store-orders': 'Orders', 'store-inventory': 'Inventory', 'store-history': 'History',
         'settings': 'Settings', 'admin-items': 'Items', 'admin-kitchens': 'Kitchens', 'admin-req-types': 'Req Types',
         'admin-set-menus': 'Set Menus', 'review-supply': 'Supply', 'day-close': 'Close', 'reports': 'Reports',
         'menu-plan': 'Plan', 'daily-groceries': 'Groceries'
