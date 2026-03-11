@@ -295,6 +295,32 @@ switch ($action) {
             }
         }
 
+        // One-time: seed dinner set menu if missing
+        $dinnerSeeded = cacheGet('dinner_menu_seeded_v1', 86400 * 365);
+        if (!$dinnerSeeded) {
+            try {
+                $dinnerCount = (int)$db->query("SELECT COUNT(*) FROM set_menu_items WHERE type_code = 'dinner' AND is_active = 1")->fetchColumn();
+                if ($dinnerCount === 0) {
+                    $dinnerData = [
+                        [1,'dinner',34,'Vegetable Spring Rolls',1],[1,'dinner',38,'Cream of Broccoli Soup',2],[1,'dinner',42,'Braised Lamb Chops',3],[1,'dinner',13,'Grilled Breast Chicken with Lyonnaise Potatoes and Salad',4],[1,'dinner',49,'Vegetarian Spaghetti Bolognaise',5],[1,'dinner',53,'Red Kidney Beans in Coconut Sauce',6],[1,'dinner',57,'Invisible Apple Cake',7],[1,'dinner',61,'Passion and Cheddar Cheese Tart',8],
+                        [2,'dinner',35,'Caprese Salad with Basil Pesto',1],[2,'dinner',39,'Pumpkin Soup',2],[2,'dinner',43,'Grilled Beef Fillet',3],[2,'dinner',46,'Pan-Fried Nile Perch Fillet',4],[2,'dinner',50,'Stir-Fried Vegetables with Noodles or Rice',5],[2,'dinner',54,'Vegetable Lasagne with Salad',6],[2,'dinner',58,'Chocolate Brownies',7],[2,'dinner',62,'Sticky Toffee Pudding',8],
+                        [3,'dinner',36,'Curried Sweet Potato Samosas with Tomato Salsa',1],[3,'dinner',40,'Baby Marrow Soup',2],[3,'dinner',44,'Grilled Pork Chop with Rice and Honey Mustard Sauce',3],[3,'dinner',47,'One-Pot Garlic Chicken with Tagliatelle Pasta',4],[3,'dinner',51,'Vegetable Ratatouille',5],[3,'dinner',55,'Pasta Alfredo with Garlic Toast',6],[3,'dinner',59,'Malva Pudding',7],[3,'dinner',63,'Pineapple Upside-Down Cake',8],
+                        [4,'dinner',37,'Sliced Beetroot with Orange Segments and Feta Cheese',1],[4,'dinner',41,'Mixed Vegetable Soup',2],[4,'dinner',45,'Tilapia Fish Fillet',3],[4,'dinner',48,'Beef, Carrot and Potato Stew',4],[4,'dinner',52,'Vegetable Risotto',5],[4,'dinner',56,'Veg Moussaka',6],[4,'dinner',60,'Apple Crumble with Custard Sauce',7],[4,'dinner',64,'Lemon Cheesecake',8],
+                        [5,'dinner',34,'Vegetable Spring Rolls',1],[5,'dinner',38,'Cream of Broccoli Soup',2],[5,'dinner',42,'Braised Lamb Chops',3],[5,'dinner',13,'Grilled Breast Chicken with Lyonnaise Potatoes and Salad',4],[5,'dinner',49,'Vegetarian Spaghetti Bolognaise',5],[5,'dinner',53,'Red Kidney Beans in Coconut Sauce',6],[5,'dinner',57,'Invisible Apple Cake',7],[5,'dinner',61,'Passion and Cheddar Cheese Tart',8],
+                        [6,'dinner',35,'Caprese Salad with Basil Pesto',1],[6,'dinner',39,'Pumpkin Soup',2],[6,'dinner',43,'Grilled Beef Fillet',3],[6,'dinner',46,'Pan-Fried Nile Perch Fillet',4],[6,'dinner',50,'Stir-Fried Vegetables with Noodles or Rice',5],[6,'dinner',54,'Vegetable Lasagne with Salad',6],[6,'dinner',58,'Chocolate Brownies',7],[6,'dinner',62,'Sticky Toffee Pudding',8],
+                        [7,'dinner',36,'Curried Sweet Potato Samosas with Tomato Salsa',1],[7,'dinner',40,'Baby Marrow Soup',2],[7,'dinner',44,'Grilled Pork Chop with Rice and Honey Mustard Sauce',3],[7,'dinner',47,'One-Pot Garlic Chicken with Tagliatelle Pasta',4],[7,'dinner',51,'Vegetable Ratatouille',5],[7,'dinner',55,'Pasta Alfredo with Garlic Toast',6],[7,'dinner',59,'Malva Pudding',7],[7,'dinner',63,'Pineapple Upside-Down Cake',8],
+                    ];
+                    $ins = $db->prepare("INSERT IGNORE INTO set_menu_items (day_of_week, type_code, recipe_id, recipe_name, servings, sort_order, is_active) VALUES (?, ?, ?, ?, 4, ?, 1)");
+                    foreach ($dinnerData as $d) {
+                        $ins->execute([$d[0], $d[1], $d[2], $d[3], $d[4]]);
+                    }
+                }
+                cacheSet('dinner_menu_seeded_v1', true);
+            } catch (Exception $e) {
+                error_log('Dinner seed error: ' . $e->getMessage());
+            }
+        }
+
         // Get active types
         $types = $db->query("SELECT id, name, code, sort_order FROM requisition_types WHERE is_active = 1 ORDER BY sort_order, name")->fetchAll();
 
