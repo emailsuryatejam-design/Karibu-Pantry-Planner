@@ -25,8 +25,8 @@ switch ($action) {
         if (!$name || !$username || !$pin) {
             jsonError('Name, username and PIN are required');
         }
-        if (strlen($pin) < 4) {
-            jsonError('PIN must be at least 4 digits');
+        if (strlen($pin) !== 4 || !ctype_digit($pin)) {
+            jsonError('PIN must be exactly 4 digits');
         }
         if (!in_array($role, ['chef', 'storekeeper', 'admin'])) {
             jsonError('Invalid role');
@@ -62,7 +62,7 @@ switch ($action) {
             $params[] = trim($input['name']);
         }
         if (isset($input['pin']) && trim($input['pin'])) {
-            if (strlen(trim($input['pin'])) < 4) jsonError('PIN must be at least 4 digits');
+            if (strlen(trim($input['pin'])) !== 4 || !ctype_digit(trim($input['pin']))) jsonError('PIN must be exactly 4 digits');
             $fields[] = 'pin = ?';
             $params[] = trim($input['pin']);
         }

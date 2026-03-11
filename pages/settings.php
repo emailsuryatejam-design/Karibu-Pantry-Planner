@@ -283,8 +283,8 @@ function showCreateUser() {
                         class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm">
                 </div>
                 <div>
-                    <label class="text-xs font-medium text-gray-600 mb-1 block">PIN (4+ digits)</label>
-                    <input type="text" id="newPin" placeholder="e.g. 1234" maxlength="6" inputmode="numeric"
+                    <label class="text-xs font-medium text-gray-600 mb-1 block">PIN (4 digits)</label>
+                    <input type="text" id="newPin" placeholder="e.g. 1234" maxlength="4" inputmode="numeric"
                         class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm text-center tracking-[0.5em]">
                 </div>
                 <div>
@@ -358,7 +358,7 @@ function showEditUser(id) {
                 </div>
                 <div>
                     <label class="text-xs font-medium text-gray-600 mb-1 block">New PIN (leave blank to keep current)</label>
-                    <input type="text" id="editPin" placeholder="****" maxlength="6" inputmode="numeric"
+                    <input type="text" id="editPin" placeholder="****" maxlength="4" inputmode="numeric"
                         class="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm text-center tracking-[0.5em]">
                 </div>
                 <div>
