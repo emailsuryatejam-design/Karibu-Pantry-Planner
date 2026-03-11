@@ -457,6 +457,7 @@ async function rqLoadSession(sessionId) {
         // Clear previous dishes immediately (prevents stale content flash)
         rqDishes = {};
         rqAggregatedItems = {};
+        delete rqSetMenuLoadedFor[sessionId]; // Allow set menu re-load if dishes weren't saved
         rqRenderDishView();
         rqUpdateSummary();
     }
