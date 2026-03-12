@@ -546,7 +546,7 @@ switch ($action) {
         $lineCount->execute([$reqId]);
         if ((int)$lineCount->fetchColumn() === 0) jsonError('Cannot submit empty requisition');
 
-        $db->prepare("UPDATE requisitions SET status = 'submitted', updated_at = NOW() WHERE id = ?")->execute([$reqId]);
+        $db->prepare("UPDATE requisitions SET status = 'submitted', created_by = ?, updated_at = NOW() WHERE id = ?")->execute([$user['id'], $reqId]);
 
         auditLog('requisition_submit', 'requisition', $reqId);
 
@@ -1173,8 +1173,8 @@ switch ($action) {
                 $totalKg += $orderQty;
             }
 
-            // Update guest count on requisition
-            $db->prepare("UPDATE requisitions SET guest_count = ?, updated_at = NOW() WHERE id = ?")->execute([$guestCount, $reqId]);
+            // Update guest count and creator on requisition
+            $db->prepare("UPDATE requisitions SET guest_count = ?, created_by = ?, updated_at = NOW() WHERE id = ?")->execute([$guestCount, $user['id'], $reqId]);
 
             $db->commit();
 
