@@ -12,6 +12,13 @@ $kitchenName = $user['kitchen_name'] ?? 'Store';
     <p class="text-xs text-gray-500"><?= htmlspecialchars($kitchenName) ?> &mdash; <?= date('l, d M Y') ?></p>
 </div>
 
+<!-- Quick Nav -->
+<div class="flex gap-2 mb-4">
+    <a href="app.php?page=store-orders" class="flex-1 text-center py-2 text-xs font-semibold rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition">Orders</a>
+    <a href="app.php?page=store-inventory" class="flex-1 text-center py-2 text-xs font-semibold rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition">Inventory</a>
+    <a href="app.php?page=store-history" class="flex-1 text-center py-2 text-xs font-semibold rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 transition">History</a>
+</div>
+
 <!-- Stats -->
 <div class="flex gap-3 overflow-x-auto pb-2 mb-4">
     <div class="min-w-[120px] bg-gradient-to-br from-red-500 to-red-600 rounded-2xl p-3 text-white flex-1">
