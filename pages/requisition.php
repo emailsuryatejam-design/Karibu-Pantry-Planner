@@ -56,14 +56,13 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
             class="w-20 text-center text-lg font-bold text-gray-800 border border-gray-200 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
     </div>
 
-    <!-- Dish Search -->
-    <div class="relative mb-3" id="rqDishSearchWrap">
-        <input type="text" id="rqDishSearch" placeholder="Search dishes by name..." oninput="rqSearchDishesDebounced()"
-            class="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
-        <svg class="absolute left-3 top-3 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <!-- Add Dish Button -->
+    <div class="mb-3" id="rqDishSearchWrap">
+        <button onclick="rqOpenAddDish()" class="w-full bg-white border-2 border-dashed border-orange-200 rounded-xl px-4 py-3 text-sm font-semibold text-orange-600 flex items-center justify-center gap-2 hover:bg-orange-50 active:bg-orange-100 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+            Add Dish
+        </button>
     </div>
-    <!-- Dish Search Results -->
-    <div id="rqDishResults" class="mb-3 hidden"></div>
 
     <!-- Selected Dishes -->
     <div id="rqSelectedDishes" class="mb-3"></div>
@@ -107,6 +106,25 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
             <button onclick="rqPmClose()" class="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-semibold text-sm">Cancel</button>
             <button onclick="rqPmSave()" class="flex-1 py-3 rounded-xl bg-orange-600 text-white font-semibold text-sm">Save</button>
         </div>
+    </div>
+</div>
+
+<!-- Add Dish Modal -->
+<div id="rqAddDishModal" class="hidden fixed inset-0 z-[200] bg-black/50 flex items-start justify-center pt-[15vh] p-4 animate-fade-in">
+    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 max-h-[70vh] flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-base font-bold text-gray-900">Add Dish</h3>
+            <button onclick="rqCloseAddDish()" class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+        </div>
+        <div class="relative mb-3">
+            <input type="text" id="rqDishSearch" placeholder="Search dishes by name..." oninput="rqSearchDishesDebounced()"
+                class="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
+            <svg class="absolute left-3 top-3.5 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </div>
+        <div id="rqDishResults" class="flex-1 overflow-y-auto"></div>
+        <p id="rqDishResultsHint" class="text-[10px] text-gray-400 text-center mt-2">Type at least 2 characters to search</p>
     </div>
 </div>
 
@@ -612,53 +630,71 @@ function rqPmClose() {
 }
 
 // ═══════════════════════════════════════
+//  Add Dish Modal
+// ═══════════════════════════════════════
+
+function rqOpenAddDish() {
+    document.getElementById('rqAddDishModal').classList.remove('hidden');
+    document.getElementById('rqDishSearch').value = '';
+    document.getElementById('rqDishResults').innerHTML = '';
+    document.getElementById('rqDishResultsHint').classList.remove('hidden');
+    setTimeout(() => document.getElementById('rqDishSearch').focus(), 100);
+}
+
+function rqCloseAddDish() {
+    document.getElementById('rqAddDishModal').classList.add('hidden');
+    document.getElementById('rqDishSearch').value = '';
+    document.getElementById('rqDishResults').innerHTML = '';
+}
+
+// ═══════════════════════════════════════
 //  DISH — Search, Add, Remove, Aggregate
 // ═══════════════════════════════════════
 
 async function rqSearchDishes() {
     const q = document.getElementById('rqDishSearch').value.trim();
     const container = document.getElementById('rqDishResults');
+    const hint = document.getElementById('rqDishResultsHint');
     if (q.length < 2) {
-        container.classList.add('hidden');
+        container.innerHTML = '';
+        hint.classList.remove('hidden');
         rqDishSearchResults = [];
         return;
     }
 
     try {
+        hint.classList.add('hidden');
         const data = await api(`api/requisitions.php?action=search_recipes&q=${encodeURIComponent(q)}`);
         rqDishSearchResults = data.recipes || [];
         rqRenderDishResults();
     } catch (e) {
         container.innerHTML = '<p class="text-xs text-red-500 p-2">Search failed</p>';
-        container.classList.remove('hidden');
+        hint.classList.add('hidden');
     }
 }
 
 function rqRenderDishResults() {
     const container = document.getElementById('rqDishResults');
     if (!rqDishSearchResults.length) {
-        container.innerHTML = '<p class="text-xs text-gray-400 bg-white rounded-xl border border-gray-200 p-3">No dishes found. Add recipes first in the Recipes page.</p>';
-        container.classList.remove('hidden');
+        container.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No dishes found</p>';
         return;
     }
 
-    let html = '<div class="bg-white rounded-xl border border-gray-200 overflow-hidden max-h-64 overflow-y-auto">';
+    let html = '';
     rqDishSearchResults.forEach(r => {
         const alreadyAdded = rqDishes[r.id];
-        html += `<button onclick="rqAddDish(${r.id})" class="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-orange-50 transition text-left border-b border-gray-50 last:border-0 ${alreadyAdded ? 'opacity-50' : ''}" ${alreadyAdded ? 'disabled' : ''}>
-            <div class="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+        html += `<button onclick="rqAddDish(${r.id})" class="w-full flex items-center gap-3 px-3 py-3 hover:bg-orange-50 active:bg-orange-100 transition text-left border-b border-gray-100 last:border-0 ${alreadyAdded ? 'opacity-50' : ''}" ${alreadyAdded ? 'disabled' : ''}>
+            <div class="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
             </div>
             <div class="flex-1 min-w-0">
                 <div class="text-sm font-medium text-gray-800 truncate">${escHtml(r.name)}</div>
-                <div class="text-[10px] text-gray-400">${escHtml(r.cuisine || '')} ${r.ingredient_count} ingredients &bull; serves ${r.servings}</div>
+                <div class="text-[10px] text-gray-400">${escHtml(r.cuisine || '')} ${r.ingredient_count} items &bull; serves ${r.servings}</div>
             </div>
-            ${alreadyAdded ? '<span class="text-[10px] text-orange-500 font-semibold shrink-0">Added</span>' : '<span class="text-orange-500 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg></span>'}
+            ${alreadyAdded ? '<span class="text-[10px] text-green-600 font-semibold bg-green-50 px-2 py-1 rounded-lg shrink-0">Added ✓</span>' : '<span class="text-orange-500 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg></span>'}
         </button>`;
     });
-    html += '</div>';
     container.innerHTML = html;
-    container.classList.remove('hidden');
 }
 
 async function rqAddDish(recipeId) {
@@ -685,11 +721,8 @@ async function rqAddDish(recipeId) {
         showToast(`${recipe.name} added`, 'success');
         rqRecalcAggregated();
         rqRenderDishView();
-        rqRenderDishResults();
+        rqRenderDishResults(); // Re-render to show "Added" state
         rqUpdateSummary();
-
-        document.getElementById('rqDishSearch').value = '';
-        document.getElementById('rqDishResults').classList.add('hidden');
 
     } catch (e) {
         showToast(e.message || 'Failed to load dish', 'error');
