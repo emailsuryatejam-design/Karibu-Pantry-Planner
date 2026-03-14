@@ -311,7 +311,7 @@ async function soMarkSent(orderId) {
         });
     });
 
-    if (!confirm(`Issue ${lines.length} items to kitchen?`)) return;
+    if (!await customConfirm('Issue Items', `Issue ${lines.length} items to kitchen?`)) return;
 
     const btn = document.getElementById('soSendBtn');
     if (btn) {

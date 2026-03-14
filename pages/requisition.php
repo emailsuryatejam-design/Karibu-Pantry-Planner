@@ -955,7 +955,7 @@ function rqRenderStatusBanner() {
 async function rqCreateSupplementary() {
     if (!rqActiveSession) return;
     const typeName = rqTypeName(rqActiveSession.meals);
-    if (!confirm(`Create a new order for ${typeName}? You can add forgotten items to it.`)) return;
+    if (!await customConfirm('New Order', `Create a new order for ${typeName}? You can add forgotten items to it.`)) return;
 
     try {
         const data = await api('api/requisitions.php?action=create_supplementary', {
