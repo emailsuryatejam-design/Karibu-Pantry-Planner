@@ -980,12 +980,13 @@ switch ($action) {
         if (!$recipe) jsonError('Recipe not found', 404);
 
         $stmt = $db->prepare("SELECT ri.id, ri.item_id, ri.qty, ri.uom, ri.is_primary,
-            i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
+            i.name AS item_name, COALESCE(ki.qty, 0) AS stock_qty, i.portion_weight, i.order_mode, i.category
             FROM recipe_ingredients ri
             LEFT JOIN items i ON i.id = ri.item_id
+            LEFT JOIN kitchen_inventory ki ON ki.item_id = ri.item_id AND ki.kitchen_id = ?
             WHERE ri.recipe_id = ?
             ORDER BY ri.is_primary DESC, i.name");
-        $stmt->execute([$recipeId]);
+        $stmt->execute([$kitchenId, $recipeId]);
         $ingredients = $stmt->fetchAll();
 
         jsonResponse(['recipe' => $recipe, 'ingredients' => $ingredients]);

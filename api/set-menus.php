@@ -68,7 +68,8 @@ switch ($action) {
 
     // ── Get day menu WITH recipe ingredients (batch — eliminates N+1) ──
     case 'get_day_with_ingredients':
-        requireAuth();
+        $user = requireAuth();
+        $kitchenId = $user['kitchen_id'] ?? null;
 
         $dayOfWeek = (int)($_GET['day'] ?? 0);
         $typeCode = trim($_GET['type'] ?? '');
@@ -92,12 +93,13 @@ switch ($action) {
         $recipeIds = array_unique(array_column($dishes, 'recipe_id'));
         $ph = implode(',', array_fill(0, count($recipeIds), '?'));
         $iStmt = $db->prepare("SELECT ri.recipe_id, ri.item_id, ri.qty, ri.uom, ri.is_primary,
-            i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
+            i.name AS item_name, COALESCE(ki.qty, 0) AS stock_qty, i.portion_weight, i.order_mode, i.category
             FROM recipe_ingredients ri
             LEFT JOIN items i ON i.id = ri.item_id
+            LEFT JOIN kitchen_inventory ki ON ki.item_id = ri.item_id AND ki.kitchen_id = ?
             WHERE ri.recipe_id IN ($ph)
             ORDER BY ri.recipe_id, ri.is_primary DESC, i.name");
-        $iStmt->execute(array_values($recipeIds));
+        $iStmt->execute(array_merge([$kitchenId], array_values($recipeIds)));
 
         $ingredientsByRecipe = [];
         foreach ($iStmt->fetchAll() as $ing) {
