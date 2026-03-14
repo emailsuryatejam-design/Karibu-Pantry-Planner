@@ -17,7 +17,7 @@ if (isStorekeeper()) $defaultPage = 'store-dashboard';
 $page = $_GET['page'] ?? $defaultPage;
 
 // Valid pages per role
-$chefPages = ['dashboard', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'recipes', 'reports', 'settings'];
+$chefPages = ['dashboard', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'recipes', 'store-inventory', 'reports', 'settings'];
 $storePages = ['store-dashboard', 'store-orders', 'store-inventory', 'store-history', 'reports', 'settings'];
 $adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus']));
 
@@ -109,7 +109,7 @@ $isAdminRole = isAdmin();
     </header>
 
     <!-- Content -->
-    <main class="pb-20 max-w-2xl mx-auto px-4 py-4 page-enter">
+    <main class="pb-20 max-w-2xl lg:max-w-5xl mx-auto px-4 py-4 page-enter">
         <?php
         $pageFile = __DIR__ . '/pages/' . $page . '.php';
         if (file_exists($pageFile)) {
@@ -141,6 +141,12 @@ $isAdminRole = isAdmin();
                    class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= $page === 'recipes' ? 'text-orange-600' : 'text-gray-400' ?>">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
                     <span class="text-[9px] font-medium">Recipes</span>
+                </a>
+                <!-- Chef: Stock -->
+                <a href="app.php?page=store-inventory"
+                   class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= $page === 'store-inventory' ? 'text-orange-600' : 'text-gray-400' ?>">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m20 7-8.5 8.5-4-4L2 17"/><path d="M23 7h-6v6"/></svg>
+                    <span class="text-[9px] font-medium">Stock</span>
                 </a>
             <?php endif; ?>
 
