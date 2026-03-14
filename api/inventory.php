@@ -105,12 +105,13 @@ switch ($action) {
         ]);
         break;
 
-    // ── Adjust stock manually (storekeeper/admin) ──
+    // ── Adjust kitchen pantry stock (chef/storekeeper/admin) ──
     case 'adjust':
         requireMethod('POST');
         if (!in_array($user['role'], ['chef', 'storekeeper', 'admin'])) {
             jsonError('Only chefs, storekeepers and admins can adjust stock');
         }
+        if (!$kitchenId) jsonError('Kitchen ID required');
 
         $itemId = (int)($input['item_id'] ?? 0);
         $adjustment = (float)($input['adjustment'] ?? 0);
@@ -120,14 +121,16 @@ switch ($action) {
         if ($adjustment == 0) jsonError('Adjustment cannot be zero');
         if (!$reason) jsonError('Reason is required');
 
-        $db->prepare("UPDATE items SET stock_qty = GREATEST(0, stock_qty + ?) WHERE id = ?")->execute([$adjustment, $itemId]);
+        // Upsert kitchen_inventory
+        $db->prepare("INSERT INTO kitchen_inventory (kitchen_id, item_id, qty) VALUES (?, ?, GREATEST(0, ?))
+            ON DUPLICATE KEY UPDATE qty = GREATEST(0, qty + ?)")->execute([$kitchenId, $itemId, $adjustment, $adjustment]);
 
-        // Get updated stock
-        $newStock = $db->prepare("SELECT stock_qty FROM items WHERE id = ?");
-        $newStock->execute([$itemId]);
-        $newQty = $newStock->fetchColumn();
+        // Get updated pantry stock
+        $newStock = $db->prepare("SELECT qty FROM kitchen_inventory WHERE kitchen_id = ? AND item_id = ?");
+        $newStock->execute([$kitchenId, $itemId]);
+        $newQty = $newStock->fetchColumn() ?: 0;
 
-        auditLog('stock_adjust', 'items', $itemId, null, [
+        auditLog('stock_adjust', 'kitchen_inventory', $itemId, null, [
             'adjustment' => $adjustment,
             'new_stock' => $newQty,
             'reason' => $reason,
@@ -137,26 +140,16 @@ switch ($action) {
         jsonResponse(['updated' => true, 'new_stock' => (float)$newQty]);
         break;
 
-    // ── Kitchen stock (items in kitchen from active requisitions) ──
+    // ── Kitchen pantry stock ──
     case 'kitchen_stock':
         if (!$kitchenId) jsonError('Kitchen ID required');
         $q = trim($_GET['q'] ?? '');
 
-        // Items currently in kitchen = received/fulfilled requisitions not yet closed
-        // Plus today's closed requisitions (still relevant for today's view)
-        $today = date('Y-m-d');
-        $sql = "SELECT i.id, i.name, i.category, i.uom, i.stock_qty,
-                    COALESCE(SUM(rl.received_qty), SUM(rl.fulfilled_qty), 0) AS in_kitchen,
-                    COALESCE(SUM(rl.unused_qty), 0) AS unused_total,
-                    COALESCE(SUM(COALESCE(rl.received_qty, rl.fulfilled_qty, 0) - COALESCE(rl.unused_qty, 0)), 0) AS used_total,
-                    MAX(r.req_date) AS last_req_date,
-                    GROUP_CONCAT(DISTINCT r.meals) AS meal_types
-                FROM requisition_lines rl
-                JOIN requisitions r ON r.id = rl.requisition_id
-                JOIN items i ON i.id = rl.item_id
-                WHERE r.kitchen_id = ?
-                AND r.req_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
-                AND r.status IN ('fulfilled', 'received', 'closed')";
+        $sql = "SELECT ki.item_id AS id, i.name, i.category, i.uom, ki.qty,
+                    ki.updated_at
+                FROM kitchen_inventory ki
+                JOIN items i ON i.id = ki.item_id
+                WHERE ki.kitchen_id = ? AND ki.qty > 0";
         $params = [$kitchenId];
 
         if ($q) {
@@ -164,7 +157,7 @@ switch ($action) {
             $params[] = "%$q%";
         }
 
-        $sql .= " GROUP BY i.id ORDER BY i.category, i.name";
+        $sql .= " ORDER BY i.category, i.name";
         $stmt = $db->prepare($sql);
         $stmt->execute($params);
         $items = $stmt->fetchAll();
@@ -190,7 +183,7 @@ switch ($action) {
                     i.name AS item_name, i.category
                 FROM audit_log al
                 JOIN items i ON i.id = al.entity_id
-                WHERE al.action = 'stock_adjust'
+                WHERE al.action = 'stock_adjust' AND al.entity IN ('items', 'kitchen_inventory')
                 AND DATE(al.created_at) BETWEEN ? AND ?";
         $params = [$from, $to];
 
