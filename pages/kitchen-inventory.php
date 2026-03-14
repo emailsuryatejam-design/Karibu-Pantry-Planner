@@ -41,21 +41,21 @@ $kitchenId = $user['kitchen_id'] ?? 0;
             <label class="text-[10px] text-gray-500 font-medium mb-1 block">Current Pantry Stock</label>
             <div class="text-lg font-bold text-gray-800" id="kiAdjustCurrentStock">—</div>
         </div>
-        <div class="mb-3">
-            <label class="text-[10px] text-gray-500 font-medium mb-1 block">Adjustment (+/-)</label>
-            <div class="flex items-center gap-2">
-                <button onclick="kiAdjStep(-1)" class="stepper-btn bg-red-100 text-red-600 text-lg">−</button>
-                <input type="number" id="kiAdjustQty" step="0.5" class="w-20 text-center text-lg font-bold border border-gray-200 rounded-xl py-2" value="0">
-                <button onclick="kiAdjStep(1)" class="stepper-btn bg-green-100 text-green-600 text-lg">+</button>
+        <div class="mb-4">
+            <label class="text-xs text-gray-500 font-medium mb-2 block">Adjustment (+/-)</label>
+            <div class="flex items-center justify-center gap-3">
+                <button onclick="kiAdjStep(-1)" class="stepper-btn bg-red-100 text-red-600 text-xl">−</button>
+                <input type="number" id="kiAdjustQty" step="0.5" class="w-24 text-center text-2xl font-bold border-2 border-gray-200 rounded-xl py-3 focus:outline-none focus:ring-2 focus:ring-orange-200" value="0">
+                <button onclick="kiAdjStep(1)" class="stepper-btn bg-green-100 text-green-600 text-xl">+</button>
             </div>
         </div>
-        <div class="mb-4">
-            <label class="text-[10px] text-gray-500 font-medium mb-1 block">Reason (required)</label>
-            <input type="text" id="kiAdjustReason" placeholder="e.g. Physical count mismatch" class="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5">
+        <div class="mb-5">
+            <label class="text-xs text-gray-500 font-medium mb-2 block">Reason (required)</label>
+            <input type="text" id="kiAdjustReason" placeholder="e.g. Physical count mismatch" class="w-full text-sm border border-gray-200 rounded-xl px-3 py-3">
         </div>
-        <div class="flex gap-2">
-            <button onclick="kiCloseAdjust()" class="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-medium text-sm">Cancel</button>
-            <button onclick="kiSubmitAdjust()" class="flex-1 py-2.5 rounded-xl bg-orange-600 text-white font-medium text-sm">Save</button>
+        <div class="flex gap-3">
+            <button onclick="kiCloseAdjust()" class="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-semibold text-sm">Cancel</button>
+            <button onclick="kiSubmitAdjust()" class="flex-1 py-3 rounded-xl bg-orange-600 text-white font-semibold text-sm">Save</button>
         </div>
     </div>
 </div>

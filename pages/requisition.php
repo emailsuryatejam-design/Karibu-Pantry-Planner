@@ -91,21 +91,21 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
 
 <!-- Dish Portions Modal -->
 <div id="rqPortionsModal" class="hidden fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4 animate-fade-in">
-    <div class="bg-white rounded-2xl shadow-xl max-w-xs w-full p-5">
+    <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
         <input type="hidden" id="rqPmRecipeId">
-        <h3 class="text-base font-bold text-gray-900 mb-0.5" id="rqPmDishName">—</h3>
-        <p class="text-[10px] text-gray-400 mb-4" id="rqPmStd">—</p>
-        <label class="text-[10px] text-gray-500 font-medium mb-2 block">How many portions?</label>
-        <div class="flex items-center justify-center gap-3 mb-4">
-            <button onclick="rqPmStep(-5)" class="stepper-btn bg-gray-100 text-gray-600 text-sm">-5</button>
-            <button onclick="rqPmStep(-1)" class="stepper-btn bg-red-100 text-red-600 text-lg">−</button>
-            <input type="number" id="rqPmInput" min="1" class="w-20 text-center text-2xl font-bold border border-gray-200 rounded-xl py-2 focus:outline-none focus:ring-2 focus:ring-orange-200">
-            <button onclick="rqPmStep(1)" class="stepper-btn bg-green-100 text-green-600 text-lg">+</button>
-            <button onclick="rqPmStep(5)" class="stepper-btn bg-gray-100 text-gray-600 text-sm">+5</button>
+        <h3 class="text-lg font-bold text-gray-900 mb-0.5" id="rqPmDishName">—</h3>
+        <p class="text-xs text-gray-400 mb-5" id="rqPmStd">—</p>
+        <label class="text-xs text-gray-500 font-medium mb-3 block">How many portions?</label>
+        <div class="flex items-center justify-center gap-3 mb-5">
+            <button onclick="rqPmStep(-5)" class="stepper-btn bg-gray-100 text-gray-600 text-base">-5</button>
+            <button onclick="rqPmStep(-1)" class="stepper-btn bg-red-100 text-red-600 text-xl">−</button>
+            <input type="number" id="rqPmInput" min="1" class="w-24 text-center text-3xl font-bold border-2 border-gray-200 rounded-xl py-3 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300">
+            <button onclick="rqPmStep(1)" class="stepper-btn bg-green-100 text-green-600 text-xl">+</button>
+            <button onclick="rqPmStep(5)" class="stepper-btn bg-gray-100 text-gray-600 text-base">+5</button>
         </div>
-        <div class="flex gap-2">
-            <button onclick="rqPmClose()" class="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-medium text-sm">Cancel</button>
-            <button onclick="rqPmSave()" class="flex-1 py-2.5 rounded-xl bg-orange-600 text-white font-medium text-sm">Save</button>
+        <div class="flex gap-3">
+            <button onclick="rqPmClose()" class="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-semibold text-sm">Cancel</button>
+            <button onclick="rqPmSave()" class="flex-1 py-3 rounded-xl bg-orange-600 text-white font-semibold text-sm">Save</button>
         </div>
     </div>
 </div>
@@ -847,22 +847,22 @@ function rqRenderAggregatedItemsList(isDraft) {
             const toOrder = Math.max(0, rqRound(requiredKg - pantryQty));
             const fromPantry = Math.min(pantryQty, requiredKg);
 
-            html += `<div class="bg-white border ${pantryQty > 0 ? 'border-green-100' : 'border-gray-100'} rounded-lg px-3 py-2 mb-1">
-                <div class="flex items-center justify-between mb-1">
+            html += `<div class="bg-white border ${pantryQty > 0 ? 'border-green-200' : 'border-gray-100'} rounded-xl px-3 py-2.5 mb-1.5">
+                <div class="flex items-center justify-between mb-1.5">
                     <div class="flex-1 min-w-0">
                         <span class="text-sm font-medium text-gray-800 truncate block">${escHtml(agg.item_name)}</span>
                         <div class="text-[9px] text-gray-400 mt-0.5">From: ${agg.sources.map(s => escHtml(s)).join(', ')}</div>
                     </div>
-                    ${isDraft ? `<div class="flex items-center gap-1">
-                        <button onclick="rqAdjAggItem(${agg.itemId}, -0.5)" class="w-6 h-6 rounded-md bg-gray-100 text-gray-500 font-bold flex items-center justify-center text-xs compact-btn">-</button>
-                        <span class="text-xs font-semibold text-gray-700 w-10 text-center">${requiredKg}</span>
-                        <button onclick="rqAdjAggItem(${agg.itemId}, 0.5)" class="w-6 h-6 rounded-md bg-orange-100 text-orange-600 font-bold flex items-center justify-center text-xs compact-btn">+</button>
+                    ${isDraft ? `<div class="flex items-center gap-1.5">
+                        <button onclick="rqAdjAggItem(${agg.itemId}, -0.5)" class="w-7 h-7 rounded-lg bg-gray-100 text-gray-500 font-bold flex items-center justify-center text-sm compact-btn">−</button>
+                        <span class="text-sm font-bold text-gray-700 w-10 text-center">${requiredKg}</span>
+                        <button onclick="rqAdjAggItem(${agg.itemId}, 0.5)" class="w-7 h-7 rounded-lg bg-orange-100 text-orange-600 font-bold flex items-center justify-center text-sm compact-btn">+</button>
                     </div>` : ''}
                 </div>
-                <div class="flex items-center gap-3 text-[10px]">
+                <div class="flex items-center gap-2 text-xs">
                     <span class="text-gray-500">Need: <strong class="text-gray-700">${requiredKg}</strong> ${escHtml(agg.uom)}</span>
-                    ${pantryQty > 0 ? `<span class="text-green-600">Pantry: <strong>${fromPantry.toFixed(1)}</strong></span>` : ''}
-                    <span class="text-orange-600 font-semibold ml-auto">Order: ${toOrder.toFixed(1)} ${escHtml(agg.uom)}</span>
+                    ${pantryQty > 0 ? `<span class="bg-green-50 text-green-700 px-1.5 py-0.5 rounded font-medium">Pantry: ${fromPantry.toFixed(1)}</span>` : ''}
+                    <span class="text-orange-600 font-bold ml-auto">Order: ${toOrder.toFixed(1)} ${escHtml(agg.uom)}</span>
                 </div>
             </div>`;
         });

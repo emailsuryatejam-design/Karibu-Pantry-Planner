@@ -164,12 +164,12 @@ nav a:active {
 
 /* Stepper controls */
 .stepper-btn {
-    min-height: 36px;
-    min-width: 36px;
+    min-height: 44px;
+    min-width: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
+    border-radius: 10px;
     font-weight: 600;
     user-select: none;
     -webkit-user-select: none;
@@ -177,7 +177,7 @@ nav a:active {
 }
 
 .stepper-btn:active {
-    transform: scale(0.95);
+    transform: scale(0.93);
 }
 
 /* Accordion animation */
@@ -261,6 +261,12 @@ nav a:active {
     .sticky-submit { bottom: 48px; }
     header { height: 40px; }
     .page-loader { inset: 40px 0 48px 0; }
+}
+
+/* 5-item bottom nav — tighter spacing for tablets */
+nav .flex > a {
+    min-width: 44px;
+    padding: 4px 2px;
 }
 
 /* Safe area padding for notched phones */
