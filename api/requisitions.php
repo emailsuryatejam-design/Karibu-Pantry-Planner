@@ -475,8 +475,12 @@ switch ($action) {
         $itemMap = [];
         if ($itemIds) {
             $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
-            $batchStmt = $db->prepare("SELECT id, name, stock_qty, portion_weight, order_mode, uom FROM items WHERE id IN ($placeholders)");
-            $batchStmt->execute(array_values($itemIds));
+            $batchStmt = $db->prepare("SELECT i.id, i.name, i.portion_weight, i.order_mode, i.uom,
+                COALESCE(ki.qty, 0) AS stock_qty
+                FROM items i
+                LEFT JOIN kitchen_inventory ki ON ki.item_id = i.id AND ki.kitchen_id = ?
+                WHERE i.id IN ($placeholders)");
+            $batchStmt->execute(array_merge([$kitchenId], array_values($itemIds)));
             foreach ($batchStmt->fetchAll() as $it) {
                 $itemMap[(int)$it['id']] = $it;
             }
@@ -718,9 +722,10 @@ switch ($action) {
 
         $db->beginTransaction();
         try {
-            // Save unused quantities and update item stock
+            // Save unused quantities and add to kitchen pantry inventory
             $updateLine = $db->prepare("UPDATE requisition_lines SET unused_qty = ? WHERE id = ?");
-            $updateStock = $db->prepare("UPDATE items SET stock_qty = stock_qty + ? WHERE id = ?");
+            $upsertPantry = $db->prepare("INSERT INTO kitchen_inventory (kitchen_id, item_id, qty) VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE qty = qty + VALUES(qty)");
 
             foreach ($unusedLines as $ul) {
                 $lineId = (int)($ul['line_id'] ?? 0);
@@ -740,7 +745,7 @@ switch ($action) {
                 if ($unusedQty > $maxUnused) $unusedQty = $maxUnused;
 
                 $updateLine->execute([$unusedQty, $lineId]);
-                $updateStock->execute([$unusedQty, (int)$lineRow['item_id']]);
+                $upsertPantry->execute([$kid, (int)$lineRow['item_id'], $unusedQty]);
             }
 
             // Auto-set received_qty = fulfilled_qty for fulfilled orders (skipping confirm_receipt)
@@ -782,7 +787,8 @@ switch ($action) {
         $db->beginTransaction();
         try {
             $updateLine = $db->prepare("UPDATE requisition_lines SET unused_qty = ? WHERE id = ? AND requisition_id = ?");
-            $adjustStock = $db->prepare("UPDATE items SET stock_qty = stock_qty + ? WHERE id = ?");
+            $upsertPantry = $db->prepare("INSERT INTO kitchen_inventory (kitchen_id, item_id, qty) VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE qty = GREATEST(0, qty + VALUES(qty))");
 
             foreach ($unusedLines as $ul) {
                 $lineId = (int)($ul['line_id'] ?? 0);
@@ -804,7 +810,7 @@ switch ($action) {
                 if (abs($delta) < 0.001) continue; // no change
 
                 $updateLine->execute([$newUnused, $lineId, $reqId]);
-                $adjustStock->execute([$delta, (int)$lineRow['item_id']]);
+                $upsertPantry->execute([$kitchenId, (int)$lineRow['item_id'], $delta]);
             }
 
             $db->commit();
@@ -1076,11 +1082,12 @@ switch ($action) {
             if ($recipeIds) {
                 $ph = implode(',', array_fill(0, count($recipeIds), '?'));
                 $batchIngStmt = $db->prepare("SELECT ri.recipe_id, ri.item_id, ri.qty, ri.uom,
-                    i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
+                    i.name AS item_name, COALESCE(ki.qty, 0) AS stock_qty, i.portion_weight, i.order_mode, i.category
                     FROM recipe_ingredients ri
                     LEFT JOIN items i ON i.id = ri.item_id
+                    LEFT JOIN kitchen_inventory ki ON ki.item_id = ri.item_id AND ki.kitchen_id = ?
                     WHERE ri.recipe_id IN ($ph)");
-                $batchIngStmt->execute(array_values($recipeIds));
+                $batchIngStmt->execute(array_merge([$kitchenId], array_values($recipeIds)));
                 foreach ($batchIngStmt->fetchAll() as $ing) {
                     $allIngredients[(int)$ing['recipe_id']][] = $ing;
                 }

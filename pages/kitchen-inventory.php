@@ -1,15 +1,14 @@
 <?php
 /**
- * Karibu Pantry Planner — Kitchen Inventory
- * Shows what items the kitchen has received from recent requisitions,
- * usage, and allows stock adjustments for discrepancies.
+ * Karibu Pantry Planner — Kitchen Pantry Inventory
+ * Shows what items the kitchen has in its pantry (from day-close unused returns + adjustments).
  */
 $user = currentUser();
 $kitchenId = $user['kitchen_id'] ?? 0;
 ?>
 
-<h2 class="text-lg font-bold text-gray-800 mb-1">Kitchen Stock</h2>
-<p class="text-xs text-gray-500 mb-3">Items received from recent orders &amp; current stock levels</p>
+<h2 class="text-lg font-bold text-gray-800 mb-1">Pantry Stock</h2>
+<p class="text-xs text-gray-500 mb-3">Items in your kitchen pantry (unused returns &amp; adjustments)</p>
 
 <!-- Search -->
 <div class="relative mb-3">
@@ -18,26 +17,15 @@ $kitchenId = $user['kitchen_id'] ?? 0;
     <svg class="absolute left-3 top-3 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
 </div>
 
-<!-- Quick Filters -->
-<div class="flex gap-2 mb-4 scroll-strip">
-    <button onclick="kiFilter='all';kiRender()" class="pill active" id="kiFilterAll">All</button>
-    <button onclick="kiFilter='in_kitchen';kiRender()" class="pill" id="kiFilterInKitchen">In Kitchen</button>
-    <button onclick="kiFilter='used';kiRender()" class="pill" id="kiFilterUsed">Fully Used</button>
-</div>
-
 <!-- Stats -->
-<div class="grid grid-cols-3 gap-2 mb-4">
+<div class="grid grid-cols-2 gap-2 mb-4">
     <div class="bg-white border border-gray-200 rounded-xl p-2.5 text-center">
         <div class="text-xl font-bold text-gray-800" id="kiStatTotal">—</div>
         <div class="text-[9px] text-gray-400">Items</div>
     </div>
     <div class="bg-white border border-green-200 rounded-xl p-2.5 text-center">
-        <div class="text-xl font-bold text-green-600" id="kiStatReceived">—</div>
-        <div class="text-[9px] text-gray-400">Received (kg)</div>
-    </div>
-    <div class="bg-white border border-orange-200 rounded-xl p-2.5 text-center">
-        <div class="text-xl font-bold text-orange-600" id="kiStatUsed">—</div>
-        <div class="text-[9px] text-gray-400">Used (kg)</div>
+        <div class="text-xl font-bold text-green-600" id="kiStatQty">—</div>
+        <div class="text-[9px] text-gray-400">Total (kg)</div>
     </div>
 </div>
 
@@ -47,10 +35,10 @@ $kitchenId = $user['kitchen_id'] ?? 0;
 <!-- Adjust Stock Modal -->
 <div id="kiAdjustModal" class="hidden fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4 animate-fade-in">
     <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-5">
-        <h3 class="text-base font-bold text-gray-900 mb-1">Adjust Stock</h3>
+        <h3 class="text-base font-bold text-gray-900 mb-1">Adjust Pantry Stock</h3>
         <p class="text-xs text-gray-500 mb-4" id="kiAdjustItemName">—</p>
         <div class="mb-3">
-            <label class="text-[10px] text-gray-500 font-medium mb-1 block">Current Store Stock</label>
+            <label class="text-[10px] text-gray-500 font-medium mb-1 block">Current Pantry Stock</label>
             <div class="text-lg font-bold text-gray-800" id="kiAdjustCurrentStock">—</div>
         </div>
         <div class="mb-3">
@@ -75,7 +63,6 @@ $kitchenId = $user['kitchen_id'] ?? 0;
 <script>
 const KI_KID = <?= (int)$kitchenId ?>;
 let kiData = [];
-let kiFilter = 'all';
 let kiAdjustItemId = null;
 
 kiLoad();
@@ -95,36 +82,21 @@ async function kiLoad() {
 }
 
 function kiRender() {
-    // Update filter pills
-    document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
-    document.getElementById('kiFilter' + (kiFilter === 'all' ? 'All' : kiFilter === 'in_kitchen' ? 'InKitchen' : 'Used')).classList.add('active');
-
-    let items = kiData;
-    if (kiFilter === 'in_kitchen') {
-        items = items.filter(i => parseFloat(i.in_kitchen) - parseFloat(i.used_total) > 0);
-    } else if (kiFilter === 'used') {
-        items = items.filter(i => parseFloat(i.in_kitchen) - parseFloat(i.used_total) <= 0 && parseFloat(i.in_kitchen) > 0);
-    }
-
     // Stats
-    let totalReceived = 0, totalUsed = 0;
-    kiData.forEach(i => {
-        totalReceived += parseFloat(i.in_kitchen) || 0;
-        totalUsed += parseFloat(i.used_total) || 0;
-    });
+    let totalQty = 0;
+    kiData.forEach(i => { totalQty += parseFloat(i.qty) || 0; });
     document.getElementById('kiStatTotal').textContent = kiData.length;
-    document.getElementById('kiStatReceived').textContent = totalReceived.toFixed(1);
-    document.getElementById('kiStatUsed').textContent = totalUsed.toFixed(1);
+    document.getElementById('kiStatQty').textContent = totalQty.toFixed(1);
 
     const container = document.getElementById('kiItemList');
-    if (items.length === 0) {
-        container.innerHTML = '<p class="text-xs text-gray-400 text-center py-6">No items found</p>';
+    if (kiData.length === 0) {
+        container.innerHTML = '<p class="text-xs text-gray-400 text-center py-6">No items in pantry</p>';
         return;
     }
 
     // Group by category
     const byCategory = {};
-    items.forEach(i => {
+    kiData.forEach(i => {
         const cat = i.category || 'Uncategorized';
         if (!byCategory[cat]) byCategory[cat] = [];
         byCategory[cat].push(i);
@@ -134,39 +106,16 @@ function kiRender() {
     Object.keys(byCategory).sort().forEach(cat => {
         html += `<div class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider mt-3 mb-1">${escHtml(cat)}</div>`;
         byCategory[cat].forEach(item => {
-            const received = parseFloat(item.in_kitchen) || 0;
-            const used = parseFloat(item.used_total) || 0;
-            const remaining = Math.max(0, received - used);
-            const storeStock = parseFloat(item.stock_qty) || 0;
-            const meals = item.meal_types || '';
-
-            const statusColor = remaining > 0 ? 'border-green-100' : 'border-gray-100';
-            const remainingColor = remaining > 0 ? 'text-green-600' : 'text-gray-400';
-
-            html += `<div class="bg-white border ${statusColor} rounded-xl px-3 py-2.5" onclick="kiShowAdjust(${item.id}, '${escHtml(item.name)}', ${storeStock})">
+            const qty = parseFloat(item.qty) || 0;
+            html += `<div class="bg-white border border-green-100 rounded-xl px-3 py-2.5" onclick="kiShowAdjust(${item.id}, '${escHtml(item.name)}', ${qty})">
                 <div class="flex items-center justify-between">
                     <div class="min-w-0 flex-1">
                         <div class="text-xs font-medium text-gray-800">${escHtml(item.name)}</div>
-                        <div class="text-[10px] text-gray-400 mt-0.5">
-                            ${meals ? meals.split(',').map(m => `<span class="capitalize">${m.trim()}</span>`).join(' · ') : ''}
-                        </div>
+                        <div class="text-[10px] text-gray-400 mt-0.5">${escHtml(item.uom || '')}</div>
                     </div>
                     <div class="text-right shrink-0 ml-3">
-                        <div class="flex items-center gap-2">
-                            <div>
-                                <div class="text-[9px] text-gray-400">Received</div>
-                                <div class="text-xs font-semibold text-blue-600">${received.toFixed(1)}</div>
-                            </div>
-                            <div>
-                                <div class="text-[9px] text-gray-400">Used</div>
-                                <div class="text-xs font-semibold text-orange-600">${used.toFixed(1)}</div>
-                            </div>
-                            <div>
-                                <div class="text-[9px] text-gray-400">Left</div>
-                                <div class="text-xs font-bold ${remainingColor}">${remaining.toFixed(1)}</div>
-                            </div>
-                        </div>
-                        <div class="text-[9px] text-gray-300 mt-0.5">Store: ${storeStock.toFixed(1)} ${item.uom || ''}</div>
+                        <div class="text-sm font-bold text-green-600">${qty.toFixed(1)}</div>
+                        <div class="text-[9px] text-gray-300">in pantry</div>
                     </div>
                 </div>
             </div>`;
@@ -176,10 +125,10 @@ function kiRender() {
     container.innerHTML = html;
 }
 
-function kiShowAdjust(itemId, itemName, currentStock) {
+function kiShowAdjust(itemId, itemName, currentQty) {
     kiAdjustItemId = itemId;
     document.getElementById('kiAdjustItemName').textContent = itemName;
-    document.getElementById('kiAdjustCurrentStock').textContent = currentStock.toFixed(1) + ' in store';
+    document.getElementById('kiAdjustCurrentStock').textContent = currentQty.toFixed(1) + ' in pantry';
     document.getElementById('kiAdjustQty').value = '0';
     document.getElementById('kiAdjustReason').value = '';
     document.getElementById('kiAdjustModal').classList.remove('hidden');
@@ -206,7 +155,7 @@ async function kiSubmitAdjust() {
             method: 'POST',
             body: JSON.stringify({ item_id: kiAdjustItemId, adjustment: qty, reason: reason })
         });
-        showToast('Stock adjusted', 'success');
+        showToast('Pantry stock adjusted', 'success');
         kiCloseAdjust();
         kiLoad();
     } catch(e) {
