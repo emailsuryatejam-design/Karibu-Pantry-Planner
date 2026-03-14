@@ -137,6 +137,49 @@ switch ($action) {
         jsonResponse(['updated' => true, 'new_stock' => (float)$newQty]);
         break;
 
+    // ── Kitchen stock (items in kitchen from active requisitions) ──
+    case 'kitchen_stock':
+        if (!$kitchenId) jsonError('Kitchen ID required');
+        $q = trim($_GET['q'] ?? '');
+
+        // Items currently in kitchen = received/fulfilled requisitions not yet closed
+        // Plus today's closed requisitions (still relevant for today's view)
+        $today = date('Y-m-d');
+        $sql = "SELECT i.id, i.name, i.category, i.uom, i.stock_qty,
+                    COALESCE(SUM(rl.received_qty), SUM(rl.fulfilled_qty), 0) AS in_kitchen,
+                    COALESCE(SUM(rl.unused_qty), 0) AS unused_total,
+                    COALESCE(SUM(COALESCE(rl.received_qty, rl.fulfilled_qty, 0) - COALESCE(rl.unused_qty, 0)), 0) AS used_total,
+                    MAX(r.req_date) AS last_req_date,
+                    GROUP_CONCAT(DISTINCT r.meals) AS meal_types
+                FROM requisition_lines rl
+                JOIN requisitions r ON r.id = rl.requisition_id
+                JOIN items i ON i.id = rl.item_id
+                WHERE r.kitchen_id = ?
+                AND r.req_date >= DATE_SUB(CURDATE(), INTERVAL 3 DAY)
+                AND r.status IN ('fulfilled', 'received', 'closed')";
+        $params = [$kitchenId];
+
+        if ($q) {
+            $sql .= " AND i.name LIKE ?";
+            $params[] = "%$q%";
+        }
+
+        $sql .= " GROUP BY i.id ORDER BY i.category, i.name";
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        $items = $stmt->fetchAll();
+
+        // Categories from results
+        $cats = array_values(array_unique(array_filter(array_column($items, 'category'))));
+        sort($cats);
+
+        jsonResponse([
+            'items' => $items,
+            'categories' => $cats,
+            'kitchen_id' => $kitchenId,
+        ]);
+        break;
+
     // ── Stock discrepancy report ──
     case 'discrepancies':
         $from = trim($_GET['from'] ?? date('Y-m-d', strtotime('-7 days')));
