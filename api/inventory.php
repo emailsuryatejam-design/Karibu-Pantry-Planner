@@ -108,8 +108,8 @@ switch ($action) {
     // ── Adjust stock manually (storekeeper/admin) ──
     case 'adjust':
         requireMethod('POST');
-        if ($user['role'] !== 'storekeeper' && $user['role'] !== 'admin') {
-            jsonError('Only storekeepers and admins can adjust stock');
+        if (!in_array($user['role'], ['chef', 'storekeeper', 'admin'])) {
+            jsonError('Only chefs, storekeepers and admins can adjust stock');
         }
 
         $itemId = (int)($input['item_id'] ?? 0);
@@ -135,6 +135,66 @@ switch ($action) {
         ]);
 
         jsonResponse(['updated' => true, 'new_stock' => (float)$newQty]);
+        break;
+
+    // ── Stock discrepancy report ──
+    case 'discrepancies':
+        $from = trim($_GET['from'] ?? date('Y-m-d', strtotime('-7 days')));
+        $to = trim($_GET['to'] ?? date('Y-m-d'));
+        $itemFilter = (int)($_GET['item_id'] ?? 0);
+
+        $sql = "SELECT al.created_at, al.user_name, al.entity_id AS item_id, al.new_value,
+                    i.name AS item_name, i.category
+                FROM audit_log al
+                JOIN items i ON i.id = al.entity_id
+                WHERE al.action = 'stock_adjust'
+                AND DATE(al.created_at) BETWEEN ? AND ?";
+        $params = [$from, $to];
+
+        if ($kitchenId) {
+            $sql .= " AND JSON_EXTRACT(al.new_value, '$.kitchen_id') = ?";
+            $params[] = $kitchenId;
+        }
+        if ($itemFilter) {
+            $sql .= " AND al.entity_id = ?";
+            $params[] = $itemFilter;
+        }
+        $sql .= " ORDER BY al.created_at DESC";
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        $rows = $stmt->fetchAll();
+
+        // Parse JSON new_value and build clean results
+        $results = [];
+        $totalPositive = 0;
+        $totalNegative = 0;
+        foreach ($rows as $row) {
+            $data = json_decode($row['new_value'], true) ?: [];
+            $adj = (float)($data['adjustment'] ?? 0);
+            if ($adj > 0) $totalPositive += $adj;
+            else $totalNegative += $adj;
+            $results[] = [
+                'date' => $row['created_at'],
+                'item_id' => (int)$row['item_id'],
+                'item_name' => $row['item_name'],
+                'category' => $row['category'],
+                'adjustment' => $adj,
+                'new_stock' => (float)($data['new_stock'] ?? 0),
+                'reason' => $data['reason'] ?? '',
+                'adjusted_by' => $row['user_name'],
+            ];
+        }
+
+        jsonResponse([
+            'discrepancies' => $results,
+            'summary' => [
+                'total_count' => count($results),
+                'total_positive' => $totalPositive,
+                'total_negative' => $totalNegative,
+                'net_change' => $totalPositive + $totalNegative,
+            ],
+        ]);
         break;
 
     default:

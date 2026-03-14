@@ -61,7 +61,11 @@ $kitchenId = $user['kitchen_id'] ?? 0;
 
 <!-- Top Items -->
 <h3 class="text-sm font-semibold text-gray-700 mb-2">Most Ordered Items</h3>
-<div id="rpTopItems" class="space-y-1"></div>
+<div id="rpTopItems" class="space-y-1 mb-4"></div>
+
+<!-- Stock Discrepancies -->
+<h3 class="text-sm font-semibold text-gray-700 mb-2">Stock Adjustments</h3>
+<div id="rpDiscrepancies" class="space-y-2"></div>
 
 <script>
 const RP_KID = <?= (int)$kitchenId ?>;
@@ -187,6 +191,9 @@ async function rpLoad() {
 
         // ── Top Items ──
         rpRenderTopItems(itemTotals);
+
+        // ── Stock Discrepancies ──
+        rpLoadDiscrepancies(from, to);
 
     } catch(e) {
         document.getElementById('rpReqList').innerHTML = '<p class="text-center text-red-400 text-xs py-4">Failed to load</p>';
@@ -348,5 +355,74 @@ function rpRenderTopItems(itemTotals) {
         </div>`;
     });
     container.innerHTML = html;
+}
+
+async function rpLoadDiscrepancies(from, to) {
+    const container = document.getElementById('rpDiscrepancies');
+    container.innerHTML = '<p class="text-xs text-gray-400 text-center py-2">Loading...</p>';
+    try {
+        const data = await api(`api/inventory.php?action=discrepancies&from=${from}&to=${to}`);
+        const items = data.discrepancies || [];
+        const summary = data.summary || {};
+
+        if (items.length === 0) {
+            container.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No stock adjustments in this period</p>';
+            return;
+        }
+
+        // Summary card
+        let html = `<div class="grid grid-cols-3 gap-2 mb-3">
+            <div class="bg-white border border-gray-200 rounded-xl p-2.5 text-center">
+                <div class="text-lg font-bold text-gray-800">${summary.total_count}</div>
+                <div class="text-[9px] text-gray-400">Adjustments</div>
+            </div>
+            <div class="bg-white border border-green-200 rounded-xl p-2.5 text-center">
+                <div class="text-lg font-bold text-green-600">+${(summary.total_positive || 0).toFixed(1)}</div>
+                <div class="text-[9px] text-gray-400">Added</div>
+            </div>
+            <div class="bg-white border border-red-200 rounded-xl p-2.5 text-center">
+                <div class="text-lg font-bold text-red-600">${(summary.total_negative || 0).toFixed(1)}</div>
+                <div class="text-[9px] text-gray-400">Removed</div>
+            </div>
+        </div>`;
+
+        // Group by date
+        const byDate = {};
+        items.forEach(d => {
+            const dateKey = d.date.substring(0, 10);
+            if (!byDate[dateKey]) byDate[dateKey] = [];
+            byDate[dateKey].push(d);
+        });
+
+        Object.keys(byDate).sort((a, b) => b.localeCompare(a)).forEach(date => {
+            const rows = byDate[date];
+            html += `<div class="mb-2">
+                <div class="text-[11px] font-semibold text-gray-500 mb-1 uppercase tracking-wider">${formatDate(date)}</div>`;
+            rows.forEach(r => {
+                const isPositive = r.adjustment > 0;
+                const adjLabel = isPositive ? `+${r.adjustment.toFixed(1)}` : r.adjustment.toFixed(1);
+                const adjColor = isPositive ? 'text-green-600' : 'text-red-600';
+                const bgColor = isPositive ? 'border-green-100' : 'border-red-100';
+                html += `<div class="bg-white border ${bgColor} rounded-xl px-3 py-2 mb-1">
+                    <div class="flex items-center justify-between">
+                        <div class="min-w-0 flex-1">
+                            <div class="text-xs font-medium text-gray-800">${escHtml(r.item_name)}</div>
+                            <div class="text-[10px] text-gray-400">${escHtml(r.category || '')} &bull; by ${escHtml(r.adjusted_by)}</div>
+                        </div>
+                        <div class="text-right shrink-0 ml-2">
+                            <div class="text-sm font-bold ${adjColor}">${adjLabel}</div>
+                            <div class="text-[10px] text-gray-400">→ ${r.new_stock.toFixed(1)}</div>
+                        </div>
+                    </div>
+                    ${r.reason ? `<div class="text-[10px] text-gray-500 mt-1 italic">"${escHtml(r.reason)}"</div>` : ''}
+                </div>`;
+            });
+            html += `</div>`;
+        });
+
+        container.innerHTML = html;
+    } catch(e) {
+        container.innerHTML = '<p class="text-xs text-red-400 text-center py-4">Failed to load adjustments</p>';
+    }
 }
 </script>

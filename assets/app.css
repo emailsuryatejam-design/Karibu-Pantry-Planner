@@ -251,6 +251,18 @@ nav a:active {
     background: rgba(255, 255, 255, 0.1);
 }
 
+/* Landscape responsive — compact nav on short screens */
+@media (orientation: landscape) and (max-height: 500px) {
+    nav { height: 48px; }
+    nav a svg { width: 16px; height: 16px; }
+    nav a span { font-size: 8px; }
+    nav a { gap: 0; padding: 2px 1px; }
+    main { padding-bottom: 52px; }
+    .sticky-submit { bottom: 48px; }
+    header { height: 40px; }
+    .page-loader { inset: 40px 0 48px 0; }
+}
+
 /* Safe area padding for notched phones */
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
     nav {
