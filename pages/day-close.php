@@ -276,7 +276,8 @@ async function dcCloseDay() {
         ? `Close all received requisitions?\n\n${unusedLines.length} item(s) with ${totalUnusedKg.toFixed(1)} kg unused will be added back to inventory.`
         : 'Close all received requisitions?\n\nNo unused quantities entered.';
 
-    if (!confirm(confirmMsg)) return;
+    const confirmed = await customConfirm('Close Day', confirmMsg);
+    if (!confirmed) return;
 
     try {
         await api('api/requisitions.php?action=close_with_unused', {

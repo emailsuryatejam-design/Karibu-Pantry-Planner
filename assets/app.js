@@ -106,6 +106,28 @@ function showToast(message, type = 'success') {
     }, 2500);
 }
 
+// ── Custom Confirm Dialog (replaces native confirm) ──
+function customConfirm(title, message) {
+    return new Promise(resolve => {
+        const backdrop = document.createElement('div');
+        backdrop.className = 'fixed inset-0 bg-black/50 z-[300] flex items-center justify-center p-4 animate-fade-in';
+        backdrop.innerHTML = `
+            <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+                <h3 class="text-lg font-bold text-gray-900 mb-2">${title}</h3>
+                <p class="text-sm text-gray-600 mb-6 whitespace-pre-line">${message}</p>
+                <div class="flex gap-3">
+                    <button id="cfmCancel" class="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-medium text-sm">Cancel</button>
+                    <button id="cfmOk" class="flex-1 py-2.5 rounded-xl bg-blue-600 text-white font-medium text-sm">Confirm</button>
+                </div>
+            </div>`;
+        document.body.appendChild(backdrop);
+        const cleanup = (val) => { backdrop.remove(); resolve(val); };
+        backdrop.querySelector('#cfmCancel').onclick = () => cleanup(false);
+        backdrop.querySelector('#cfmOk').onclick = () => cleanup(true);
+        backdrop.addEventListener('click', e => { if (e.target === backdrop) cleanup(false); });
+    });
+}
+
 // ── Bottom Sheet ──
 function openSheet(contentHtml) {
     closeSheet();
