@@ -18,7 +18,7 @@ switch ($action) {
         $cat = trim($_GET['category'] ?? '');
         $activeOnly = ($_GET['active'] ?? '1') === '1';
 
-        $sql = "SELECT id, name, code, category, uom, stock_qty, portion_weight, order_mode, is_active FROM items WHERE 1=1";
+        $sql = "SELECT id, name, code, category, uom, stock_qty, portion_weight, order_mode, piece_weight, is_pantry_staple, is_active FROM items WHERE 1=1";
         $params = [];
 
         if ($activeOnly) {
@@ -76,21 +76,24 @@ switch ($action) {
         $uom = trim($data['uom'] ?? 'kg');
         $portionWeight = (float)($data['portion_weight'] ?? 0.250);
         $orderMode = in_array($data['order_mode'] ?? '', ['portion', 'direct_kg']) ? $data['order_mode'] : 'portion';
+        $pieceWeight = isset($data['piece_weight']) ? (float)$data['piece_weight'] : null;
+        $isPantryStaple = (int)($data['is_pantry_staple'] ?? 0);
 
         if (!$name) jsonError('Item name is required');
         if ($portionWeight <= 0) $portionWeight = 0.250;
+        if ($pieceWeight !== null && $pieceWeight <= 0) $pieceWeight = null;
 
         if ($id) {
             // Update
-            $stmt = $db->prepare('UPDATE items SET name = ?, code = ?, category = ?, uom = ?, portion_weight = ?, order_mode = ? WHERE id = ?');
-            $stmt->execute([$name, $code, $category, $uom, $portionWeight, $orderMode, $id]);
+            $stmt = $db->prepare('UPDATE items SET name = ?, code = ?, category = ?, uom = ?, portion_weight = ?, order_mode = ?, piece_weight = ?, is_pantry_staple = ? WHERE id = ?');
+            $stmt->execute([$name, $code, $category, $uom, $portionWeight, $orderMode, $pieceWeight, $isPantryStaple, $id]);
             cacheClear('active_items');
             auditLog('item_update', 'item', $id, null, $data);
             jsonResponse(['updated' => true, 'id' => $id]);
         } else {
             // Create
-            $stmt = $db->prepare('INSERT INTO items (name, code, category, uom, portion_weight, order_mode) VALUES (?, ?, ?, ?, ?, ?)');
-            $stmt->execute([$name, $code, $category, $uom, $portionWeight, $orderMode]);
+            $stmt = $db->prepare('INSERT INTO items (name, code, category, uom, portion_weight, order_mode, piece_weight, is_pantry_staple) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+            $stmt->execute([$name, $code, $category, $uom, $portionWeight, $orderMode, $pieceWeight, $isPantryStaple]);
             $newId = $db->lastInsertId();
             cacheClear('active_items');
             auditLog('item_create', 'item', $newId, null, $data);
@@ -131,6 +134,29 @@ switch ($action) {
         }
         cacheClear('active_items');
         auditLog('item_bulk_update', 'items', null, null, ['count' => $count]);
+        jsonResponse(['updated' => $count]);
+
+    // ── Bulk update UOM settings (piece_weight + pantry staple) — admin only ──
+    case 'bulk_uom_update':
+        requireMethod('POST');
+        requireRole(['admin']);
+        $data = getJsonInput();
+        $updates = $data['items'] ?? [];
+        if (empty($updates)) jsonError('No items to update');
+
+        $stmt = $db->prepare('UPDATE items SET piece_weight = ?, is_pantry_staple = ? WHERE id = ?');
+        $count = 0;
+        foreach ($updates as $item) {
+            $pw = isset($item['piece_weight']) && $item['piece_weight'] > 0 ? (float)$item['piece_weight'] : null;
+            $stmt->execute([
+                $pw,
+                (int)($item['is_pantry_staple'] ?? 0),
+                (int)$item['id']
+            ]);
+            $count++;
+        }
+        cacheClear('active_items');
+        auditLog('item_bulk_uom_update', 'items', null, null, ['count' => $count]);
         jsonResponse(['updated' => $count]);
 
     default:

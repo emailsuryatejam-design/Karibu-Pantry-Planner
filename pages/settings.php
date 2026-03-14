@@ -92,6 +92,42 @@
         </div>
     </div>
 
+    <!-- Unit of Measure Management (Admin only) -->
+    <div class="bg-white rounded-xl border border-gray-100 p-5">
+        <h3 class="font-semibold text-sm text-gray-800 mb-1">Unit of Measure</h3>
+        <p class="text-[10px] text-gray-400 mb-3">Set piece weights for pcs→kg conversion and mark pantry staples</p>
+
+        <div class="flex gap-2 mb-3">
+            <input type="text" id="uomSearch" placeholder="Search items..."
+                class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-orange-200"
+                oninput="filterUomItems()">
+            <select id="uomFilter" class="px-2 py-2 border border-gray-200 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-orange-200"
+                onchange="filterUomItems()">
+                <option value="">All UOM</option>
+                <option value="pcs">pcs</option>
+                <option value="kg">kg</option>
+                <option value="ltr">ltr</option>
+            </select>
+        </div>
+
+        <div id="uomItemsList" class="space-y-1 max-h-[350px] overflow-y-auto">
+            <p class="text-xs text-gray-400 text-center py-4">Loading...</p>
+        </div>
+
+        <div class="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+            <div class="flex-1 text-[10px] text-gray-400">
+                <span class="inline-block w-2 h-2 bg-orange-100 rounded mr-1"></span>Wt/pc = weight per piece (for pcs→kg conversion)
+                <br>
+                <span class="inline-block w-2 h-2 bg-green-100 rounded mr-1"></span>Staple = pantry staple, skipped in orders unless marked primary in recipe
+            </div>
+        </div>
+
+        <button onclick="saveUomSettings()" id="uomSaveBtn"
+            class="w-full py-2.5 bg-orange-600 text-white text-sm font-semibold rounded-xl active:bg-orange-700 transition mt-3">
+            Save UOM Settings
+        </button>
+    </div>
+
     <!-- User Management (Admin only) -->
     <div class="bg-white rounded-xl border border-gray-100 p-5">
         <div class="flex items-center justify-between mb-4">
@@ -667,5 +703,114 @@ async function saveScalingSettings() {
 }
 
 loadScalingSettings();
+
+// ── UOM Management ──
+let uomItemsData = [];
+
+async function loadUomItems() {
+    try {
+        const data = await api('api/items.php?action=list&active=1');
+        uomItemsData = (data.items || []).map(i => ({
+            ...i,
+            piece_weight: i.piece_weight ? parseFloat(i.piece_weight) : '',
+            is_pantry_staple: parseInt(i.is_pantry_staple) || 0
+        }));
+        filterUomItems();
+    } catch (err) {
+        document.getElementById('uomItemsList').innerHTML =
+            `<p class="text-xs text-red-500 text-center py-4">${escHtml(err.message)}</p>`;
+    }
+}
+
+function filterUomItems() {
+    const q = (document.getElementById('uomSearch')?.value || '').toLowerCase();
+    const uomFilter = document.getElementById('uomFilter')?.value || '';
+    const filtered = uomItemsData.filter(i => {
+        if (q && !i.name.toLowerCase().includes(q)) return false;
+        if (uomFilter && i.uom !== uomFilter) return false;
+        return true;
+    });
+    renderUomItems(filtered);
+}
+
+function renderUomItems(items) {
+    const list = document.getElementById('uomItemsList');
+    if (items.length === 0) {
+        list.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No items found</p>';
+        return;
+    }
+
+    list.innerHTML = items.map(i => {
+        const showWeight = ['pcs', 'tins', 'unit', 'box', 'pkt'].includes(i.uom);
+        return `
+        <div class="flex items-center gap-2 py-1.5 px-2 rounded-lg bg-gray-50 text-xs">
+            <div class="flex-1 min-w-0">
+                <span class="font-medium text-gray-800 truncate block">${escHtml(i.name)}</span>
+                <span class="text-[10px] text-gray-400">${i.uom} · ${i.category || 'N/A'}</span>
+            </div>
+            ${showWeight ? `
+            <div class="flex items-center gap-1">
+                <input type="number" step="0.001" min="0" placeholder="—"
+                    value="${i.piece_weight || ''}"
+                    data-id="${i.id}" data-field="piece_weight"
+                    onchange="updateUomField(this)"
+                    class="w-16 px-1.5 py-1 border border-gray-200 rounded text-xs text-center focus:outline-none focus:ring-1 focus:ring-orange-300">
+                <span class="text-[10px] text-gray-400">kg/pc</span>
+            </div>` : '<div class="w-[88px]"></div>'}
+            <label class="flex items-center gap-1 cursor-pointer shrink-0" title="Pantry Staple">
+                <input type="checkbox" ${i.is_pantry_staple ? 'checked' : ''}
+                    data-id="${i.id}" data-field="is_pantry_staple"
+                    onchange="updateUomField(this)"
+                    class="w-3.5 h-3.5 rounded border-gray-300 text-green-600 focus:ring-green-500">
+                <span class="text-[10px] text-gray-500">Staple</span>
+            </label>
+        </div>`;
+    }).join('');
+}
+
+function updateUomField(el) {
+    const id = parseInt(el.dataset.id);
+    const field = el.dataset.field;
+    const item = uomItemsData.find(i => i.id == id);
+    if (!item) return;
+    if (field === 'piece_weight') {
+        item.piece_weight = el.value ? parseFloat(el.value) : '';
+    } else if (field === 'is_pantry_staple') {
+        item.is_pantry_staple = el.checked ? 1 : 0;
+    }
+}
+
+async function saveUomSettings() {
+    const changed = uomItemsData.filter(i =>
+        i.piece_weight !== '' || i.is_pantry_staple
+    ).map(i => ({
+        id: i.id,
+        piece_weight: i.piece_weight || 0,
+        is_pantry_staple: i.is_pantry_staple
+    }));
+
+    // Also include items that might have been un-checked (send all)
+    const allItems = uomItemsData.map(i => ({
+        id: i.id,
+        piece_weight: i.piece_weight || 0,
+        is_pantry_staple: i.is_pantry_staple
+    }));
+
+    const btn = document.getElementById('uomSaveBtn');
+    setLoading(btn, true);
+    try {
+        await api('api/items.php?action=bulk_uom_update', {
+            method: 'POST',
+            body: { items: allItems }
+        });
+        showToast('UOM settings saved!', 'success');
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        setLoading(btn, false);
+    }
+}
+
+loadUomItems();
 </script>
 <?php endif; ?>
