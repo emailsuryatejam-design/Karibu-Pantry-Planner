@@ -33,6 +33,8 @@ $tables = [
         category VARCHAR(100) DEFAULT NULL,
         uom VARCHAR(20) DEFAULT 'kg',
         stock_qty DECIMAL(10,2) DEFAULT 0,
+        piece_weight DECIMAL(10,3) DEFAULT NULL,
+        is_pantry_staple TINYINT(1) DEFAULT 0,
         is_active TINYINT(1) DEFAULT 1,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )",

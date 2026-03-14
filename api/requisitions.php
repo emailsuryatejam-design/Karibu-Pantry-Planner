@@ -1082,8 +1082,9 @@ switch ($action) {
             $allIngredients = [];
             if ($recipeIds) {
                 $ph = implode(',', array_fill(0, count($recipeIds), '?'));
-                $batchIngStmt = $db->prepare("SELECT ri.recipe_id, ri.item_id, ri.qty, ri.uom,
-                    i.name AS item_name, COALESCE(ki.qty, 0) AS stock_qty, i.portion_weight, i.order_mode, i.category
+                $batchIngStmt = $db->prepare("SELECT ri.recipe_id, ri.item_id, ri.qty, ri.uom, ri.is_primary,
+                    i.name AS item_name, COALESCE(ki.qty, 0) AS stock_qty, i.portion_weight, i.order_mode, i.category,
+                    i.piece_weight, i.is_pantry_staple
                     FROM recipe_ingredients ri
                     LEFT JOIN items i ON i.id = ri.item_id
                     LEFT JOIN kitchen_inventory ki ON ki.item_id = ri.item_id AND ki.kitchen_id = ?
@@ -1117,7 +1118,19 @@ switch ($action) {
 
                 foreach ($ingredients as $ing) {
                     $itemId = (int)$ing['item_id'];
+                    if (!$itemId) continue;
+
+                    // Two-level staple check: skip if item is pantry staple AND ingredient is not primary
+                    if (!empty($ing['is_pantry_staple']) && empty($ing['is_primary'])) continue;
+
                     $scaledQty = (float)$ing['qty'] * $scaleFactor;
+
+                    // Convert pcs→kg if item has piece_weight
+                    $ingUom = $ing['uom'] ?? 'kg';
+                    if (in_array($ingUom, ['pcs', 'tins', 'box', 'pkt', 'unit']) && !empty($ing['piece_weight']) && (float)$ing['piece_weight'] > 0) {
+                        $scaledQty = $scaledQty * (float)$ing['piece_weight'];
+                        $ingUom = 'kg';
+                    }
 
                     if (isset($aggregated[$itemId])) {
                         $aggregated[$itemId]['total_qty'] += $scaledQty;
@@ -1126,7 +1139,7 @@ switch ($action) {
                         $aggregated[$itemId] = [
                             'item_name' => $ing['item_name'],
                             'total_qty' => $scaledQty,
-                            'uom' => $ing['uom'] ?? ($ing['order_mode'] === 'direct_kg' ? 'kg' : 'kg'),
+                            'uom' => $ingUom,
                             'stock_qty' => (float)$ing['stock_qty'],
                             'portion_weight' => (float)$ing['portion_weight'],
                             'order_mode' => $ing['order_mode'],
