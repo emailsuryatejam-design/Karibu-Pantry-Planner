@@ -89,6 +89,27 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
     </div>
 </div>
 
+<!-- Dish Portions Modal -->
+<div id="rqPortionsModal" class="hidden fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4 animate-fade-in">
+    <div class="bg-white rounded-2xl shadow-xl max-w-xs w-full p-5">
+        <input type="hidden" id="rqPmRecipeId">
+        <h3 class="text-base font-bold text-gray-900 mb-0.5" id="rqPmDishName">—</h3>
+        <p class="text-[10px] text-gray-400 mb-4" id="rqPmStd">—</p>
+        <label class="text-[10px] text-gray-500 font-medium mb-2 block">How many portions?</label>
+        <div class="flex items-center justify-center gap-3 mb-4">
+            <button onclick="rqPmStep(-5)" class="stepper-btn bg-gray-100 text-gray-600 text-sm">-5</button>
+            <button onclick="rqPmStep(-1)" class="stepper-btn bg-red-100 text-red-600 text-lg">−</button>
+            <input type="number" id="rqPmInput" min="1" class="w-20 text-center text-2xl font-bold border border-gray-200 rounded-xl py-2 focus:outline-none focus:ring-2 focus:ring-orange-200">
+            <button onclick="rqPmStep(1)" class="stepper-btn bg-green-100 text-green-600 text-lg">+</button>
+            <button onclick="rqPmStep(5)" class="stepper-btn bg-gray-100 text-gray-600 text-sm">+5</button>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="rqPmClose()" class="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-700 font-medium text-sm">Cancel</button>
+            <button onclick="rqPmSave()" class="flex-1 py-2.5 rounded-xl bg-orange-600 text-white font-medium text-sm">Save</button>
+        </div>
+    </div>
+</div>
+
 <script>
 // ── State ──
 let rqDate = todayStr();
@@ -558,8 +579,36 @@ function rqSetDishPortions(recipeId, val) {
     if (!rqDishes[recipeId]) return;
     rqDishes[recipeId].dish_portions = Math.max(1, parseInt(val) || 1);
     rqRecalcAggregated();
-    rqRenderAggregatedItemsList(true);
+    rqRenderDishView();
     rqUpdateSummary();
+}
+
+function rqShowPortionsModal(recipeId) {
+    const dish = rqDishes[recipeId];
+    if (!dish) return;
+    const modal = document.getElementById('rqPortionsModal');
+    document.getElementById('rqPmDishName').textContent = dish.recipe_name;
+    document.getElementById('rqPmRecipeId').value = recipeId;
+    document.getElementById('rqPmInput').value = dish.dish_portions || rqGuestCount;
+    document.getElementById('rqPmStd').textContent = `Standard recipe serves ${dish.recipe_servings}`;
+    modal.classList.remove('hidden');
+    setTimeout(() => document.getElementById('rqPmInput').select(), 100);
+}
+
+function rqPmStep(dir) {
+    const inp = document.getElementById('rqPmInput');
+    inp.value = Math.max(1, (parseInt(inp.value) || 0) + dir);
+}
+
+function rqPmSave() {
+    const recipeId = parseInt(document.getElementById('rqPmRecipeId').value);
+    const val = parseInt(document.getElementById('rqPmInput').value) || 1;
+    rqSetDishPortions(recipeId, val);
+    document.getElementById('rqPortionsModal').classList.add('hidden');
+}
+
+function rqPmClose() {
+    document.getElementById('rqPortionsModal').classList.add('hidden');
 }
 
 // ═══════════════════════════════════════
@@ -732,7 +781,7 @@ function rqRenderSelectedDishes(isDraft) {
         const dishPortions = d.dish_portions || rqGuestCount;
         const scaleFactor = (dishPortions / (d.recipe_servings || 4)).toFixed(1);
         const scaledTotal = d.ingredients.length;
-        html += `<div class="bg-white rounded-xl border border-gray-200 px-3 py-2.5">
+        html += `<div class="bg-white rounded-xl border border-gray-200 px-3 py-2.5 ${isDraft ? 'cursor-pointer active:bg-gray-50' : ''}" ${isDraft ? `onclick="rqShowPortionsModal(${d.recipe_id})"` : ''}>
             <div class="flex items-center justify-between">
                 <div class="flex items-center gap-2 flex-1 min-w-0">
                     <div class="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
@@ -746,12 +795,8 @@ function rqRenderSelectedDishes(isDraft) {
                     </div>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0">
-                    ${isDraft ? `<div class="flex items-center gap-1 bg-orange-50 rounded-lg px-1.5 py-0.5">
-                        <span class="text-[9px] text-orange-600 font-medium">Portions</span>
-                        <input type="number" value="${dishPortions}" min="1" onchange="rqSetDishPortions(${d.recipe_id}, this.value)"
-                            class="w-12 text-center text-sm font-bold text-orange-700 border border-orange-200 rounded py-0.5 bg-white focus:outline-none focus:ring-1 focus:ring-orange-300">
-                    </div>` : `<span class="text-xs font-semibold text-orange-600">${dishPortions} pax</span>`}
-                    ${isDraft ? `<button onclick="rqRemoveDish(${d.recipe_id})" class="text-gray-300 hover:text-red-500 transition p-1">
+                    <span class="text-sm font-bold text-orange-600">${dishPortions} pax</span>
+                    ${isDraft ? `<button onclick="event.stopPropagation();rqRemoveDish(${d.recipe_id})" class="text-gray-300 hover:text-red-500 transition p-1 compact-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
                     </button>` : ''}
                 </div>
@@ -798,26 +843,26 @@ function rqRenderAggregatedItemsList(isDraft) {
         catItems.forEach(agg => {
             const totalQty = Math.max(0, agg.total_qty);
             const requiredKg = rqRound(totalQty);
+            const pantryQty = parseFloat(agg.stock_qty) || 0;
+            const toOrder = Math.max(0, rqRound(requiredKg - pantryQty));
+            const fromPantry = Math.min(pantryQty, requiredKg);
 
-            html += `<div class="bg-white border border-gray-100 rounded-lg px-3 py-2 mb-1">
+            html += `<div class="bg-white border ${pantryQty > 0 ? 'border-green-100' : 'border-gray-100'} rounded-lg px-3 py-2 mb-1">
                 <div class="flex items-center justify-between mb-1">
                     <div class="flex-1 min-w-0">
                         <span class="text-sm font-medium text-gray-800 truncate block">${escHtml(agg.item_name)}</span>
-                        <div class="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <span class="text-[9px] text-gray-400">From: ${agg.sources.map(s => escHtml(s)).join(', ')}</span>
-                        </div>
+                        <div class="text-[9px] text-gray-400 mt-0.5">From: ${agg.sources.map(s => escHtml(s)).join(', ')}</div>
                     </div>
-                    ${requiredKg > 0 ? `<div class="text-right ml-2">
-                        <div class="text-xs font-bold text-orange-600">${requiredKg} ${escHtml(agg.uom)}</div>
+                    ${isDraft ? `<div class="flex items-center gap-1">
+                        <button onclick="rqAdjAggItem(${agg.itemId}, -0.5)" class="w-6 h-6 rounded-md bg-gray-100 text-gray-500 font-bold flex items-center justify-center text-xs compact-btn">-</button>
+                        <span class="text-xs font-semibold text-gray-700 w-10 text-center">${requiredKg}</span>
+                        <button onclick="rqAdjAggItem(${agg.itemId}, 0.5)" class="w-6 h-6 rounded-md bg-orange-100 text-orange-600 font-bold flex items-center justify-center text-xs compact-btn">+</button>
                     </div>` : ''}
                 </div>
-                <div class="flex items-center justify-between">
-                    <span class="text-[10px] text-gray-500">Need: ${requiredKg} ${escHtml(agg.uom)}</span>
-                    ${isDraft ? `<div class="flex items-center gap-1">
-                        <button onclick="rqAdjAggItem(${agg.itemId}, -0.5)" class="w-7 h-7 rounded-lg bg-gray-100 text-gray-500 font-bold flex items-center justify-center hover:bg-gray-200 text-xs">-</button>
-                        <span class="text-xs font-semibold text-gray-700 w-12 text-center">${requiredKg}</span>
-                        <button onclick="rqAdjAggItem(${agg.itemId}, 0.5)" class="w-7 h-7 rounded-lg bg-orange-100 text-orange-600 font-bold flex items-center justify-center hover:bg-orange-200 text-xs">+</button>
-                    </div>` : ''}
+                <div class="flex items-center gap-3 text-[10px]">
+                    <span class="text-gray-500">Need: <strong class="text-gray-700">${requiredKg}</strong> ${escHtml(agg.uom)}</span>
+                    ${pantryQty > 0 ? `<span class="text-green-600">Pantry: <strong>${fromPantry.toFixed(1)}</strong></span>` : ''}
+                    <span class="text-orange-600 font-semibold ml-auto">Order: ${toOrder.toFixed(1)} ${escHtml(agg.uom)}</span>
                 </div>
             </div>`;
         });
@@ -895,6 +940,8 @@ async function rqLoadSetMenuDishes() {
 function rqUpdateSummary() {
     let totalItems = 0;
     let totalKg = 0;
+    let totalFromPantry = 0;
+    let totalToOrder = 0;
 
     for (const [itemId, agg] of Object.entries(rqAggregatedItems)) {
         const totalQty = Math.max(0, agg.total_qty);
@@ -902,11 +949,18 @@ function rqUpdateSummary() {
         if (requiredKg <= 0) continue;
         totalItems++;
         totalKg += requiredKg;
+        const pantryQty = parseFloat(agg.stock_qty) || 0;
+        totalFromPantry += Math.min(pantryQty, requiredKg);
+        totalToOrder += Math.max(0, rqRound(requiredKg - pantryQty));
     }
 
     const dishCount = Object.keys(rqDishes).length;
-    document.getElementById('rqSummaryLabel').innerHTML = `Dishes: <strong class="text-gray-800">${dishCount}</strong> &bull; Items: <strong class="text-gray-800">${totalItems}</strong>`;
-    document.getElementById('rqSummaryKg').textContent = totalKg.toFixed(1) + ' kg';
+    let label = `Dishes: <strong class="text-gray-800">${dishCount}</strong> &bull; Items: <strong class="text-gray-800">${totalItems}</strong>`;
+    if (totalFromPantry > 0) {
+        label += ` &bull; <span class="text-green-600">Pantry: ${totalFromPantry.toFixed(1)}</span>`;
+    }
+    document.getElementById('rqSummaryLabel').innerHTML = label;
+    document.getElementById('rqSummaryKg').textContent = totalToOrder.toFixed(1) + ' kg to order';
 }
 
 function rqRenderStatusBanner() {
