@@ -15,6 +15,11 @@
     RewriteEngine On
     RewriteRule ^lib/ - [F,L]
     RewriteRule ^\.cache/ - [F,L]
+
+    # Kitchen-specific login URLs: /NLP, /TES, /SWC, etc.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^([A-Z]{2,10})$ index.php?kitchen=$1 [L,QSA]
 </IfModule>
 
 # Prevent directory listing
