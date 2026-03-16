@@ -54,6 +54,7 @@
 <script>
 let soStatus = 'all';
 let soOrders = [];
+let soCurrentOrderId = null;
 
 soLoad();
 
@@ -146,11 +147,16 @@ function soRender() {
 
 // ── Order Detail (bottom sheet) ──
 async function soOpenDetail(orderId) {
+    soCurrentOrderId = orderId;
     try {
         const res = await api(`api/store-orders.php?action=get&id=${orderId}`);
         const order = res.order;
-        const lines = res.lines || [];
+        const allLines = res.lines || [];
         const canSend = order.status === 'pending';
+
+        // Separate active and removed lines
+        const activeLines = allLines.filter(l => l.line_status !== 'rejected');
+        const removedLines = allLines.filter(l => l.line_status === 'rejected');
 
         let html = `
             <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
@@ -167,44 +173,58 @@ async function soOpenDetail(orderId) {
             <div class="flex-1 overflow-y-auto px-5 py-4 scroll-touch">`;
 
         if (canSend) {
-            // ── Pending: editable layout — Requested (locked) → Issuing (editable) ──
+            // ── Pending: editable layout — Requested (locked) → Issuing (editable) + Remove button ──
             html += `
-                <div class="grid grid-cols-[1fr_80px_100px] gap-2 px-1 mb-1">
+                <div class="grid grid-cols-[1fr_70px_100px_28px] gap-1.5 px-1 mb-1">
                     <span class="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Item</span>
                     <span class="text-[9px] text-orange-500 uppercase tracking-wider font-semibold text-center">Requested</span>
                     <span class="text-[9px] text-green-600 uppercase tracking-wider font-semibold text-center">Issuing</span>
+                    <span></span>
                 </div>`;
-            html += `<div class="space-y-1.5">`;
-            lines.forEach(line => {
+            html += `<div class="space-y-1.5" id="soActiveLines">`;
+            activeLines.forEach(line => {
                 const reqQty = parseFloat(line.requested_qty) || 0;
-                html += `<div class="bg-gray-50 rounded-xl px-3 py-2.5">
-                    <div class="grid grid-cols-[1fr_80px_100px] gap-2 items-center">
-                        <div class="min-w-0">
-                            <p class="font-semibold text-sm text-gray-800 truncate">${line.item_name}</p>
-                            <p class="text-[10px] text-gray-400">${line.uom}</p>
-                        </div>
-                        <div class="bg-orange-50 border border-orange-200 rounded-lg py-1.5 text-center">
-                            <span class="text-sm font-bold text-orange-700">${reqQty}</span>
-                            <span class="text-[10px] text-orange-500 ml-0.5">${line.uom}</span>
-                        </div>
-                        <div class="flex items-center justify-center gap-0.5">
-                            <button onclick="soAdjLine(${line.id}, 'qty', -1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">-</button>
-                            <input type="number" value="${reqQty}" step="0.5" min="0" id="send_${line.id}"
-                                class="w-14 text-center text-sm font-semibold border border-green-300 rounded-lg px-0.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-green-50">
-                            <button onclick="soAdjLine(${line.id}, 'qty', 1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">+</button>
-                        </div>
-                    </div>
-                    <div class="flex items-center gap-3 mt-1.5 pl-0">
-                        <div class="flex items-center gap-1">
-                            <span class="text-[10px] text-gray-400">Pack:</span>
-                            <input type="number" value="1" step="0.5" min="0.1" id="unit_${line.id}"
-                                class="w-12 text-center text-[11px] border border-gray-200 rounded px-0.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-green-200 compact-btn bg-white">
-                            <span class="text-[10px] text-gray-400">${line.uom}</span>
-                        </div>
-                    </div>
-                </div>`;
+                html += soActiveLineHtml(line, reqQty);
             });
             html += `</div>`;
+
+            // ── Removed lines section ──
+            if (removedLines.length > 0) {
+                html += `
+                    <div class="mt-4 mb-2">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-[10px] font-semibold text-red-400 uppercase tracking-wider">Removed Items</span>
+                            <span class="text-[10px] text-red-300">(${removedLines.length})</span>
+                        </div>
+                        <div class="space-y-1.5" id="soRemovedLines">`;
+                removedLines.forEach(line => {
+                    const reqQty = parseFloat(line.requested_qty) || 0;
+                    html += `<div class="bg-red-50/50 rounded-xl px-3 py-2.5 border border-red-100 opacity-60" id="so-line-${line.id}">
+                        <div class="flex items-center justify-between">
+                            <div class="min-w-0 flex-1">
+                                <p class="font-medium text-sm text-gray-500 truncate line-through">${line.item_name}</p>
+                                <p class="text-[10px] text-gray-400">${line.uom} &middot; was ${reqQty} ${line.uom}</p>
+                            </div>
+                            <button onclick="soRestoreLine(${line.id}, ${orderId})"
+                                class="ml-2 px-3 py-1.5 bg-white border border-green-200 rounded-lg text-[11px] font-semibold text-green-600 hover:bg-green-50 active:bg-green-100 transition compact-btn flex items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                                Restore
+                            </button>
+                        </div>
+                    </div>`;
+                });
+                html += `</div></div>`;
+            }
+
+            // ── Add Item button ──
+            html += `
+                <button onclick="soShowAddItem(${orderId})" id="soAddItemBtn"
+                    class="w-full border-2 border-dashed border-gray-200 hover:border-green-300 rounded-xl py-2.5 text-xs font-medium text-gray-400 hover:text-green-600 transition mt-3 flex items-center justify-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                    Add Item
+                </button>
+                <div id="soAddItemPanel" class="hidden mt-3"></div>`;
+
         } else {
             // ── Fulfilled / Received: unified table (Req | Sent | Received | Diff) ──
             html += `<div class="max-h-[55vh] overflow-y-auto">
@@ -217,7 +237,8 @@ async function soOpenDetail(orderId) {
                         <th class="text-center px-1 py-1.5 text-gray-600 font-semibold">Diff</th>
                     </tr></thead>
                     <tbody>`;
-            lines.forEach(line => {
+            // Only show active lines in fulfilled/received view
+            activeLines.forEach(line => {
                 const oq = parseFloat(line.requested_qty) || 0;
                 const fq = line.fulfilled_qty !== null ? parseFloat(line.fulfilled_qty) : 0;
                 const rq = line.received_qty !== null ? parseFloat(line.received_qty) : 0;
@@ -234,6 +255,13 @@ async function soOpenDetail(orderId) {
                 </tr>`;
             });
             html += `</tbody></table></div>`;
+
+            // Show removed lines count if any
+            if (removedLines.length > 0) {
+                html += `<div class="bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-3">
+                    <p class="text-[11px] text-red-500">${removedLines.length} item${removedLines.length > 1 ? 's' : ''} removed by store: ${removedLines.map(l => l.item_name).join(', ')}</p>
+                </div>`;
+            }
         }
 
         // Send button (only for pending orders)
@@ -256,7 +284,7 @@ async function soOpenDetail(orderId) {
         if (order.status === 'received') {
             const hasDispute = parseInt(order.has_dispute) === 1;
             if (hasDispute) {
-                const disputeCount = lines.filter(l => {
+                const disputeCount = activeLines.filter(l => {
                     const sent = l.fulfilled_qty !== null ? parseFloat(l.fulfilled_qty) : parseFloat(l.requested_qty);
                     const recv = l.received_qty !== null ? parseFloat(l.received_qty) : sent;
                     return Math.abs(sent - recv) > 0.01;
@@ -288,12 +316,181 @@ async function soOpenDetail(orderId) {
     }
 }
 
+// ── Helper: render a single active line row ──
+function soActiveLineHtml(line, reqQty) {
+    return `<div class="bg-gray-50 rounded-xl px-3 py-2.5" id="so-line-${line.id}">
+        <div class="grid grid-cols-[1fr_70px_100px_28px] gap-1.5 items-center">
+            <div class="min-w-0">
+                <p class="font-semibold text-sm text-gray-800 truncate">${line.item_name}</p>
+                <p class="text-[10px] text-gray-400">${line.uom}</p>
+            </div>
+            <div class="bg-orange-50 border border-orange-200 rounded-lg py-1.5 text-center">
+                <span class="text-sm font-bold text-orange-700">${reqQty}</span>
+                <span class="text-[10px] text-orange-500 ml-0.5">${line.uom}</span>
+            </div>
+            <div class="flex items-center justify-center gap-0.5">
+                <button onclick="soAdjLine(${line.id}, 'qty', -1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">-</button>
+                <input type="number" value="${reqQty}" step="0.5" min="0" id="send_${line.id}"
+                    class="w-14 text-center text-sm font-semibold border border-green-300 rounded-lg px-0.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-green-50">
+                <button onclick="soAdjLine(${line.id}, 'qty', 1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">+</button>
+            </div>
+            <button onclick="soRemoveLine(${line.id}, ${soCurrentOrderId || 0})" title="Remove item"
+                class="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-400 hover:text-red-600 flex items-center justify-center transition compact-btn">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+        </div>
+        <div class="flex items-center gap-3 mt-1.5 pl-0">
+            <div class="flex items-center gap-1">
+                <span class="text-[10px] text-gray-400">Pack:</span>
+                <input type="number" value="1" step="0.5" min="0.1" id="unit_${line.id}"
+                    class="w-12 text-center text-[11px] border border-gray-200 rounded px-0.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-green-200 compact-btn bg-white">
+                <span class="text-[10px] text-gray-400">${line.uom}</span>
+            </div>
+        </div>
+    </div>`;
+}
+
 function soAdjLine(lineId, field, delta) {
     const inputId = field === 'qty' ? `send_${lineId}` : `unit_${lineId}`;
     const input = document.getElementById(inputId);
     if (input) {
         const step = field === 'qty' ? 1 : 0.5;
         input.value = Math.max(field === 'qty' ? 0 : 0.1, (parseFloat(input.value) || 0) + delta * step);
+    }
+}
+
+// ── Remove a line item ──
+async function soRemoveLine(lineId, orderId) {
+    if (!await customConfirm('Remove Item', 'Remove this item from the order? You can restore it later.')) return;
+
+    try {
+        await api('api/store-orders.php?action=remove_line', {
+            method: 'POST',
+            body: { line_id: lineId, order_id: orderId }
+        });
+        showToast('Item removed');
+        // Refresh the detail sheet
+        soOpenDetail(orderId);
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+// ── Restore a removed line item ──
+async function soRestoreLine(lineId, orderId) {
+    try {
+        await api('api/store-orders.php?action=restore_line', {
+            method: 'POST',
+            body: { line_id: lineId, order_id: orderId }
+        });
+        showToast('Item restored');
+        // Refresh the detail sheet
+        soOpenDetail(orderId);
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+// ── Add Item panel ──
+let soItemsList = null; // cached items list
+
+async function soShowAddItem(orderId) {
+    const panel = document.getElementById('soAddItemPanel');
+    const btn = document.getElementById('soAddItemBtn');
+    if (!panel) return;
+
+    // Toggle panel
+    if (!panel.classList.contains('hidden')) {
+        panel.classList.add('hidden');
+        btn.classList.remove('border-green-300', 'text-green-600');
+        return;
+    }
+
+    btn.classList.add('border-green-300', 'text-green-600');
+    panel.classList.remove('hidden');
+    panel.innerHTML = `
+        <div class="bg-white border border-green-200 rounded-xl p-3 shadow-sm">
+            <div class="flex items-center gap-2 mb-3">
+                <div class="relative flex-1">
+                    <input type="text" id="soAddItemSearch" placeholder="Search items..."
+                        oninput="soSearchItems(this.value)"
+                        class="w-full text-sm border border-gray-200 rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-200 focus:border-green-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="absolute left-2.5 top-2.5 text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                </div>
+            </div>
+            <div id="soAddItemResults" class="max-h-48 overflow-y-auto space-y-1">
+                <p class="text-xs text-gray-400 text-center py-3">Type to search items...</p>
+            </div>
+        </div>`;
+
+    // Focus search input
+    setTimeout(() => {
+        const input = document.getElementById('soAddItemSearch');
+        if (input) input.focus();
+    }, 100);
+
+    // Pre-load items if not cached
+    if (!soItemsList) {
+        try {
+            const res = await api('api/items.php?action=list&active=1');
+            soItemsList = res.items || [];
+        } catch (e) {
+            soItemsList = [];
+        }
+    }
+}
+
+function soSearchItems(query) {
+    const results = document.getElementById('soAddItemResults');
+    if (!results || !soItemsList) return;
+
+    if (!query || query.length < 2) {
+        results.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">Type at least 2 characters...</p>';
+        return;
+    }
+
+    const q = query.toLowerCase();
+    const matches = soItemsList.filter(item =>
+        item.name.toLowerCase().includes(q) || (item.code && item.code.toLowerCase().includes(q))
+    ).slice(0, 15);
+
+    if (matches.length === 0) {
+        results.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">No items found</p>';
+        return;
+    }
+
+    results.innerHTML = matches.map(item => `
+        <div onclick="soAddItemToOrder(${item.id}, '${item.name.replace(/'/g, "\\'")}', '${item.uom}')"
+             class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-green-50 cursor-pointer transition active:bg-green-100">
+            <div>
+                <p class="text-sm font-medium text-gray-800">${item.name}</p>
+                <p class="text-[10px] text-gray-400">${item.category || 'Uncategorized'} &middot; ${item.uom}</p>
+            </div>
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-green-500"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        </div>
+    `).join('');
+}
+
+async function soAddItemToOrder(itemId, itemName, uom) {
+    // Prompt for quantity
+    const qtyStr = prompt(`Add ${itemName} — enter quantity (${uom}):`);
+    if (!qtyStr) return;
+    const qty = parseFloat(qtyStr);
+    if (!qty || qty <= 0) {
+        showToast('Invalid quantity', 'error');
+        return;
+    }
+
+    try {
+        await api('api/store-orders.php?action=add_line', {
+            method: 'POST',
+            body: { order_id: soCurrentOrderId, item_id: itemId, qty: qty }
+        });
+        showToast(`${itemName} added`);
+        // Refresh the detail sheet
+        soOpenDetail(soCurrentOrderId);
+    } catch (err) {
+        showToast(err.message, 'error');
     }
 }
 

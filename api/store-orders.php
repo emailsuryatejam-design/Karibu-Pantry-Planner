@@ -32,7 +32,7 @@ switch ($action) {
                     r.notes, r.created_by, r.reviewed_by, r.created_at, r.updated_at,
                     r.supplement_number,
                     u.name AS chef_name,
-                    (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS total_items
+                    (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND status != 'rejected') AS total_items
                 FROM requisitions r
                 LEFT JOIN users u ON u.id = r.created_by
                 WHERE r.kitchen_id = ?
@@ -92,13 +92,15 @@ switch ($action) {
         if ($order['status'] === 'submitted') $order['status'] = 'pending';
 
         // Get aggregated lines (items grouped from requisition_lines)
+        // Include status so frontend can show removed lines separately
         $lines = $db->prepare("SELECT rl.id, rl.item_id, rl.item_name, rl.uom,
                 rl.order_qty AS requested_qty,
                 rl.fulfilled_qty,
-                rl.received_qty
+                rl.received_qty,
+                rl.status AS line_status
             FROM requisition_lines rl
             WHERE rl.requisition_id = ?
-            ORDER BY rl.id");
+            ORDER BY FIELD(rl.status, 'rejected', 'pending', 'approved', 'adjusted') DESC, rl.id");
         $lines->execute([$orderId]);
 
         jsonResponse(['order' => $order, 'lines' => $lines->fetchAll()]);
@@ -112,8 +114,8 @@ switch ($action) {
         $lines = $input['lines'] ?? [];
         if (!$orderId) jsonError('Order ID required');
 
-        // Update fulfilled qty per line
-        $stmt = $db->prepare('UPDATE requisition_lines SET fulfilled_qty = ? WHERE id = ? AND requisition_id = ?');
+        // Update fulfilled qty per line (skip rejected/removed lines)
+        $stmt = $db->prepare("UPDATE requisition_lines SET fulfilled_qty = ? WHERE id = ? AND requisition_id = ? AND status != 'rejected'");
         foreach ($lines as $line) {
             $stmt->execute([
                 (float)($line['fulfilled_qty'] ?? 0),
@@ -138,6 +140,100 @@ switch ($action) {
 
         $db->prepare('UPDATE requisitions SET notes = ?, updated_at = NOW() WHERE id = ?')->execute([$notes, $orderId]);
         jsonResponse(['updated' => true]);
+        break;
+
+    // ── Remove a line item from requisition (storekeeper) ──
+    case 'remove_line':
+        requireMethod('POST');
+        $lineId = (int)($input['line_id'] ?? 0);
+        $orderId = (int)($input['order_id'] ?? 0);
+        if (!$lineId || !$orderId) jsonError('Line ID and Order ID required');
+
+        // Verify the requisition belongs to this kitchen and is in pending/submitted state
+        $check = $db->prepare("SELECT r.status FROM requisitions r WHERE r.id = ? AND r.kitchen_id = ?");
+        $check->execute([$orderId, $kitchenId]);
+        $reqStatus = $check->fetchColumn();
+        if (!$reqStatus) jsonError('Order not found', 404);
+        if (!in_array($reqStatus, ['submitted', 'processing'])) jsonError('Can only modify pending orders');
+
+        // Get current line info for audit
+        $lineStmt = $db->prepare("SELECT item_name, order_qty, uom, status FROM requisition_lines WHERE id = ? AND requisition_id = ?");
+        $lineStmt->execute([$lineId, $orderId]);
+        $lineInfo = $lineStmt->fetch();
+        if (!$lineInfo) jsonError('Line not found', 404);
+        if ($lineInfo['status'] === 'rejected') jsonError('Line already removed');
+
+        // Mark as rejected (removed) — keep order_qty for audit trail
+        $db->prepare("UPDATE requisition_lines SET status = 'rejected', fulfilled_qty = 0, store_notes = CONCAT(IFNULL(store_notes, ''), '[Removed by store]') WHERE id = ? AND requisition_id = ?")
+           ->execute([$lineId, $orderId]);
+
+        auditLog('store_remove_line', 'requisition_lines', $lineId, $lineInfo, ['status' => 'rejected']);
+        jsonResponse(['removed' => true, 'line_id' => $lineId]);
+        break;
+
+    // ── Restore a previously removed line item ──
+    case 'restore_line':
+        requireMethod('POST');
+        $lineId = (int)($input['line_id'] ?? 0);
+        $orderId = (int)($input['order_id'] ?? 0);
+        if (!$lineId || !$orderId) jsonError('Line ID and Order ID required');
+
+        // Verify the requisition belongs to this kitchen and is in pending/submitted state
+        $check = $db->prepare("SELECT r.status FROM requisitions r WHERE r.id = ? AND r.kitchen_id = ?");
+        $check->execute([$orderId, $kitchenId]);
+        $reqStatus = $check->fetchColumn();
+        if (!$reqStatus) jsonError('Order not found', 404);
+        if (!in_array($reqStatus, ['submitted', 'processing'])) jsonError('Can only modify pending orders');
+
+        // Verify the line is currently rejected
+        $lineStmt = $db->prepare("SELECT item_name, order_qty, status FROM requisition_lines WHERE id = ? AND requisition_id = ?");
+        $lineStmt->execute([$lineId, $orderId]);
+        $lineInfo = $lineStmt->fetch();
+        if (!$lineInfo) jsonError('Line not found', 404);
+        if ($lineInfo['status'] !== 'rejected') jsonError('Line is not removed');
+
+        // Restore to pending
+        $db->prepare("UPDATE requisition_lines SET status = 'pending', store_notes = CONCAT(IFNULL(store_notes, ''), '[Restored by store]') WHERE id = ? AND requisition_id = ?")
+           ->execute([$lineId, $orderId]);
+
+        auditLog('store_restore_line', 'requisition_lines', $lineId, ['status' => 'rejected'], ['status' => 'pending']);
+        jsonResponse(['restored' => true, 'line_id' => $lineId]);
+        break;
+
+    // ── Add a new line item to requisition (storekeeper) ──
+    case 'add_line':
+        requireMethod('POST');
+        $orderId = (int)($input['order_id'] ?? 0);
+        $itemId = (int)($input['item_id'] ?? 0);
+        $qty = (float)($input['qty'] ?? 0);
+        if (!$orderId || !$itemId || $qty <= 0) jsonError('Order ID, item ID, and quantity required');
+
+        // Verify the requisition belongs to this kitchen and is in pending/submitted state
+        $check = $db->prepare("SELECT r.status FROM requisitions r WHERE r.id = ? AND r.kitchen_id = ?");
+        $check->execute([$orderId, $kitchenId]);
+        $reqStatus = $check->fetchColumn();
+        if (!$reqStatus) jsonError('Order not found', 404);
+        if (!in_array($reqStatus, ['submitted', 'processing'])) jsonError('Can only modify pending orders');
+
+        // Get item details
+        $itemStmt = $db->prepare("SELECT id, name, uom FROM items WHERE id = ? AND is_active = 1");
+        $itemStmt->execute([$itemId]);
+        $item = $itemStmt->fetch();
+        if (!$item) jsonError('Item not found', 404);
+
+        // Check if item already exists in this requisition (and is not rejected)
+        $existCheck = $db->prepare("SELECT id, status FROM requisition_lines WHERE requisition_id = ? AND item_id = ? AND status != 'rejected'");
+        $existCheck->execute([$orderId, $itemId]);
+        $existing = $existCheck->fetch();
+        if ($existing) jsonError('Item already exists in this order. Adjust quantity instead.');
+
+        // Insert new line
+        $ins = $db->prepare("INSERT INTO requisition_lines (requisition_id, item_id, item_name, uom, order_qty, status, store_notes) VALUES (?, ?, ?, ?, ?, 'pending', '[Added by store]')");
+        $ins->execute([$orderId, $itemId, $item['name'], $item['uom'], $qty]);
+        $newLineId = $db->lastInsertId();
+
+        auditLog('store_add_line', 'requisition_lines', $newLineId, null, ['item' => $item['name'], 'qty' => $qty]);
+        jsonResponse(['added' => true, 'line_id' => $newLineId, 'item_name' => $item['name'], 'uom' => $item['uom']]);
         break;
 
     default:
