@@ -55,7 +55,7 @@ switch ($action) {
         $req = $stmt->fetch();
         if (!$req) jsonError('Requisition not found', 404);
 
-        $lines = $db->prepare("SELECT rl.*, i.stock_qty AS current_stock FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? ORDER BY rl.item_name");
+        $lines = $db->prepare("SELECT rl.*, i.stock_qty AS current_stock FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? AND rl.status != 'rejected' ORDER BY rl.item_name");
         $lines->execute([$id]);
         $lineData = $lines->fetchAll();
 
@@ -884,8 +884,8 @@ switch ($action) {
         $kid = (int)($_GET['kitchen_id'] ?? $kitchenId);
 
         $stmt = $db->prepare("SELECT r.*, u.name AS chef_name,
-            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count,
-            (SELECT COALESCE(SUM(order_qty), 0) FROM requisition_lines WHERE requisition_id = r.id) AS total_kg
+            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND status != 'rejected') AS line_count,
+            (SELECT COALESCE(SUM(order_qty), 0) FROM requisition_lines WHERE requisition_id = r.id AND status != 'rejected') AS total_kg
             FROM requisitions r
             LEFT JOIN users u ON u.id = r.created_by
             WHERE r.req_date = ? AND r.kitchen_id = ?
@@ -920,7 +920,7 @@ switch ($action) {
             }
             $lStmt = $db->prepare("SELECT rl.id, rl.requisition_id, rl.item_id, rl.item_name, rl.uom,
                 rl.order_qty, rl.fulfilled_qty, rl.received_qty, rl.unused_qty
-                FROM requisition_lines rl WHERE rl.requisition_id IN ($ph) ORDER BY rl.item_name");
+                FROM requisition_lines rl WHERE rl.requisition_id IN ($ph) AND rl.status != 'rejected' ORDER BY rl.item_name");
             $lStmt->execute(array_values($receivedIds));
             foreach ($lStmt->fetchAll() as $line) {
                 $linesByReq[(int)$line['requisition_id']][] = $line;
