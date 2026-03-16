@@ -16,15 +16,8 @@
     RewriteRule ^lib/ - [F,L]
     RewriteRule ^\.cache/ - [F,L]
 
-    # Kitchen-specific login URLs: /NLP, /TES, /SWC, etc.
     RewriteBase /
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    RewriteRule ^([A-Za-z]{2,10})/?$ index.php?kitchen=$1 [L,QSA]
 </IfModule>
-
-# Custom 404 (prevent Hostinger default 404 from intercepting rewrites)
-ErrorDocument 404 /index.php
 
 # Prevent directory listing
 Options -Indexes
