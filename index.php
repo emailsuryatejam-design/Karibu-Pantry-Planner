@@ -14,6 +14,26 @@ if (isLoggedIn()) {
 
 $error = '';
 
+// Kitchen-specific login: /NLP, /TES, /SWC, etc.
+$kitchenCode = strtoupper(trim($_GET['kitchen'] ?? ''));
+$kitchenFilter = null;
+
+if ($kitchenCode) {
+    try {
+        $db = getDB();
+        $kStmt = $db->prepare('SELECT id, name, code FROM kitchens WHERE code = ? AND is_active = 1');
+        $kStmt->execute([$kitchenCode]);
+        $kitchenFilter = $kStmt->fetch();
+        if (!$kitchenFilter) {
+            // Invalid kitchen code — redirect to root
+            header('Location: index.php');
+            exit;
+        }
+    } catch (Exception $e) {
+        $kitchenFilter = null;
+    }
+}
+
 // Handle login
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $username = trim($_POST['username'] ?? '');
@@ -54,10 +74,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Fetch users for staff picker
+// Fetch users for staff picker (filtered by kitchen if kitchen-specific URL)
 try {
     $db = getDB();
-    $users = $db->query('SELECT id, name, username, role FROM users WHERE is_active = 1 ORDER BY name')->fetchAll();
+    if ($kitchenFilter) {
+        $stmt = $db->prepare('SELECT id, name, username, role FROM users WHERE is_active = 1 AND kitchen_id = ? ORDER BY name');
+        $stmt->execute([$kitchenFilter['id']]);
+        $users = $stmt->fetchAll();
+    } else {
+        $users = $db->query('SELECT id, name, username, role FROM users WHERE is_active = 1 ORDER BY name')->fetchAll();
+    }
 } catch (Exception $e) {
     $users = [];
 }
@@ -88,8 +114,8 @@ try {
             <div class="w-16 h-16 bg-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg">
                 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21a1 1 0 0 0 1-1v-5.35c0-.457.316-.844.727-1.041a4 4 0 0 0-2.134-7.589 5 5 0 0 0-9.186 0 4 4 0 0 0-2.134 7.588c.411.198.727.585.727 1.041V20a1 1 0 0 0 1 1Z"/><path d="M6 17h12"/></svg>
             </div>
-            <h1 class="text-xl font-bold text-gray-900">Karibu Pantry Planner</h1>
-            <p class="text-sm text-gray-500 mt-1">Kitchen & Stores Management</p>
+            <h1 class="text-xl font-bold text-gray-900"><?= $kitchenFilter ? htmlspecialchars($kitchenFilter['name']) : 'Karibu Pantry Planner' ?></h1>
+            <p class="text-sm text-gray-500 mt-1"><?= $kitchenFilter ? 'Kitchen & Stores Login' : 'Kitchen & Stores Management' ?></p>
         </div>
 
         <!-- Login Card -->
