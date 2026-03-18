@@ -13,8 +13,14 @@ switch ($action) {
         $q = $_GET['q'] ?? '';
         $category = $_GET['category'] ?? '';
 
-        $sql = 'SELECT r.*, (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = r.id) as ingredient_count FROM recipes r WHERE 1=1';
+        $sql = 'SELECT r.*, u.name AS chef_name, (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = r.id) as ingredient_count FROM recipes r LEFT JOIN users u ON u.id = r.created_by WHERE 1=1';
         $params = [];
+
+        // Chefs see only their own recipes; admin/storekeeper see all
+        if ($user['role'] === 'chef') {
+            $sql .= ' AND r.created_by = ?';
+            $params[] = $user['id'];
+        }
 
         if ($q) {
             $sql .= ' AND (r.name LIKE ? OR r.cuisine LIKE ?)';
@@ -135,6 +141,53 @@ switch ($action) {
         $stmt = $db->prepare('SELECT id, name, code, category, uom, stock_qty FROM items WHERE is_active = 1 AND (name LIKE ? OR code LIKE ?) ORDER BY name LIMIT 20');
         $stmt->execute(["%$q%", "%$q%"]);
         jsonResponse(['items' => $stmt->fetchAll()]);
+        break;
+
+    // ── Assign all unowned recipes to a chef ──
+    case 'assign_unowned':
+        requireMethod('POST');
+        requireRole(['admin']);
+        $chefId = (int)($input['chef_id'] ?? 0);
+        if (!$chefId) jsonError('Chef ID required');
+        $stmt = $db->prepare('UPDATE recipes SET created_by = ? WHERE created_by IS NULL');
+        $stmt->execute([$chefId]);
+        jsonResponse(['assigned' => $stmt->rowCount()]);
+        break;
+
+    // ── Duplicate all recipes from one chef to another ──
+    case 'duplicate_for_chef':
+        requireMethod('POST');
+        requireRole(['admin']);
+        $fromChefId = (int)($input['from_chef_id'] ?? 0);
+        $toChefId = (int)($input['to_chef_id'] ?? 0);
+        if (!$fromChefId || !$toChefId) jsonError('from_chef_id and to_chef_id required');
+        if ($fromChefId === $toChefId) jsonError('Cannot duplicate to same chef');
+
+        // Get all source recipes
+        $srcRecipes = $db->prepare('SELECT * FROM recipes WHERE created_by = ?');
+        $srcRecipes->execute([$fromChefId]);
+        $recipes = $srcRecipes->fetchAll();
+        if (empty($recipes)) jsonError('No recipes found for source chef');
+
+        $insRecipe = $db->prepare('INSERT INTO recipes (name, category, cuisine, difficulty, prep_time, cook_time, servings, instructions, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $insIng = $db->prepare('INSERT INTO recipe_ingredients (recipe_id, item_id, item_name, qty, uom, is_primary) VALUES (?, ?, ?, ?, ?, ?)');
+        $getIngs = $db->prepare('SELECT * FROM recipe_ingredients WHERE recipe_id = ?');
+
+        $count = 0;
+        foreach ($recipes as $r) {
+            $insRecipe->execute([$r['name'], $r['category'], $r['cuisine'], $r['difficulty'], $r['prep_time'], $r['cook_time'], $r['servings'], $r['instructions'], $r['notes'], $toChefId]);
+            $newId = $db->lastInsertId();
+
+            // Copy ingredients
+            $getIngs->execute([$r['id']]);
+            foreach ($getIngs->fetchAll() as $ing) {
+                $insIng->execute([$newId, $ing['item_id'], $ing['item_name'], $ing['qty'], $ing['uom'], $ing['is_primary']]);
+            }
+            $count++;
+        }
+
+        auditLog('duplicate_recipes', 'recipes', null, null, ['from' => $fromChefId, 'to' => $toChefId, 'count' => $count]);
+        jsonResponse(['duplicated' => $count]);
         break;
 
     // ── Bulk fix: mark pantry staple ingredients as is_primary=0 ──
