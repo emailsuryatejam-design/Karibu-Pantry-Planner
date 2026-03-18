@@ -137,6 +137,29 @@ switch ($action) {
         jsonResponse(['items' => $stmt->fetchAll()]);
         break;
 
+    // ── Bulk fix: mark pantry staple ingredients as is_primary=0 ──
+    case 'fix_staples':
+        requireMethod('POST');
+        requireRole(['admin']);
+        $staples = [
+            'salt', 'black pepper', 'oil', 'cooking oil', 'olive oil', 'sunflower oil',
+            'oil (sunflower)', 'sugar', 'brown sugar', 'castor sugar',
+            'aromat', 'soy sauce', 'balsamic vinegar', 'vinegar',
+            'turmeric powder', 'turmeric', 'paprika', 'cayenne pepper', 'curry powder',
+            'cumin', 'coriander powder', 'chilli paste', 'garlic paste',
+            'vanilla essence', 'vanilla', 'baking powder', 'baking soda',
+            'bicarbonate of soda', 'corn flour', 'cornstarch', 'corn starch',
+            'wheat flour', 'flour', 'dijon mustard', 'ketchup',
+            'tomato paste', 'pesto sauce', 'fish sauce', 'curry sauce',
+            'golden syrup', 'cocoa powder', 'chicken cubes', 'vegetable cubes',
+            'gelatine', 'cream cheese', 'condensed milk',
+        ];
+        $ph = implode(',', array_fill(0, count($staples), '?'));
+        $stmt = $db->prepare("UPDATE recipe_ingredients SET is_primary = 0 WHERE LOWER(item_name) IN ($ph) AND is_primary = 1");
+        $stmt->execute($staples);
+        jsonResponse(['updated' => $stmt->rowCount()]);
+        break;
+
     default:
         jsonError('Unknown action');
 }
