@@ -182,9 +182,13 @@ async function rLoadDetail(id) {
             ings.forEach(ing => {
                 const totalQty = parseFloat(ing.qty);
                 const perPortion = (totalQty / servings).toFixed(3).replace(/\.?0+$/, '');
+                const isPrimary = parseInt(ing.is_primary) === 1;
                 html += `<div class="flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-gray-50">
-                    <span class="w-1.5 h-1.5 rounded-full shrink-0 ${ing.is_primary ? 'bg-orange-400' : 'bg-gray-300'}"></span>
-                    <span class="text-xs text-gray-800 truncate flex-1">${ing.item_name}</span>
+                    <button onclick="rTogglePrimary(${ing.id}, ${id}, ${isPrimary ? 0 : 1})" title="${isPrimary ? 'Order from store — tap to mark as pantry staple' : 'Pantry staple — tap to order from store'}"
+                        class="w-5 h-5 rounded-full shrink-0 flex items-center justify-center transition-colors ${isPrimary ? 'bg-orange-400 hover:bg-orange-300' : 'bg-gray-200 hover:bg-gray-300'} compact-btn">
+                        ${isPrimary ? '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>' : ''}
+                    </button>
+                    <span class="text-xs ${isPrimary ? 'text-gray-800' : 'text-gray-400 line-through'} truncate flex-1">${ing.item_name}</span>
                     <span class="text-[10px] text-gray-500 shrink-0">${totalQty} ${ing.uom}</span>
                     <span class="text-[9px] text-blue-500 shrink-0 bg-blue-50 px-1 py-0.5 rounded">${perPortion}/${ing.uom} pp</span>
                     <button onclick="rRemoveIngredient(${ing.id}, ${id})" class="text-gray-300 hover:text-red-500 transition compact-btn p-0.5" title="Remove">
@@ -468,6 +472,14 @@ async function rRemoveIngredient(ingredientId, recipeId) {
     try {
         await api('api/recipes.php', { method: 'POST', body: { action: 'remove_ingredient', id: ingredientId } });
         showToast('Ingredient removed');
+        rLoadDetail(recipeId);
+    } catch(e) { showToast(e.message || 'Failed', 'error'); }
+}
+
+async function rTogglePrimary(ingredientId, recipeId, newValue) {
+    try {
+        await api('api/recipes.php', { method: 'POST', body: { action: 'toggle_primary', id: ingredientId, is_primary: newValue } });
+        showToast(newValue ? 'Will order from store' : 'Marked as pantry staple', 'success');
         rLoadDetail(recipeId);
     } catch(e) { showToast(e.message || 'Failed', 'error'); }
 }
