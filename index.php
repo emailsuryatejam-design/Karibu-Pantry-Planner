@@ -8,7 +8,7 @@ header('X-LiteSpeed-Cache-Control: no-cache');
 
 // Already logged in? Go to app
 if (isLoggedIn()) {
-    header('Location: app.php');
+    header('Location: /app.php');
     exit;
 }
 
@@ -26,7 +26,7 @@ if ($kitchenCode) {
         $kitchenFilter = $kStmt->fetch();
         if (!$kitchenFilter) {
             // Invalid kitchen code — redirect to root
-            header('Location: index.php');
+            header('Location: /index.php');
             exit;
         }
     } catch (Exception $e) {
@@ -64,7 +64,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'kitchen_id' => $user['kitchen_id'],
                 'kitchen_name' => $kitchenName,
             ];
-            header('Location: app.php');
+            header('Location: /app.php');
             exit;
         } else {
             $error = 'Invalid username or PIN';
