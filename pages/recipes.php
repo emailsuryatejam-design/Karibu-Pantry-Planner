@@ -22,6 +22,16 @@
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
     </div>
 
+    <!-- Chef Filter (admin only) -->
+    <?php if (($user['role'] ?? '') === 'admin'): ?>
+    <div class="mb-3" id="rChefFilterWrap">
+        <select id="rChefFilter" onchange="rLoadRecipes()"
+            class="w-full bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-orange-200">
+            <option value="">All Chefs</option>
+        </select>
+    </div>
+    <?php endif; ?>
+
     <!-- Category Tabs -->
     <div class="flex gap-1.5 mb-3 overflow-x-auto pb-1">
         <button onclick="rFilterCat('')" id="rCatAll" class="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-orange-500 text-white compact-btn">All</button>
@@ -79,14 +89,33 @@ async function rLoadRecipes() {
     document.getElementById('rEmpty').classList.add('hidden');
 
     const q = document.getElementById('rSearchInput').value.trim();
+    const chefFilter = document.getElementById('rChefFilter');
+    const chefId = chefFilter ? chefFilter.value : '';
+
     let url = `api/recipes.php?action=list`;
     if (q) url += `&q=${encodeURIComponent(q)}`;
     if (rCategory) url += `&category=${rCategory}`;
+    if (chefId) url += `&chef_id=${chefId}`;
 
     try {
         const data = await api(url);
         rRecipes = data.recipes || [];
         document.getElementById('rCount').textContent = `${rRecipes.length} recipe${rRecipes.length !== 1 ? 's' : ''}`;
+
+        // Populate chef filter dropdown from results (admin only, first load)
+        if (chefFilter && chefFilter.options.length <= 1) {
+            const chefs = {};
+            rRecipes.forEach(r => {
+                if (r.created_by && r.chef_name) chefs[r.created_by] = r.chef_name;
+            });
+            Object.entries(chefs).sort((a, b) => a[1].localeCompare(b[1])).forEach(([id, name]) => {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = name;
+                chefFilter.appendChild(opt);
+            });
+        }
+
         rRenderList();
     } catch (err) { showToast(err.message, 'error'); }
     finally { document.getElementById('rLoading').classList.add('hidden'); }
@@ -109,6 +138,7 @@ function rRenderList() {
                         <span class="text-[10px] text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full">${catLabels[r.category] || r.category}</span>
                         ${r.cuisine ? `<span class="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">${r.cuisine}</span>` : ''}
                         <span class="text-[10px] text-gray-400">${r.ingredient_count || 0} ing</span>
+                        ${r.chef_name ? `<span class="text-[10px] text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full">${r.chef_name}</span>` : ''}
                     </div>
                 </div>
                 <div class="flex items-center gap-2 shrink-0">

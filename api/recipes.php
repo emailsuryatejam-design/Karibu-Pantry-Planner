@@ -16,10 +16,13 @@ switch ($action) {
         $sql = 'SELECT r.*, u.name AS chef_name, (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = r.id) as ingredient_count FROM recipes r LEFT JOIN users u ON u.id = r.created_by WHERE 1=1';
         $params = [];
 
-        // Chefs see only their own recipes; admin/storekeeper see all
+        // Chefs see only their own recipes; admin/storekeeper see all (with optional chef filter)
         if ($user['role'] === 'chef') {
             $sql .= ' AND r.created_by = ?';
             $params[] = $user['id'];
+        } elseif (!empty($_GET['chef_id'])) {
+            $sql .= ' AND r.created_by = ?';
+            $params[] = (int)$_GET['chef_id'];
         }
 
         if ($q) {
