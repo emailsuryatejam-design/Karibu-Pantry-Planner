@@ -123,6 +123,17 @@ switch ($action) {
         jsonResponse(['ingredient_id' => $db->lastInsertId()]);
         break;
 
+    // ── Toggle ingredient primary/staple status ──
+    case 'toggle_primary':
+        requireMethod('POST');
+        $id = (int)($input['id'] ?? 0);
+        $isPrimary = (int)($input['is_primary'] ?? 0);
+        if (!$id) jsonError('Ingredient ID required');
+
+        $db->prepare('UPDATE recipe_ingredients SET is_primary = ? WHERE id = ?')->execute([$isPrimary, $id]);
+        jsonResponse(['updated' => true, 'is_primary' => $isPrimary]);
+        break;
+
     // ── Remove ingredient ──
     case 'remove_ingredient':
         requireMethod('POST');
