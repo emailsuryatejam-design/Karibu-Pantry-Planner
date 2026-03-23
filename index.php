@@ -215,6 +215,11 @@ try {
             deferredPrompt = null;
         });
 
+        // Register service worker for PWA install
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+        }
+
         let pin = '';
         const dots = document.querySelectorAll('.pin-dot');
         const pinInput = document.getElementById('pinInput');
