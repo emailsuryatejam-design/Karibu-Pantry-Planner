@@ -43,9 +43,46 @@ switch ($action) {
 
         $stmt = $db->prepare('INSERT INTO users (name, username, pin, role, kitchen_id) VALUES (?, ?, ?, ?, ?)');
         $stmt->execute([$name, $username, $pin, $role, $kitchenId]);
+        $newUserId = $db->lastInsertId();
 
-        auditLog('create_user', 'users', $db->lastInsertId(), null, ['name' => $name, 'role' => $role]);
-        jsonResponse(['id' => $db->lastInsertId()]);
+        // Auto-copy recipes for new chefs from an existing chef in the same kitchen (or admin)
+        $recipesCopied = 0;
+        if ($role === 'chef') {
+            // Find a template chef: first chef in same kitchen, or admin (id=1)
+            $templateChefId = null;
+            if ($kitchenId) {
+                $tStmt = $db->prepare("SELECT id FROM users WHERE role = 'chef' AND kitchen_id = ? AND id != ? AND is_active = 1 LIMIT 1");
+                $tStmt->execute([$kitchenId, $newUserId]);
+                $templateChefId = $tStmt->fetchColumn();
+            }
+            // Fallback: find any chef with recipes
+            if (!$templateChefId) {
+                $templateChefId = $db->query("SELECT created_by FROM recipes WHERE created_by IS NOT NULL GROUP BY created_by ORDER BY COUNT(*) DESC LIMIT 1")->fetchColumn();
+            }
+
+            if ($templateChefId) {
+                $srcRecipes = $db->prepare('SELECT * FROM recipes WHERE created_by = ?');
+                $srcRecipes->execute([$templateChefId]);
+                $recipes = $srcRecipes->fetchAll();
+
+                $insRecipe = $db->prepare('INSERT INTO recipes (name, category, cuisine, difficulty, prep_time, cook_time, servings, instructions, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                $insIng = $db->prepare('INSERT INTO recipe_ingredients (recipe_id, item_id, item_name, qty, uom, is_primary) VALUES (?, ?, ?, ?, ?, ?)');
+                $getIngs = $db->prepare('SELECT * FROM recipe_ingredients WHERE recipe_id = ?');
+
+                foreach ($recipes as $r) {
+                    $insRecipe->execute([$r['name'], $r['category'], $r['cuisine'], $r['difficulty'], $r['prep_time'], $r['cook_time'], $r['servings'], $r['instructions'], $r['notes'], $newUserId]);
+                    $newRecipeId = $db->lastInsertId();
+                    $getIngs->execute([$r['id']]);
+                    foreach ($getIngs->fetchAll() as $ing) {
+                        $insIng->execute([$newRecipeId, $ing['item_id'], $ing['item_name'], $ing['qty'], $ing['uom'], $ing['is_primary']]);
+                    }
+                    $recipesCopied++;
+                }
+            }
+        }
+
+        auditLog('create_user', 'users', $newUserId, null, ['name' => $name, 'role' => $role, 'recipes_copied' => $recipesCopied]);
+        jsonResponse(['id' => $newUserId, 'recipes_copied' => $recipesCopied]);
         break;
 
     // ── Update user ──
