@@ -182,10 +182,39 @@ try {
             </form>
         </div>
 
+        <!-- Install App Button (shown only when PWA install is available) -->
+        <button id="installBtn" class="hidden w-full mt-4 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2 shadow-sm">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            Install App
+        </button>
+
         <p class="text-center text-xs text-gray-400 mt-4">Karibu Camps &mdash; Pantry Planner</p>
     </div>
 
     <script>
+        // PWA Install prompt
+        let deferredPrompt = null;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            document.getElementById('installBtn').classList.remove('hidden');
+        });
+
+        document.getElementById('installBtn').addEventListener('click', async () => {
+            if (!deferredPrompt) return;
+            deferredPrompt.prompt();
+            const result = await deferredPrompt.userChoice;
+            if (result.outcome === 'accepted') {
+                document.getElementById('installBtn').classList.add('hidden');
+            }
+            deferredPrompt = null;
+        });
+
+        window.addEventListener('appinstalled', () => {
+            document.getElementById('installBtn').classList.add('hidden');
+            deferredPrompt = null;
+        });
+
         let pin = '';
         const dots = document.querySelectorAll('.pin-dot');
         const pinInput = document.getElementById('pinInput');
