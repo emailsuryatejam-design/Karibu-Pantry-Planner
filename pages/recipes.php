@@ -390,8 +390,8 @@ function riDoSearch() {
                         onclick="riSelectItem(+this.dataset.id, this.dataset.name, this.dataset.uom)"
                         class="w-full text-left px-4 py-2.5 hover:bg-orange-50 text-sm text-gray-700 compact-btn border-b border-gray-50 last:border-0 transition">
                         ${safeName} <span class="text-[10px] text-gray-400">${safeCat} · ${safeUom}</span>
-                    </button>`
-                ).join('');
+                    </button>`;
+                }).join('');
             }
             container.classList.remove('hidden');
         } catch(e) {}
