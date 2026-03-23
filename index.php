@@ -63,6 +63,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'camp_name' => $user['camp_name'],
                 'kitchen_id' => $user['kitchen_id'],
                 'kitchen_name' => $kitchenName,
+                'kitchen_code' => $kitchenCode ?: null,
             ];
             header('Location: /app.php');
             exit;
