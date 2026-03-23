@@ -175,11 +175,8 @@ async function soOpenDetail(orderId) {
         if (canSend) {
             // ── Pending: editable layout — Requested (locked) → Issuing (editable) + Remove button ──
             html += `
-                <div class="grid grid-cols-[1fr_70px_100px_28px] gap-1.5 px-1 mb-1">
-                    <span class="text-[9px] text-gray-400 uppercase tracking-wider font-semibold">Item</span>
-                    <span class="text-[9px] text-orange-500 uppercase tracking-wider font-semibold text-center">Requested</span>
-                    <span class="text-[9px] text-green-600 uppercase tracking-wider font-semibold text-center">Issuing</span>
-                    <span></span>
+                <div class="flex items-center justify-between px-1 mb-2">
+                    <span class="text-[10px] text-gray-500 uppercase tracking-wider font-semibold">${activeLines.length} item${activeLines.length !== 1 ? 's' : ''} to issue</span>
                 </div>`;
             html += `<div class="space-y-1.5" id="soActiveLines">`;
             activeLines.forEach(line => {
@@ -318,33 +315,30 @@ async function soOpenDetail(orderId) {
 
 // ── Helper: render a single active line row ──
 function soActiveLineHtml(line, reqQty) {
-    return `<div class="bg-gray-50 rounded-xl px-3 py-2.5" id="so-line-${line.id}">
-        <div class="grid grid-cols-[1fr_70px_100px_28px] gap-1.5 items-center">
-            <div class="min-w-0">
+    return `<div class="bg-gray-50 rounded-xl px-3 py-3" id="so-line-${line.id}">
+        <div class="flex items-center justify-between mb-2">
+            <div class="min-w-0 flex-1">
                 <p class="font-semibold text-sm text-gray-800 truncate">${line.item_name}</p>
                 <p class="text-[10px] text-gray-400">${line.uom}</p>
             </div>
-            <div class="bg-orange-50 border border-orange-200 rounded-lg py-1.5 text-center">
-                <span class="text-sm font-bold text-orange-700">${reqQty}</span>
-                <span class="text-[10px] text-orange-500 ml-0.5">${line.uom}</span>
-            </div>
-            <div class="flex items-center justify-center gap-0.5">
-                <button onclick="soAdjLine(${line.id}, 'qty', -1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">-</button>
-                <input type="number" value="${reqQty}" step="0.5" min="0" max="${reqQty * 2}" id="send_${line.id}"
-                    class="w-14 text-center text-sm font-semibold border border-green-300 rounded-lg px-0.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-green-50">
-                <button onclick="soAdjLine(${line.id}, 'qty', 1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">+</button>
-            </div>
             <button onclick="soRemoveLine(${line.id}, ${soCurrentOrderId || 0})" title="Remove item"
-                class="w-7 h-7 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-400 hover:text-red-600 flex items-center justify-center transition compact-btn">
+                class="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-400 hover:text-red-600 flex items-center justify-center transition compact-btn ml-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
         </div>
-        <div class="flex items-center gap-3 mt-1.5 pl-0">
-            <div class="flex items-center gap-1">
-                <span class="text-[10px] text-gray-400">Pack:</span>
-                <input type="number" value="1" step="0.5" min="0.1" id="unit_${line.id}"
-                    class="w-12 text-center text-[11px] border border-gray-200 rounded px-0.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-green-200 compact-btn bg-white">
-                <span class="text-[10px] text-gray-400">${line.uom}</span>
+        <div class="flex items-center gap-3">
+            <div class="bg-orange-50 border border-orange-200 rounded-lg px-3 py-2 text-center min-w-[65px]">
+                <span class="text-[9px] text-orange-400 block">Requested</span>
+                <span class="text-base font-bold text-orange-700">${reqQty}</span>
+            </div>
+            <div class="flex-1">
+                <span class="text-[9px] text-green-500 font-medium block mb-1">Issuing</span>
+                <div class="flex items-center gap-1">
+                    <button onclick="soAdjLine(${line.id}, 'qty', -1)" class="w-9 h-9 rounded-lg bg-white border border-gray-200 text-gray-600 font-bold text-lg flex items-center justify-center compact-btn active:bg-gray-100">-</button>
+                    <input type="number" value="${reqQty}" step="0.5" min="0" max="${reqQty * 2}" id="send_${line.id}"
+                        class="flex-1 text-center text-lg font-bold border-2 border-green-300 rounded-xl px-1 py-2 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-green-50 min-w-[60px]">
+                    <button onclick="soAdjLine(${line.id}, 'qty', 1)" class="w-9 h-9 rounded-lg bg-white border border-gray-200 text-gray-600 font-bold text-lg flex items-center justify-center compact-btn active:bg-gray-100">+</button>
+                </div>
             </div>
         </div>
     </div>`;

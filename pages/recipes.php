@@ -173,6 +173,10 @@ async function rLoadDetail(id) {
         if (ings.length === 0) {
             html += `<p class="text-xs text-gray-400">No ingredients yet — add items from the pantry</p>`;
         } else {
+            html += `<div class="flex gap-3 mb-1.5 text-[9px] text-gray-400">
+                <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-orange-400 inline-block"></span> Order from store</span>
+                <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-gray-300 inline-block"></span> Pantry staple (auto-skip)</span>
+            </div>`;
             html += `<div class="space-y-1">`;
             const servings = parseInt(r.servings) || 1;
             ings.forEach(ing => {
@@ -346,7 +350,8 @@ function rShowAddIngredient(recipeId) {
                 </select>
             </div>
             <label class="flex items-center gap-2 text-xs text-gray-600">
-                <input type="checkbox" id="riPrimary" checked class="rounded text-orange-500 focus:ring-orange-300"> Primary ingredient
+                <input type="checkbox" id="riPrimary" checked class="rounded text-orange-500 focus:ring-orange-300">
+                <span>Order from store <span class="text-[10px] text-gray-400">(uncheck for pantry staples like salt, oil)</span></span>
             </label>
             <button onclick="riSave(${recipeId})" id="riSaveBtn"
                 class="w-full bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-lg text-sm font-semibold transition">
@@ -373,10 +378,14 @@ function riDoSearch() {
             if (items.length === 0) {
                 container.innerHTML = '<div class="px-4 py-3 text-xs text-gray-400">No items found</div>';
             } else {
-                container.innerHTML = items.map(item =>
-                    `<button onclick="riSelectItem(${item.id}, '${item.name.replace(/'/g,"\\'")}', '${item.uom}')"
+                container.innerHTML = items.map(item => {
+                    const safeName = escHtml(item.name);
+                    const safeCat = escHtml(item.category || '');
+                    const safeUom = escHtml(item.uom || 'kg');
+                    return `<button data-id="${item.id}" data-name="${safeName}" data-uom="${safeUom}"
+                        onclick="riSelectItem(+this.dataset.id, this.dataset.name, this.dataset.uom)"
                         class="w-full text-left px-4 py-2.5 hover:bg-orange-50 text-sm text-gray-700 compact-btn border-b border-gray-50 last:border-0 transition">
-                        ${item.name} <span class="text-[10px] text-gray-400">${item.category} · ${item.uom}</span>
+                        ${safeName} <span class="text-[10px] text-gray-400">${safeCat} · ${safeUom}</span>
                     </button>`
                 ).join('');
             }

@@ -957,14 +957,28 @@ switch ($action) {
     // ── Search recipes for dish picker ──
     case 'search_recipes':
         $q = trim($_GET['q'] ?? '');
-        if (strlen($q) < 2) jsonError('Search query too short');
 
-        $escaped = escapeLike($q);
-        $stmt = $db->prepare("SELECT id, name, cuisine, servings, prep_time,
+        $sql = "SELECT id, name, cuisine, servings, prep_time,
             (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = recipes.id) AS ingredient_count
-            FROM recipes WHERE (name LIKE ? OR cuisine LIKE ?)
-            ORDER BY name LIMIT 20");
-        $stmt->execute(["%$escaped%", "%$escaped%"]);
+            FROM recipes WHERE 1=1";
+        $params = [];
+
+        // Chef sees only their own recipes
+        if ($user['role'] === 'chef') {
+            $sql .= ' AND created_by = ?';
+            $params[] = $user['id'];
+        }
+
+        if (strlen($q) >= 2) {
+            $escaped = escapeLike($q);
+            $sql .= ' AND (name LIKE ? OR cuisine LIKE ?)';
+            $params[] = "%$escaped%";
+            $params[] = "%$escaped%";
+        }
+
+        $sql .= ' ORDER BY name LIMIT 30';
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
         $recipes = $stmt->fetchAll();
 
         jsonResponse(['recipes' => $recipes]);
