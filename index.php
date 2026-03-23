@@ -14,23 +14,27 @@ if (isLoggedIn()) {
 
 $error = '';
 
-// Kitchen-specific login: /NLP, /TES, /SWC, etc.
+// Kitchen-specific login: ?kitchen=SWC or /SWC/
 $kitchenCode = strtoupper(trim($_GET['kitchen'] ?? ''));
 $kitchenFilter = null;
 
+// Load all active kitchens for the dropdown
+$kitchens = [];
+try {
+    $db = getDB();
+    $kitchens = $db->query('SELECT id, name, code FROM kitchens WHERE is_active = 1 ORDER BY name')->fetchAll();
+} catch (Exception $e) {}
+
 if ($kitchenCode) {
-    try {
-        $db = getDB();
-        $kStmt = $db->prepare('SELECT id, name, code FROM kitchens WHERE code = ? AND is_active = 1');
-        $kStmt->execute([$kitchenCode]);
-        $kitchenFilter = $kStmt->fetch();
-        if (!$kitchenFilter) {
-            // Invalid kitchen code — redirect to root
-            header('Location: /index.php');
-            exit;
+    foreach ($kitchens as $k) {
+        if (strtoupper($k['code']) === $kitchenCode) {
+            $kitchenFilter = $k;
+            break;
         }
-    } catch (Exception $e) {
-        $kitchenFilter = null;
+    }
+    if (!$kitchenFilter) {
+        header('Location: /index.php');
+        exit;
     }
 }
 
@@ -46,13 +50,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $user = $stmt->fetch();
 
         if ($user) {
-            // Get kitchen name
+            // Get kitchen name and code for this user
             $kitchenName = '';
+            $userKitchenCode = null;
             if ($user['kitchen_id']) {
-                $kStmt = $db->prepare('SELECT name FROM kitchens WHERE id = ?');
+                $kStmt = $db->prepare('SELECT name, code FROM kitchens WHERE id = ?');
                 $kStmt->execute([$user['kitchen_id']]);
                 $kitchen = $kStmt->fetch();
-                $kitchenName = $kitchen ? $kitchen['name'] : '';
+                if ($kitchen) {
+                    $kitchenName = $kitchen['name'];
+                    $userKitchenCode = $kitchen['code'];
+                }
             }
             $_SESSION['user'] = [
                 'id' => $user['id'],
@@ -63,7 +71,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'camp_name' => $user['camp_name'],
                 'kitchen_id' => $user['kitchen_id'],
                 'kitchen_name' => $kitchenName,
-                'kitchen_code' => $kitchenCode ?: null,
+                'kitchen_code' => $userKitchenCode,
             ];
             header('Location: /app.php');
             exit;
@@ -75,19 +83,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Fetch users for staff picker (filtered by kitchen if kitchen-specific URL)
+// Fetch ALL users with their kitchen_id (JS will filter client-side)
+$allUsers = [];
 try {
     $db = getDB();
-    if ($kitchenFilter) {
-        $stmt = $db->prepare('SELECT id, name, username, role FROM users WHERE is_active = 1 AND kitchen_id = ? ORDER BY name');
-        $stmt->execute([$kitchenFilter['id']]);
-        $users = $stmt->fetchAll();
-    } else {
-        $users = $db->query('SELECT id, name, username, role FROM users WHERE is_active = 1 ORDER BY name')->fetchAll();
-    }
-} catch (Exception $e) {
-    $users = [];
-}
+    $allUsers = $db->query('SELECT id, name, username, role, kitchen_id FROM users WHERE is_active = 1 ORDER BY name')->fetchAll();
+} catch (Exception $e) {}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -115,24 +116,41 @@ try {
             <div class="w-16 h-16 bg-orange-500 rounded-2xl flex items-center justify-center mx-auto mb-3 shadow-lg">
                 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21a1 1 0 0 0 1-1v-5.35c0-.457.316-.844.727-1.041a4 4 0 0 0-2.134-7.589 5 5 0 0 0-9.186 0 4 4 0 0 0-2.134 7.588c.411.198.727.585.727 1.041V20a1 1 0 0 0 1 1Z"/><path d="M6 17h12"/></svg>
             </div>
-            <h1 class="text-xl font-bold text-gray-900"><?= $kitchenFilter ? htmlspecialchars($kitchenFilter['name']) : 'Karibu Pantry Planner' ?></h1>
-            <p class="text-sm text-gray-500 mt-1"><?= $kitchenFilter ? 'Kitchen & Stores Login' : 'Kitchen & Stores Management' ?></p>
+            <h1 class="text-xl font-bold text-gray-900" id="loginTitle"><?= $kitchenFilter ? htmlspecialchars($kitchenFilter['name']) : 'Karibu Pantry Planner' ?></h1>
+            <p class="text-sm text-gray-500 mt-1">Kitchen & Stores Login</p>
         </div>
 
         <!-- Login Card -->
         <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
             <form method="POST" id="loginForm">
-                <!-- Staff Picker -->
+
+                <!-- Camp Picker -->
                 <div class="px-5 pt-5 pb-3">
+                    <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Select Camp</label>
+                    <select id="campSelect" onchange="onCampChange()"
+                        class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 appearance-none <?= $kitchenFilter ? 'opacity-70' : '' ?>"
+                        <?= $kitchenFilter ? 'disabled' : '' ?>>
+                        <?php if (!$kitchenFilter): ?>
+                            <option value="">-- Choose your camp --</option>
+                        <?php endif; ?>
+                        <?php foreach ($kitchens as $k): ?>
+                            <option value="<?= (int)$k['id'] ?>" data-code="<?= htmlspecialchars($k['code']) ?>"
+                                <?= ($kitchenFilter && $kitchenFilter['id'] == $k['id']) ? 'selected' : '' ?>>
+                                <?= htmlspecialchars($k['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <?php if ($kitchenFilter): ?>
+                        <p class="text-[10px] text-orange-500 mt-1">Locked to this camp</p>
+                    <?php endif; ?>
+                </div>
+
+                <!-- Staff Picker (filtered by camp) -->
+                <div class="px-5 pb-3">
                     <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 block">Select Staff</label>
                     <select name="username" id="staffSelect" required
                         class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400 appearance-none">
                         <option value="">-- Choose your name --</option>
-                        <?php foreach ($users as $u): ?>
-                            <option value="<?= htmlspecialchars($u['username']) ?>">
-                                <?= htmlspecialchars($u['name']) ?> (<?= ucfirst($u['role']) ?>)
-                            </option>
-                        <?php endforeach; ?>
                     </select>
                 </div>
 
@@ -182,7 +200,7 @@ try {
             </form>
         </div>
 
-        <!-- Install App Button (shown only when PWA install is available) -->
+        <!-- Install App Button -->
         <button id="installBtn" class="hidden w-full mt-4 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2 shadow-sm">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
             Install App
@@ -192,6 +210,39 @@ try {
     </div>
 
     <script>
+        // All users data (JS filters by camp selection)
+        const allUsers = <?= json_encode(array_map(fn($u) => [
+            'name' => $u['name'],
+            'username' => $u['username'],
+            'role' => $u['role'],
+            'kitchen_id' => (int)$u['kitchen_id'],
+        ], $allUsers)) ?>;
+
+        const lockedKitchen = <?= $kitchenFilter ? (int)$kitchenFilter['id'] : 'null' ?>;
+
+        function onCampChange() {
+            const campId = parseInt(document.getElementById('campSelect').value) || 0;
+            const staffSelect = document.getElementById('staffSelect');
+
+            // Filter users by selected camp
+            const filtered = campId ? allUsers.filter(u => u.kitchen_id === campId) : allUsers;
+
+            staffSelect.innerHTML = '<option value="">-- Choose your name --</option>' +
+                filtered.map(u => `<option value="${u.username}">${u.name} (${u.role.charAt(0).toUpperCase() + u.role.slice(1)})</option>`).join('');
+
+            // Update title
+            const campOption = document.getElementById('campSelect').selectedOptions[0];
+            const title = document.getElementById('loginTitle');
+            if (campId && campOption) {
+                title.textContent = campOption.textContent.trim();
+            } else {
+                title.textContent = 'Karibu Pantry Planner';
+            }
+        }
+
+        // Init: load users for pre-selected camp (or all)
+        onCampChange();
+
         // PWA Install prompt
         let deferredPrompt = null;
         window.addEventListener('beforeinstallprompt', (e) => {
@@ -199,27 +250,24 @@ try {
             deferredPrompt = e;
             document.getElementById('installBtn').classList.remove('hidden');
         });
-
         document.getElementById('installBtn').addEventListener('click', async () => {
             if (!deferredPrompt) return;
             deferredPrompt.prompt();
             const result = await deferredPrompt.userChoice;
-            if (result.outcome === 'accepted') {
-                document.getElementById('installBtn').classList.add('hidden');
-            }
+            if (result.outcome === 'accepted') document.getElementById('installBtn').classList.add('hidden');
             deferredPrompt = null;
         });
-
         window.addEventListener('appinstalled', () => {
             document.getElementById('installBtn').classList.add('hidden');
             deferredPrompt = null;
         });
 
-        // Register service worker for PWA install
+        // Register service worker
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/service-worker.js').catch(() => {});
         }
 
+        // PIN pad
         let pin = '';
         const dots = document.querySelectorAll('.pin-dot');
         const pinInput = document.getElementById('pinInput');
