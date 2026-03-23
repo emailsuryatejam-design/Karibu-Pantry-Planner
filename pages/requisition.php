@@ -639,12 +639,21 @@ function rqPmClose() {
 //  Add Dish Modal
 // ═══════════════════════════════════════
 
-function rqOpenAddDish() {
+async function rqOpenAddDish() {
     document.getElementById('rqAddDishModal').classList.remove('hidden');
     document.getElementById('rqDishSearch').value = '';
-    document.getElementById('rqDishResults').innerHTML = '';
-    document.getElementById('rqDishResultsHint').classList.remove('hidden');
+    document.getElementById('rqDishResultsHint').classList.add('hidden');
     setTimeout(() => document.getElementById('rqDishSearch').focus(), 100);
+
+    // Auto-load all recipes on open so chef can browse without typing
+    try {
+        const data = await api('api/requisitions.php?action=search_recipes&q=');
+        rqDishSearchResults = data.recipes || [];
+        rqRenderDishResults();
+    } catch {
+        document.getElementById('rqDishResults').innerHTML = '';
+        document.getElementById('rqDishResultsHint').classList.remove('hidden');
+    }
 }
 
 function rqCloseAddDish() {
@@ -661,10 +670,8 @@ async function rqSearchDishes() {
     const q = document.getElementById('rqDishSearch').value.trim();
     const container = document.getElementById('rqDishResults');
     const hint = document.getElementById('rqDishResultsHint');
-    if (q.length < 2) {
-        container.innerHTML = '';
-        hint.classList.remove('hidden');
-        rqDishSearchResults = [];
+    if (q.length > 0 && q.length < 2) {
+        // Wait for at least 2 chars when typing
         return;
     }
 
@@ -836,26 +843,30 @@ function rqRenderSelectedDishes(isDraft) {
         const dishPortions = d.dish_portions || rqGuestCount;
         const scaleFactor = (dishPortions / (d.recipe_servings || 4)).toFixed(1);
         const scaledTotal = d.ingredients.length;
-        html += `<div class="bg-white rounded-xl border border-gray-200 px-3 py-2.5 ${isDraft ? 'cursor-pointer active:bg-gray-50' : ''}" ${isDraft ? `onclick="rqShowPortionsModal(${d.recipe_id})"` : ''}>
+        html += `<div class="bg-white rounded-xl border border-gray-200 px-3 py-3 ${isDraft ? 'cursor-pointer active:bg-orange-50 hover:border-orange-200 transition-colors' : ''}" ${isDraft ? `onclick="rqShowPortionsModal(${d.recipe_id})"` : ''}>
             <div class="flex items-center justify-between">
-                <div class="flex items-center gap-2 flex-1 min-w-0">
-                    <div class="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
+                <div class="flex items-center gap-2.5 flex-1 min-w-0">
+                    <div class="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
                     </div>
                     <div class="min-w-0">
-                        <div class="text-sm font-medium text-gray-800 truncate">${escHtml(d.recipe_name)}</div>
+                        <div class="text-sm font-semibold text-gray-800 truncate">${escHtml(d.recipe_name)}</div>
                         <div class="text-[10px] text-gray-400">
                             Std: ${d.recipe_servings} &bull; &times;${scaleFactor} &bull; ${scaledTotal} items
                         </div>
                     </div>
                 </div>
-                <div class="flex items-center gap-1.5 shrink-0">
-                    <span class="text-sm font-bold text-orange-600">${dishPortions} pax</span>
-                    ${isDraft ? `<button onclick="event.stopPropagation();rqRemoveDish(${d.recipe_id})" class="text-gray-300 hover:text-red-500 transition p-1 compact-btn">
+                <div class="flex items-center gap-2 shrink-0">
+                    ${isDraft ? `<div class="bg-orange-50 border border-orange-200 rounded-lg px-3 py-1.5 text-center min-w-[70px]">
+                        <span class="text-lg font-bold text-orange-600">${dishPortions}</span>
+                        <span class="text-[9px] text-orange-400 block -mt-0.5">pax</span>
+                    </div>` : `<span class="text-sm font-bold text-orange-600">${dishPortions} pax</span>`}
+                    ${isDraft ? `<button onclick="event.stopPropagation();rqRemoveDish(${d.recipe_id})" class="text-gray-300 hover:text-red-500 transition p-1.5 compact-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6"/><path d="m9 9 6 6"/></svg>
                     </button>` : ''}
                 </div>
             </div>
+            ${isDraft ? '<div class="text-[9px] text-orange-400 text-center mt-1.5">Tap to change portions</div>' : ''}
         </div>`;
     });
 
