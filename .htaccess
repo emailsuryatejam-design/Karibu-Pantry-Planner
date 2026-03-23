@@ -13,11 +13,18 @@
 # Block lib directory (push-sender.php)
 <IfModule mod_rewrite.c>
     RewriteEngine On
+    RewriteBase /
+
     RewriteRule ^lib/ - [F,L]
     RewriteRule ^\.cache/ - [F,L]
 
-    RewriteBase /
+    # Kitchen login URLs: /NLP, /TES, /SWC, /SSC, /SRC → add trailing slash if missing
+    RewriteCond %{REQUEST_URI} ^/(NLP|TES|SWC|SSC|SRC)$ [NC]
+    RewriteRule ^(.*)$ /$1/ [R=301,L]
 </IfModule>
+
+# Ensure directory index works for kitchen subdirectories
+DirectoryIndex index.php
 
 # Prevent directory listing
 Options -Indexes
