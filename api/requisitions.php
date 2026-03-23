@@ -1035,6 +1035,27 @@ switch ($action) {
         jsonResponse(['added' => true, 'recipe_name' => $recipe['name']]);
 
     // ── Save dish-based requisition lines ──
+    // ── Atomic save + submit (prevents race condition between separate save and submit calls) ──
+    case 'save_and_submit':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        if (!$reqId) jsonError('Requisition ID required');
+
+        // Verify draft status
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'draft'");
+        $stmt->execute([$reqId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Requisition not found or not in draft status');
+
+        // Delegate to save_dish_lines logic (will be caught by fall-through)
+        // But we set a flag to also submit after saving
+        $data['_also_submit'] = true;
+        $input = $data; // Ensure save_dish_lines sees the data
+        $_GET['action'] = 'save_dish_lines'; // Fall through
+        // FALL THROUGH to save_dish_lines
+
     case 'save_dish_lines':
         requireMethod('POST');
         requireRole(['chef', 'admin']);
@@ -1076,6 +1097,7 @@ switch ($action) {
 
             // Aggregated items: itemId => { item_name, total_qty, uom, stock_qty, portion_weight, order_mode, category, sources[] }
             $aggregated = [];
+            $staplesSkipped = 0;
 
             // Batch-load ALL recipe ingredients in one query (avoids N+1)
             $recipeIds = array_unique(array_filter(array_map(fn($d) => (int)($d['recipe_id'] ?? 0), $dishes)));
@@ -1121,7 +1143,10 @@ switch ($action) {
                     if (!$itemId) continue;
 
                     // Two-level staple check: skip if item is pantry staple AND ingredient is not primary
-                    if (!empty($ing['is_pantry_staple']) && empty($ing['is_primary'])) continue;
+                    if (!empty($ing['is_pantry_staple']) && empty($ing['is_primary'])) {
+                        $staplesSkipped = ($staplesSkipped ?? 0) + 1;
+                        continue;
+                    }
 
                     $scaledQty = (float)$ing['qty'] * $scaleFactor;
 
@@ -1194,16 +1219,49 @@ switch ($action) {
                 $totalKg += $orderQty;
             }
 
-            // Update guest count and creator on requisition
-            $db->prepare("UPDATE requisitions SET guest_count = ?, created_by = ?, updated_at = NOW() WHERE id = ?")->execute([$guestCount, $user['id'], $reqId]);
+            // Also submit if atomic save_and_submit was called
+            $alsoSubmit = !empty($data['_also_submit']);
+            if ($alsoSubmit && $totalItems > 0) {
+                $db->prepare("UPDATE requisitions SET guest_count = ?, status = 'submitted', created_by = ?, updated_at = NOW() WHERE id = ?")->execute([$guestCount, $user['id'], $reqId]);
+            } else {
+                $db->prepare("UPDATE requisitions SET guest_count = ?, created_by = ?, updated_at = NOW() WHERE id = ?")->execute([$guestCount, $user['id'], $reqId]);
+            }
 
             $db->commit();
 
-            auditLog('requisition_save_dish_lines', 'requisition', $reqId, null, [
+            auditLog($alsoSubmit ? 'requisition_save_and_submit' : 'requisition_save_dish_lines', 'requisition', $reqId, null, [
                 'dishes' => count($dishes), 'items' => $totalItems, 'total_kg' => $totalKg, 'guests' => $guestCount
             ]);
 
-            jsonResponse(['saved' => true, 'total_items' => $totalItems, 'total_kg' => round($totalKg, 2), 'dish_count' => count($dishes)]);
+            // Send push notification if submitting
+            if ($alsoSubmit && $totalItems > 0) {
+                try {
+                    $kitchenName = '';
+                    $kStmt2 = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
+                    $kStmt2->execute([$req['kitchen_id']]);
+                    $kRow2 = $kStmt2->fetch();
+                    if ($kRow2) $kitchenName = $kRow2['name'];
+                    $mealLabel2 = ucfirst($req['meals'] ?? 'order');
+                    $suppNum2 = (int)($req['supplement_number'] ?? 0);
+                    if ($suppNum2 > 0) $mealLabel2 .= ' (' . ($suppNum2 + 1) . ')';
+                    $pushPayload2 = [
+                        'title' => 'New Requisition',
+                        'body'  => "{$user['name']} submitted {$mealLabel2} for {$kitchenName}",
+                        'url'   => '/app.php?page=store-dashboard',
+                        'tag'   => 'req-submitted-' . $reqId,
+                    ];
+                    sendPushToKitchen((int)$req['kitchen_id'], $pushPayload2, 'storekeeper', $user['id']);
+                    storeNotification((int)$req['kitchen_id'], null, $pushPayload2['title'], $pushPayload2['body'], 'requisition_submitted', $reqId);
+                } catch (Exception $e) {
+                    error_log('Notification error on save_and_submit: ' . $e->getMessage());
+                }
+            }
+
+            jsonResponse([
+                'saved' => true, 'submitted' => $alsoSubmit,
+                'total_items' => $totalItems, 'total_kg' => round($totalKg, 2),
+                'dish_count' => count($dishes), 'staples_skipped' => $staplesSkipped
+            ]);
 
         } catch (Exception $e) {
             $db->rollBack();

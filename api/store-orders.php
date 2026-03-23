@@ -116,18 +116,22 @@ switch ($action) {
 
         // Update fulfilled qty per line (skip rejected/removed lines)
         $stmt = $db->prepare("UPDATE requisition_lines SET fulfilled_qty = ? WHERE id = ? AND requisition_id = ? AND status != 'rejected'");
+        $lineDetails = [];
         foreach ($lines as $line) {
+            $fulfilledQty = (float)($line['fulfilled_qty'] ?? 0);
+            if ($fulfilledQty < 0) $fulfilledQty = 0; // Prevent negative
             $stmt->execute([
-                (float)($line['fulfilled_qty'] ?? 0),
+                $fulfilledQty,
                 (int)$line['id'],
                 $orderId
             ]);
+            $lineDetails[] = ['id' => (int)$line['id'], 'fulfilled_qty' => $fulfilledQty];
         }
 
         // Mark requisition as fulfilled
         $db->prepare("UPDATE requisitions SET status = 'fulfilled', reviewed_by = ?, updated_at = NOW() WHERE id = ?")->execute([$user['id'], $orderId]);
 
-        auditLog('mark_sent', 'requisitions', $orderId, null, ['lines' => count($lines)]);
+        auditLog('mark_sent', 'requisitions', $orderId, null, ['lines' => $lineDetails]);
         jsonResponse(['updated' => true]);
         break;
 
@@ -164,8 +168,8 @@ switch ($action) {
         if ($lineInfo['status'] === 'rejected') jsonError('Line already removed');
 
         // Mark as rejected (removed) — keep order_qty for audit trail
-        $db->prepare("UPDATE requisition_lines SET status = 'rejected', fulfilled_qty = 0, store_notes = CONCAT(IFNULL(store_notes, ''), '[Removed by store]') WHERE id = ? AND requisition_id = ?")
-           ->execute([$lineId, $orderId]);
+        $db->prepare("UPDATE requisition_lines SET status = 'rejected', fulfilled_qty = 0, store_notes = CONCAT(IFNULL(store_notes, ''), '\n[', NOW(), '] Removed by ', ?) WHERE id = ? AND requisition_id = ?")
+           ->execute([$user['name'], $lineId, $orderId]);
 
         auditLog('store_remove_line', 'requisition_lines', $lineId, $lineInfo, ['status' => 'rejected']);
         jsonResponse(['removed' => true, 'line_id' => $lineId]);
@@ -193,8 +197,8 @@ switch ($action) {
         if ($lineInfo['status'] !== 'rejected') jsonError('Line is not removed');
 
         // Restore to pending
-        $db->prepare("UPDATE requisition_lines SET status = 'pending', store_notes = CONCAT(IFNULL(store_notes, ''), '[Restored by store]') WHERE id = ? AND requisition_id = ?")
-           ->execute([$lineId, $orderId]);
+        $db->prepare("UPDATE requisition_lines SET status = 'pending', store_notes = CONCAT(IFNULL(store_notes, ''), '\n[', NOW(), '] Restored by ', ?) WHERE id = ? AND requisition_id = ?")
+           ->execute([$user['name'], $lineId, $orderId]);
 
         auditLog('store_restore_line', 'requisition_lines', $lineId, ['status' => 'rejected'], ['status' => 'pending']);
         jsonResponse(['restored' => true, 'line_id' => $lineId]);

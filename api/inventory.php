@@ -79,7 +79,7 @@ switch ($action) {
 
         $since = date('Y-m-d', strtotime("-{$days} days"));
 
-        // Get requisition line activity for this item in this kitchen
+        // Get requisition line activity for this item in this kitchen (exclude removed lines)
         $sql = "SELECT r.req_date, r.meals, r.status, r.supplement_number,
                     rl.order_qty, rl.fulfilled_qty, rl.received_qty, rl.unused_qty,
                     u.name AS chef_name
@@ -90,6 +90,7 @@ switch ($action) {
                 AND r.kitchen_id = ?
                 AND r.req_date >= ?
                 AND r.status IN ('submitted','fulfilled','received','closed')
+                AND rl.status != 'rejected'
                 ORDER BY r.req_date DESC, r.session_number ASC";
         $stmt = $db->prepare($sql);
         $stmt->execute([$itemId, $kitchenId, $since]);
@@ -120,6 +121,16 @@ switch ($action) {
         if (!$itemId) jsonError('Item ID required');
         if ($adjustment == 0) jsonError('Adjustment cannot be zero');
         if (!$reason) jsonError('Reason is required');
+
+        // Validate negative adjustment won't go below zero
+        if ($adjustment < 0) {
+            $currentStmt = $db->prepare("SELECT qty FROM kitchen_inventory WHERE kitchen_id = ? AND item_id = ?");
+            $currentStmt->execute([$kitchenId, $itemId]);
+            $currentQty = (float)($currentStmt->fetchColumn() ?: 0);
+            if (abs($adjustment) > $currentQty) {
+                jsonError("Cannot remove " . abs($adjustment) . " — only " . $currentQty . " in stock. Adjust to -" . $currentQty . " max.");
+            }
+        }
 
         // Upsert kitchen_inventory
         $db->prepare("INSERT INTO kitchen_inventory (kitchen_id, item_id, qty) VALUES (?, ?, GREATEST(0, ?))

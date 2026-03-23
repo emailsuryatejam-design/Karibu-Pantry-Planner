@@ -330,7 +330,7 @@ function soActiveLineHtml(line, reqQty) {
             </div>
             <div class="flex items-center justify-center gap-0.5">
                 <button onclick="soAdjLine(${line.id}, 'qty', -1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">-</button>
-                <input type="number" value="${reqQty}" step="0.5" min="0" id="send_${line.id}"
+                <input type="number" value="${reqQty}" step="0.5" min="0" max="${reqQty * 2}" id="send_${line.id}"
                     class="w-14 text-center text-sm font-semibold border border-green-300 rounded-lg px-0.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-green-50">
                 <button onclick="soAdjLine(${line.id}, 'qty', 1)" class="w-7 h-7 rounded bg-white border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center compact-btn">+</button>
             </div>
@@ -378,6 +378,7 @@ async function soRemoveLine(lineId, orderId) {
 
 // ── Restore a removed line item ──
 async function soRestoreLine(lineId, orderId) {
+    if (!await customConfirm('Restore Item', 'Add this item back to the order?')) return;
     try {
         await api('api/store-orders.php?action=restore_line', {
             method: 'POST',
@@ -459,27 +460,38 @@ function soSearchItems(query) {
         return;
     }
 
-    results.innerHTML = matches.map(item => `
-        <div onclick="soAddItemToOrder(${item.id}, '${item.name.replace(/'/g, "\\'")}', '${item.uom}')"
-             class="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-green-50 cursor-pointer transition active:bg-green-100">
-            <div>
-                <p class="text-sm font-medium text-gray-800">${item.name}</p>
-                <p class="text-[10px] text-gray-400">${item.category || 'Uncategorized'} &middot; ${item.uom}</p>
+    results.innerHTML = matches.map(item => {
+        const safeName = (item.name || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        const safeUom = (item.uom || 'kg').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        const safeCat = (item.category || 'Uncategorized').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        return `
+        <div class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-green-50 transition" data-item-id="${item.id}" data-item-name="${safeName}" data-item-uom="${safeUom}">
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-gray-800">${safeName}</p>
+                <p class="text-[10px] text-gray-400">${safeCat} &middot; ${safeUom}</p>
             </div>
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-green-500"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-        </div>
-    `).join('');
+            <input type="number" step="0.5" min="0.5" value="1" placeholder="Qty"
+                class="w-16 text-center text-sm border border-gray-200 rounded-lg py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 bg-white">
+            <button onclick="soAddItemFromRow(this)"
+                class="px-3 py-1.5 bg-green-500 text-white rounded-lg text-xs font-semibold hover:bg-green-600 transition compact-btn">Add</button>
+        </div>`;
+    }).join('');
 }
 
-async function soAddItemToOrder(itemId, itemName, uom) {
-    // Prompt for quantity
-    const qtyStr = prompt(`Add ${itemName} — enter quantity (${uom}):`);
-    if (!qtyStr) return;
-    const qty = parseFloat(qtyStr);
-    if (!qty || qty <= 0) {
-        showToast('Invalid quantity', 'error');
+async function soAddItemFromRow(btn) {
+    const row = btn.closest('[data-item-id]');
+    const itemId = parseInt(row.dataset.itemId);
+    const itemName = row.dataset.itemName;
+    const qtyInput = row.querySelector('input[type="number"]');
+    const qty = parseFloat(qtyInput?.value) || 0;
+
+    if (qty <= 0) {
+        showToast('Enter a valid quantity', 'error');
         return;
     }
+
+    btn.disabled = true;
+    btn.textContent = '...';
 
     try {
         await api('api/store-orders.php?action=add_line', {
@@ -487,10 +499,11 @@ async function soAddItemToOrder(itemId, itemName, uom) {
             body: { order_id: soCurrentOrderId, item_id: itemId, qty: qty }
         });
         showToast(`${itemName} added`);
-        // Refresh the detail sheet
         soOpenDetail(soCurrentOrderId);
     } catch (err) {
         showToast(err.message, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Add';
     }
 }
 
