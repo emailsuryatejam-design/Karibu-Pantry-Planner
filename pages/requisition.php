@@ -70,6 +70,9 @@ $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
     <!-- Aggregated Ingredients -->
     <div id="rqAggregatedItems"></div>
 
+    <!-- Spacer for sticky bottom bar -->
+    <div class="h-20"></div>
+
     <!-- Status Banner (for submitted/fulfilled requisitions) -->
     <div id="rqStatusBanner" class="hidden"></div>
 </div>
@@ -154,6 +157,17 @@ function rqRound(qty) {
     if (rqSettings.rounding_mode === 'whole') return Math.ceil(qty);
     return Math.ceil(qty * 2) / 2; // 'half' — round up to nearest 0.5
 }
+
+// Track dirty state for unsaved changes warning
+let rqDirty = false;
+let rqLastRemovedDish = null; // For undo support
+
+window.addEventListener('beforeunload', function(e) {
+    if (rqDirty && Object.keys(rqDishes).length > 0) {
+        e.preventDefault();
+        e.returnValue = 'You have unsaved dishes. Leave without saving?';
+    }
+});
 
 // ── Init ──
 rqRenderDate();
@@ -578,18 +592,10 @@ async function rqLoadSession(sessionId) {
 // ── Guests ──
 function rqSetGuests(val) {
     if (!rqActiveSession || rqActiveSession.status !== 'draft') return;
-    const oldGuestCount = rqGuestCount;
     rqGuestCount = Math.max(1, parseInt(val) || 1);
     document.getElementById('rqGuestCount').value = rqGuestCount;
-    // Update dishes that still had the old default guest count
-    for (const dish of Object.values(rqDishes)) {
-        if (dish.dish_portions === oldGuestCount) {
-            dish.dish_portions = rqGuestCount;
-        }
-    }
-    rqRecalcAggregated();
-    rqRenderDishView();
-    rqUpdateSummary();
+    // Only new dishes will use this guest count — existing dishes keep their portions
+    rqDirty = true;
 }
 
 // ── Per-dish portions ──
@@ -718,6 +724,7 @@ async function rqAddDish(recipeId) {
             ingredients: ingredients
         };
 
+        rqDirty = true;
         showToast(`${recipe.name} added`, 'success');
         rqRecalcAggregated();
         rqRenderDishView();
@@ -730,12 +737,27 @@ async function rqAddDish(recipeId) {
 }
 
 function rqRemoveDish(recipeId) {
-    const name = rqDishes[recipeId]?.recipe_name || 'Dish';
+    const dish = rqDishes[recipeId];
+    if (!dish) return;
+    const name = dish.recipe_name || 'Dish';
+    rqLastRemovedDish = { recipeId, dish: { ...dish, ingredients: [...dish.ingredients] } };
     delete rqDishes[recipeId];
+    rqDirty = true;
     rqRecalcAggregated();
     rqRenderDishView();
     rqUpdateSummary();
-    showToast(`${name} removed`, 'info');
+    showToast(`${name} removed — <button onclick="rqUndoRemoveDish()" class="underline font-semibold ml-1">Undo</button>`, 'info', 5000);
+}
+
+function rqUndoRemoveDish() {
+    if (!rqLastRemovedDish) return;
+    const { recipeId, dish } = rqLastRemovedDish;
+    rqDishes[recipeId] = dish;
+    rqLastRemovedDish = null;
+    rqRecalcAggregated();
+    rqRenderDishView();
+    rqUpdateSummary();
+    showToast(`${dish.recipe_name} restored`, 'success');
 }
 
 function rqRecalcAggregated() {
@@ -961,8 +983,12 @@ async function rqLoadSetMenuDishes() {
             const dayNames = ['','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
             showToast(`${loaded} dish${loaded > 1 ? 'es' : ''} loaded from ${dayNames[dayOfWeek]} set menu`, 'info');
         }
-    } catch {
-        // Set menu not configured, silently continue
+    } catch (e) {
+        // Only show error if it's NOT a 404 (404 = no set menu configured, which is normal)
+        if (e && e.status !== 404) {
+            console.warn('Set menu load error:', e);
+            showToast('Could not load set menu — add dishes manually', 'warning');
+        }
     }
 }
 
@@ -1148,7 +1174,7 @@ async function rqSaveAndSubmit() {
             }
         }
 
-        await api('api/requisitions.php?action=save_dish_lines', {
+        const result = await api('api/requisitions.php?action=save_and_submit', {
             method: 'POST',
             body: JSON.stringify({
                 requisition_id: rqActiveSession.id,
@@ -1163,20 +1189,22 @@ async function rqSaveAndSubmit() {
             })
         });
 
-        await api('api/requisitions.php?action=submit', {
-            method: 'POST',
-            body: JSON.stringify({ requisition_id: rqActiveSession.id })
-        });
-
+        rqDirty = false;
         const typeName = rqTypeName(rqActiveSession.meals);
         const suppNum = parseInt(rqActiveSession.supplement_number) || 0;
         const submitLabel = suppNum > 0 ? `${typeName} (${suppNum + 1})` : typeName;
-        showToast(`${submitLabel} requisition submitted!`, 'success');
+
+        // Show staples skipped banner if any
+        const skipped = result.staples_skipped || 0;
+        const skipMsg = skipped > 0 ? ` (${skipped} pantry staple${skipped > 1 ? 's' : ''} auto-skipped)` : '';
+        showToast(`${submitLabel} requisition submitted!${skipMsg}`, 'success');
         voice.orderSubmitted(rqActiveSession.session_number, '<?= addslashes($kitchenName) ?>');
         rqLoadSessions();
 
     } catch (e) {
-        showToast(e.message || 'Failed to submit', 'error');
+        const msg = e.message || 'Failed to submit';
+        const hint = msg.includes('not in draft') ? ' Refresh to see latest status.' : '';
+        showToast(msg + hint, 'error');
         voice.error('Failed to submit order');
     } finally {
         setLoading(btn, false);
