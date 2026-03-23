@@ -1059,7 +1059,7 @@ switch ($action) {
     case 'save_dish_lines':
         requireMethod('POST');
         requireRole(['chef', 'admin']);
-        $data = getJsonInput();
+        if (!isset($data) || empty($data['dishes'])) $data = getJsonInput();
 
         $reqId = (int)($data['requisition_id'] ?? 0);
         $dishes = $data['dishes'] ?? [];
