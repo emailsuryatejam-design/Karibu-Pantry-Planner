@@ -132,9 +132,20 @@ switch ($action) {
         if (!$id) jsonError('User ID required');
         if ($id === $user['id']) jsonError('Cannot delete yourself');
 
-        $db->prepare('DELETE FROM users WHERE id = ?')->execute([$id]);
-        auditLog('delete_user', 'users', $id);
-        jsonResponse(['deleted' => true]);
+        // Soft-delete: deactivate instead of hard delete to preserve requisition/recipe history
+        $db->prepare('UPDATE users SET is_active = 0 WHERE id = ?')->execute([$id]);
+
+        // Count related data for audit
+        $reqCount = $db->prepare("SELECT COUNT(*) FROM requisitions WHERE created_by = ?");
+        $reqCount->execute([$id]);
+        $recipeCount = $db->prepare("SELECT COUNT(*) FROM recipes WHERE created_by = ?");
+        $recipeCount->execute([$id]);
+
+        auditLog('deactivate_user', 'users', $id, null, [
+            'requisitions' => (int)$reqCount->fetchColumn(),
+            'recipes' => (int)$recipeCount->fetchColumn()
+        ]);
+        jsonResponse(['deleted' => true, 'soft_deleted' => true]);
         break;
 
     default:
