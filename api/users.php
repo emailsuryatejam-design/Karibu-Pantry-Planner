@@ -41,8 +41,9 @@ switch ($action) {
 
         $kitchenId = isset($input['kitchen_id']) ? (int)$input['kitchen_id'] : null;
 
-        $stmt = $db->prepare('INSERT INTO users (name, username, pin, role, kitchen_id) VALUES (?, ?, ?, ?, ?)');
-        $stmt->execute([$name, $username, $pin, $role, $kitchenId]);
+        $pinHash = password_hash($pin, PASSWORD_DEFAULT);
+        $stmt = $db->prepare('INSERT INTO users (name, username, pin, pin_hash, role, kitchen_id) VALUES (?, ?, ?, ?, ?, ?)');
+        $stmt->execute([$name, $username, $pin, $pinHash, $role, $kitchenId]);
         $newUserId = $db->lastInsertId();
 
         // Auto-copy recipes for new chefs from an existing chef in the same kitchen (or admin)
@@ -61,22 +62,28 @@ switch ($action) {
             }
 
             if ($templateChefId) {
-                $srcRecipes = $db->prepare('SELECT * FROM recipes WHERE created_by = ?');
-                $srcRecipes->execute([$templateChefId]);
-                $recipes = $srcRecipes->fetchAll();
+                $db->beginTransaction();
+                try {
+                    $srcRecipes = $db->prepare('SELECT * FROM recipes WHERE created_by = ?');
+                    $srcRecipes->execute([$templateChefId]);
+                    $recipes = $srcRecipes->fetchAll();
 
-                $insRecipe = $db->prepare('INSERT INTO recipes (name, category, cuisine, difficulty, prep_time, cook_time, servings, instructions, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
-                $insIng = $db->prepare('INSERT INTO recipe_ingredients (recipe_id, item_id, item_name, qty, uom, is_primary) VALUES (?, ?, ?, ?, ?, ?)');
-                $getIngs = $db->prepare('SELECT * FROM recipe_ingredients WHERE recipe_id = ?');
+                    $insRecipe = $db->prepare('INSERT INTO recipes (name, category, cuisine, difficulty, prep_time, cook_time, servings, instructions, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+                    $insIng = $db->prepare('INSERT INTO recipe_ingredients (recipe_id, item_id, item_name, qty, uom, is_primary) VALUES (?, ?, ?, ?, ?, ?)');
+                    $getIngs = $db->prepare('SELECT * FROM recipe_ingredients WHERE recipe_id = ?');
 
-                foreach ($recipes as $r) {
-                    $insRecipe->execute([$r['name'], $r['category'], $r['cuisine'], $r['difficulty'], $r['prep_time'], $r['cook_time'], $r['servings'], $r['instructions'], $r['notes'], $newUserId]);
-                    $newRecipeId = $db->lastInsertId();
-                    $getIngs->execute([$r['id']]);
-                    foreach ($getIngs->fetchAll() as $ing) {
-                        $insIng->execute([$newRecipeId, $ing['item_id'], $ing['item_name'], $ing['qty'], $ing['uom'], $ing['is_primary']]);
+                    foreach ($recipes as $r) {
+                        $insRecipe->execute([$r['name'], $r['category'], $r['cuisine'], $r['difficulty'], $r['prep_time'], $r['cook_time'], $r['servings'], $r['instructions'], $r['notes'], $newUserId]);
+                        $newRecipeId = $db->lastInsertId();
+                        $getIngs->execute([$r['id']]);
+                        foreach ($getIngs->fetchAll() as $ing) {
+                            $insIng->execute([$newRecipeId, $ing['item_id'], $ing['item_name'], $ing['qty'], $ing['uom'], $ing['is_primary']]);
+                        }
+                        $recipesCopied++;
                     }
-                    $recipesCopied++;
+                    $db->commit();
+                } catch (Exception $e) {
+                    $db->rollBack();
                 }
             }
         }
@@ -102,6 +109,8 @@ switch ($action) {
             if (strlen(trim($input['pin'])) !== 4 || !ctype_digit(trim($input['pin']))) jsonError('PIN must be exactly 4 digits');
             $fields[] = 'pin = ?';
             $params[] = trim($input['pin']);
+            $fields[] = 'pin_hash = ?';
+            $params[] = password_hash(trim($input['pin']), PASSWORD_DEFAULT);
         }
         if (isset($input['role']) && in_array($input['role'], ['chef', 'storekeeper', 'admin'])) {
             $fields[] = 'role = ?';

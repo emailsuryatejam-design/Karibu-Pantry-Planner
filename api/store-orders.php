@@ -4,7 +4,7 @@
  * Reads from requisitions/requisition_lines tables (same data as store dashboard)
  */
 require_once __DIR__ . '/../auth.php';
-$user = requireAuth();
+$user = requireRole(['storekeeper', 'admin']);
 $db = getDB();
 $kitchenId = $user['kitchen_id'] ?? null;
 

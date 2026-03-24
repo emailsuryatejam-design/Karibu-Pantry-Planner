@@ -5,8 +5,8 @@
     Require all denied
 </FilesMatch>
 
-# Block config, auth, migration, and key files
-<FilesMatch "^(config\.php|auth\.php|vapid-keys\.php|migrate-.+\.php)$">
+# Block config, auth, migration, setup, and key files
+<FilesMatch "^(config\.php|auth\.php|vapid-keys\.php|migrate-.+\.php|setup\.php)$">
     Require all denied
 </FilesMatch>
 
@@ -14,6 +14,10 @@
 <IfModule mod_rewrite.c>
     RewriteEngine On
     RewriteBase /
+
+    # Enforce HTTPS
+    RewriteCond %{HTTPS} off
+    RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
 
     RewriteRule ^lib/ - [F,L]
     RewriteRule ^\.cache/ - [F,L]
@@ -53,6 +57,8 @@ AddDefaultCharset UTF-8
     Header set X-Frame-Options "SAMEORIGIN"
     Header set X-XSS-Protection "1; mode=block"
     Header set Referrer-Policy "strict-origin-when-cross-origin"
+    Header set Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    Header set Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.tailwindcss.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdn.tailwindcss.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' https://*.push.services.mozilla.com https://fcm.googleapis.com;"
 </IfModule>
 
 # Prevent LiteSpeed/proxy caching of PHP pages (dynamic content)

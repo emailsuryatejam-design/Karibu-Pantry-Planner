@@ -26,9 +26,10 @@ switch ($action) {
         }
 
         if ($q) {
+            $escaped = escapeLike($q);
             $sql .= ' AND (r.name LIKE ? OR r.cuisine LIKE ?)';
-            $params[] = "%$q%";
-            $params[] = "%$q%";
+            $params[] = "%$escaped%";
+            $params[] = "%$escaped%";
         }
         if ($category) {
             $sql .= ' AND r.category = ?';
@@ -76,6 +77,13 @@ switch ($action) {
         if (!$name) jsonError('Recipe name required');
 
         if ($id) {
+            // Ownership check: chefs can only edit their own recipes
+            if ($user['role'] === 'chef') {
+                $own = $db->prepare('SELECT created_by FROM recipes WHERE id = ?');
+                $own->execute([$id]);
+                $owner = $own->fetchColumn();
+                if ($owner && (int)$owner !== (int)$user['id']) jsonError('You can only edit your own recipes', 403);
+            }
             $stmt = $db->prepare('UPDATE recipes SET name = ?, category = ?, cuisine = ?, difficulty = ?, prep_time = ?, cook_time = ?, servings = ?, instructions = ?, notes = ? WHERE id = ?');
             $stmt->execute([$name, $category, $cuisine, $difficulty, $prepTime, $cookTime, $servings, $instructions, $notes, $id]);
             auditLog('update_recipe', 'recipes', $id, null, ['name' => $name]);
@@ -94,6 +102,14 @@ switch ($action) {
         requireMethod('POST');
         $id = (int)($input['id'] ?? 0);
         if (!$id) jsonError('Recipe ID required');
+
+        // Ownership check: chefs can only delete their own recipes
+        if ($user['role'] === 'chef') {
+            $own = $db->prepare('SELECT created_by FROM recipes WHERE id = ?');
+            $own->execute([$id]);
+            $owner = $own->fetchColumn();
+            if ($owner && (int)$owner !== (int)$user['id']) jsonError('You can only delete your own recipes', 403);
+        }
 
         $db->prepare('DELETE FROM recipes WHERE id = ?')->execute([$id]);
         auditLog('delete_recipe', 'recipes', $id);

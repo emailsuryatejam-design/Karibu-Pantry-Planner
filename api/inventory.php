@@ -24,9 +24,10 @@ switch ($action) {
         $params = [];
 
         if ($q) {
+            $escaped = escapeLike($q);
             $sql .= " AND (name LIKE ? OR code LIKE ?)";
-            $params[] = "%$q%";
-            $params[] = "%$q%";
+            $params[] = "%$escaped%";
+            $params[] = "%$escaped%";
         }
         if ($cat) {
             $sql .= " AND category = ?";

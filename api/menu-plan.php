@@ -6,14 +6,18 @@ $db = getDB();
 $input = $_SERVER['REQUEST_METHOD'] === 'POST' ? getJsonInput() : [];
 $action = $_GET['action'] ?? ($input['action'] ?? ($_POST['action'] ?? ''));
 
-// Ensure weekly_menu table exists
-$db->exec("CREATE TABLE IF NOT EXISTS weekly_menu (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    day_of_week TINYINT NOT NULL,
-    meal ENUM('lunch','dinner') NOT NULL,
-    recipe_id INT NOT NULL,
-    sort_order INT DEFAULT 0
-)");
+// weekly_menu table should be created via setup.php, not here
+// Self-heal only once per day via cache flag
+if (!cacheGet('weekly_menu_exists', 86400)) {
+    $db->exec("CREATE TABLE IF NOT EXISTS weekly_menu (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        day_of_week TINYINT NOT NULL,
+        meal ENUM('lunch','dinner') NOT NULL,
+        recipe_id INT NOT NULL,
+        sort_order INT DEFAULT 0
+    )");
+    cacheSet('weekly_menu_exists', true);
+}
 
 switch ($action) {
 
