@@ -20,10 +20,11 @@ function reqLabel(r) {
 // ── API Helper ──
 async function api(endpoint, options = {}) {
     const method = (options.method || 'GET').toUpperCase();
+    const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
     const config = {
         method,
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', ...options.headers },
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken, ...options.headers },
     };
     if (options.body && method !== 'GET') {
         config.body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body);

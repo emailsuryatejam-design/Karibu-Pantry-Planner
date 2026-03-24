@@ -2,10 +2,16 @@
 /**
  * Karibu Pantry Planner — Database Setup
  * Run once to create tables + seed data
- * Usage: php setup.php  OR  visit /setup.php in browser
+ * Usage: php setup.php (CLI only in production)
  */
 
 require_once __DIR__ . '/config.php';
+
+// Block web access in production
+if (php_sapi_name() !== 'cli' && ($_ENV['APP_ENV'] ?? 'production') === 'production') {
+    http_response_code(403);
+    die('Setup is disabled in production. Run via CLI: php setup.php');
+}
 
 $db = getDB();
 
@@ -18,7 +24,8 @@ $tables = [
         id INT AUTO_INCREMENT PRIMARY KEY,
         name VARCHAR(100) NOT NULL,
         username VARCHAR(50) UNIQUE NOT NULL,
-        pin VARCHAR(10) NOT NULL,
+        pin VARCHAR(10) DEFAULT NULL,
+        pin_hash VARCHAR(255) DEFAULT NULL,
         role ENUM('chef', 'storekeeper', 'admin') NOT NULL,
         camp_id INT DEFAULT NULL,
         camp_name VARCHAR(100) DEFAULT NULL,
@@ -154,12 +161,21 @@ $users = [
 
 foreach ($users as [$name, $username, $pin, $role]) {
     try {
-        $stmt = $db->prepare('INSERT IGNORE INTO users (name, username, pin, role) VALUES (?, ?, ?, ?)');
-        $stmt->execute([$name, $username, $pin, $role]);
+        $pinHash = password_hash($pin, PASSWORD_DEFAULT);
+        $stmt = $db->prepare('INSERT IGNORE INTO users (name, username, pin, pin_hash, role) VALUES (?, ?, ?, ?, ?)');
+        $stmt->execute([$name, $username, $pin, $pinHash, $role]);
         echo "  [OK] $name ($username / PIN: $pin) - $role\n";
     } catch (PDOException $e) {
         echo "  [SKIP] $name: " . $e->getMessage() . "\n";
     }
+}
+
+// Add pin_hash column if missing (migration for existing DBs)
+try {
+    $db->exec("ALTER TABLE users ADD COLUMN pin_hash VARCHAR(255) DEFAULT NULL AFTER pin");
+    echo "  [OK] Added pin_hash column\n";
+} catch (PDOException $e) {
+    // Column already exists — OK
 }
 
 // ── Seed Sample Items ──

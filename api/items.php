@@ -25,9 +25,10 @@ switch ($action) {
             $sql .= " AND is_active = 1";
         }
         if ($q) {
+            $escaped = escapeLike($q);
             $sql .= " AND (name LIKE ? OR code LIKE ?)";
-            $params[] = "%$q%";
-            $params[] = "%$q%";
+            $params[] = "%$escaped%";
+            $params[] = "%$escaped%";
         }
         if ($cat) {
             $sql .= " AND category = ?";
@@ -47,6 +48,7 @@ switch ($action) {
         }
 
         jsonResponse(['items' => $items, 'grouped' => $grouped]);
+        break;
 
     // ── Get single item ──
     case 'get':
@@ -57,11 +59,13 @@ switch ($action) {
         $item = $stmt->fetch();
         if (!$item) jsonError('Item not found', 404);
         jsonResponse(['item' => $item]);
+        break;
 
     // ── Categories list ──
     case 'categories':
         $cats = $db->query("SELECT DISTINCT category FROM items WHERE is_active = 1 AND category IS NOT NULL ORDER BY category")->fetchAll(PDO::FETCH_COLUMN);
         jsonResponse(['categories' => $cats]);
+        break;
 
     // ── Save (create/update) — admin only ──
     case 'save':
@@ -99,6 +103,7 @@ switch ($action) {
             auditLog('item_create', 'item', $newId, null, $data);
             jsonResponse(['created' => true, 'id' => $newId]);
         }
+        break;
 
     // ── Toggle active — admin only ──
     case 'toggle_active':
@@ -113,6 +118,7 @@ switch ($action) {
         cacheClear('active_items');
         auditLog('item_toggle', 'item', $id);
         jsonResponse(['toggled' => true]);
+        break;
 
     // ── Bulk update portion weights — admin only ──
     case 'bulk_update':
@@ -135,6 +141,7 @@ switch ($action) {
         cacheClear('active_items');
         auditLog('item_bulk_update', 'items', null, null, ['count' => $count]);
         jsonResponse(['updated' => $count]);
+        break;
 
     // ── Bulk update UOM settings (piece_weight + pantry staple) — admin only ──
     case 'bulk_uom_update':
@@ -158,6 +165,7 @@ switch ($action) {
         cacheClear('active_items');
         auditLog('item_bulk_uom_update', 'items', null, null, ['count' => $count]);
         jsonResponse(['updated' => $count]);
+        break;
 
     default:
         jsonError('Unknown action');

@@ -25,6 +25,10 @@ function requireMethod($method) {
     if ($_SERVER['REQUEST_METHOD'] !== strtoupper($method)) {
         jsonError('Method not allowed', 405);
     }
+    // Validate CSRF token on POST requests
+    if (strtoupper($method) === 'POST') {
+        validateCsrf();
+    }
 }
 
 function requireKitchen() {

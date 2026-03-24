@@ -44,12 +44,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pin = trim($_POST['pin'] ?? '');
 
     if ($username && $pin) {
+        // Rate limiting
+        checkLoginRateLimit($username);
+
         $db = getDB();
-        $stmt = $db->prepare('SELECT * FROM users WHERE username = ? AND pin = ? AND is_active = 1');
-        $stmt->execute([$username, $pin]);
+        // Fetch user by username only — verify PIN with password_verify
+        $stmt = $db->prepare('SELECT * FROM users WHERE username = ? AND is_active = 1');
+        $stmt->execute([$username]);
         $user = $stmt->fetch();
 
+        // Support both hashed PINs (pin_hash) and legacy plaintext (pin)
+        $pinValid = false;
         if ($user) {
+            if (!empty($user['pin_hash'])) {
+                $pinValid = password_verify($pin, $user['pin_hash']);
+            } else {
+                // Legacy plaintext fallback — auto-upgrade on successful login
+                $pinValid = ($user['pin'] === $pin);
+                if ($pinValid) {
+                    // Auto-upgrade to hashed PIN
+                    $hash = password_hash($pin, PASSWORD_DEFAULT);
+                    $db->prepare('UPDATE users SET pin_hash = ? WHERE id = ?')->execute([$hash, $user['id']]);
+                }
+            }
+        }
+
+        if ($user && $pinValid) {
+            clearLoginAttempts($username);
+            session_regenerate_id(true);
+
             // Get kitchen name and code for this user
             $kitchenName = '';
             $userKitchenCode = null;
@@ -67,8 +90,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'name' => $user['name'],
                 'username' => $user['username'],
                 'role' => $user['role'],
-                'camp_id' => $user['camp_id'],
-                'camp_name' => $user['camp_name'],
+                'camp_id' => $user['camp_id'] ?? null,
+                'camp_name' => $user['camp_name'] ?? null,
                 'kitchen_id' => $user['kitchen_id'],
                 'kitchen_name' => $kitchenName,
                 'kitchen_code' => $userKitchenCode,
@@ -76,6 +99,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             header('Location: /app.php');
             exit;
         } else {
+            recordLoginAttempt($username);
             $error = 'Invalid username or PIN';
         }
     } else {
@@ -83,12 +107,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Fetch ALL users with their kitchen_id (JS will filter client-side)
-$allUsers = [];
-try {
-    $db = getDB();
-    $allUsers = $db->query('SELECT id, name, username, role, kitchen_id FROM users WHERE is_active = 1 ORDER BY name')->fetchAll();
-} catch (Exception $e) {}
+// Users are loaded via AJAX after camp selection — no longer exposed in page source
+// API endpoint: api/login-users.php?kitchen_id=X
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -210,25 +230,12 @@ try {
     </div>
 
     <script>
-        // All users data (JS filters by camp selection)
-        const allUsers = <?= json_encode(array_map(fn($u) => [
-            'name' => $u['name'],
-            'username' => $u['username'],
-            'role' => $u['role'],
-            'kitchen_id' => (int)$u['kitchen_id'],
-        ], $allUsers)) ?>;
-
         const lockedKitchen = <?= $kitchenFilter ? (int)$kitchenFilter['id'] : 'null' ?>;
 
-        function onCampChange() {
+        async function onCampChange() {
             const campId = parseInt(document.getElementById('campSelect').value) || 0;
             const staffSelect = document.getElementById('staffSelect');
-
-            // Filter users by selected camp
-            const filtered = campId ? allUsers.filter(u => u.kitchen_id === campId) : allUsers;
-
-            staffSelect.innerHTML = '<option value="">-- Choose your name --</option>' +
-                filtered.map(u => `<option value="${u.username}">${u.name} (${u.role.charAt(0).toUpperCase() + u.role.slice(1)})</option>`).join('');
+            staffSelect.innerHTML = '<option value="">Loading...</option>';
 
             // Update title
             const campOption = document.getElementById('campSelect').selectedOptions[0];
@@ -238,9 +245,24 @@ try {
             } else {
                 title.textContent = 'Karibu Pantry Planner';
             }
+
+            if (!campId) {
+                staffSelect.innerHTML = '<option value="">-- Choose camp first --</option>';
+                return;
+            }
+
+            try {
+                const res = await fetch(`/api/login-users.php?kitchen_id=${campId}`);
+                const data = await res.json();
+                const users = data.users || [];
+                staffSelect.innerHTML = '<option value="">-- Choose your name --</option>' +
+                    users.map(u => `<option value="${u.username}">${u.name} (${u.role.charAt(0).toUpperCase() + u.role.slice(1)})</option>`).join('');
+            } catch (e) {
+                staffSelect.innerHTML = '<option value="">-- Error loading --</option>';
+            }
         }
 
-        // Init: load users for pre-selected camp (or all)
+        // Init: load users for pre-selected camp
         onCampChange();
 
         // PWA Install prompt
