@@ -167,6 +167,66 @@ switch ($action) {
         jsonResponse(['updated' => $count]);
         break;
 
+    // ── Reset all order data (admin only) ──
+    case 'reset_orders':
+        requireMethod('POST');
+        requireRole(['admin']);
+        $db->beginTransaction();
+        try {
+            $db->exec('DELETE FROM requisition_lines');
+            $db->exec('DELETE FROM requisition_dishes');
+            $db->exec('DELETE FROM requisitions');
+            $db->exec('DELETE FROM dish_ingredients');
+            $db->exec('DELETE FROM menu_dishes');
+            $db->exec('DELETE FROM menu_plans');
+            $db->commit();
+            cacheClear('active_items');
+            auditLog('reset_orders', 'system', null, null, ['action' => 'cleared all orders']);
+            jsonResponse(['reset' => true]);
+        } catch (Exception $e) {
+            $db->rollBack();
+            jsonError('Reset failed: ' . $e->getMessage());
+        }
+        break;
+
+    // ── Bulk import items from SAP (admin only) ──
+    case 'bulk_import':
+        requireMethod('POST');
+        requireRole(['admin']);
+        $data = getJsonInput();
+        $items = $data['items'] ?? [];
+        $clearExisting = (bool)($data['clear_existing'] ?? false);
+
+        if (empty($items)) jsonError('No items to import');
+
+        $db->beginTransaction();
+        try {
+            if ($clearExisting) {
+                // Deactivate all existing items (soft delete)
+                $db->exec('UPDATE items SET is_active = 0');
+            }
+
+            $stmt = $db->prepare('INSERT INTO items (name, code, category, uom, is_active) VALUES (?, ?, ?, ?, 1)');
+            $count = 0;
+            foreach ($items as $item) {
+                $name = trim($item['name'] ?? '');
+                $code = trim($item['code'] ?? '');
+                $category = trim($item['category'] ?? 'Uncategorized');
+                $uom = trim($item['uom'] ?? 'kg');
+                if (!$name) continue;
+                $stmt->execute([$name, $code, $category, $uom]);
+                $count++;
+            }
+            $db->commit();
+            cacheClear('active_items');
+            auditLog('bulk_import', 'items', null, null, ['count' => $count, 'cleared' => $clearExisting]);
+            jsonResponse(['imported' => $count]);
+        } catch (Exception $e) {
+            $db->rollBack();
+            jsonError('Import failed: ' . $e->getMessage());
+        }
+        break;
+
     default:
         jsonError('Unknown action');
 }
