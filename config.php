@@ -31,14 +31,14 @@ session_start();
 
 // ── VAPID Keys (Push Notifications) — from .env ──
 define('VAPID_PUBLIC_KEY', $_ENV['VAPID_PUBLIC_KEY'] ?? 'BPp5G-UF9ehoRSuEkjJ2gG-8Fy7FwN5z0_SNfNn40N9uS8YFqpPbK8BkXGR4l5x72nxxfUOGEa7848wIQZF1oiA');
-define('VAPID_PRIVATE_KEY', $_ENV['VAPID_PRIVATE_KEY'] ?? '');
+define('VAPID_PRIVATE_KEY', $_ENV['VAPID_PRIVATE_KEY'] ?? 'MCfLFGa0KvCVsp868ywlHiwSiBoh83kod1bcZ5cQD9w');
 define('VAPID_SUBJECT', $_ENV['VAPID_SUBJECT'] ?? 'mailto:admin@karibupantry.com');
 
-// ── Database — from .env ──
-define('DB_HOST', $_ENV['DB_HOST'] ?? 'localhost');
-define('DB_NAME', $_ENV['DB_NAME'] ?? 'pantry');
-define('DB_USER', $_ENV['DB_USER'] ?? 'root');
-define('DB_PASS', $_ENV['DB_PASS'] ?? '');
+// ── Database — from .env (hardcoded fallback for Hostinger until .env uploaded) ──
+define('DB_HOST', $_ENV['DB_HOST'] ?? 'auth-db960.hstgr.io');
+define('DB_NAME', $_ENV['DB_NAME'] ?? 'u929828006_Pantryplanner');
+define('DB_USER', $_ENV['DB_USER'] ?? 'u929828006_Pantryplanner');
+define('DB_PASS', $_ENV['DB_PASS'] ?? '6145ury@Teja');
 
 function getDB() {
     static $pdo = null;
