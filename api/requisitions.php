@@ -1213,14 +1213,18 @@ switch ($action) {
         $reqId = (int)($data['requisition_id'] ?? 0);
         if (!$reqId) jsonError('Requisition ID required');
 
-        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft','processing','submitted')");
-        $stmt->execute([$reqId]);
-        $req = $stmt->fetch();
-        if (!$req) jsonError('Order not found or already fulfilled');
-
-        // Delete all lines and reset to draft
+        // Use SELECT FOR UPDATE to prevent race with fulfill
         $db->beginTransaction();
         try {
+            $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? FOR UPDATE");
+            $stmt->execute([$reqId]);
+            $req = $stmt->fetch();
+
+            if (!$req || !in_array($req['status'], ['draft', 'processing', 'submitted'])) {
+                $db->rollBack();
+                jsonError('Order not found or already being fulfilled by store');
+            }
+
             $db->prepare("DELETE FROM requisition_lines WHERE requisition_id = ?")->execute([$reqId]);
             $db->prepare("DELETE FROM requisition_dishes WHERE requisition_id = ?")->execute([$reqId]);
             $db->prepare("UPDATE requisitions SET status = 'draft', updated_at = NOW() WHERE id = ?")->execute([$reqId]);
