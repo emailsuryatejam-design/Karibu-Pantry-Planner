@@ -60,6 +60,37 @@ $kitchenId = currentKitchenId();
         class="fixed bottom-20 right-4 w-14 h-14 bg-orange-500 text-white rounded-full shadow-lg flex items-center justify-center z-50 hover:bg-orange-600 active:bg-orange-700 transition">
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
     </button>
+
+    <!-- Add Staple Popup Modal (centered tile, not drawer) -->
+    <div id="ordAddModal" class="hidden fixed inset-0 z-[200] bg-black/50 flex items-start justify-center pt-[10vh] p-4 animate-fade-in" onclick="if(event.target===this)ordCloseAddModal()">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[80vh] flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <div>
+                    <h3 class="text-base font-bold text-gray-900">Add Staple Item</h3>
+                    <p class="text-xs text-gray-400">Search and tap to add</p>
+                </div>
+                <button onclick="ordCloseAddModal()" class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+            </div>
+            <div class="px-5 py-3">
+                <div class="relative">
+                    <input type="text" id="ordAddSearch" placeholder="Search items..."
+                        oninput="ordFilterAddItems()"
+                        class="w-full text-sm border border-gray-200 rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="absolute left-3 top-3 text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+                </div>
+            </div>
+            <div id="ordAddResults" class="flex-1 overflow-y-auto px-5 pb-4 space-y-1">
+                <p class="text-xs text-gray-400 text-center py-3">Type to search items...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Item Detail Popup (qty + UOM picker) -->
+    <div id="ordItemDetailModal" class="hidden fixed inset-0 z-[210] bg-black/50 flex items-center justify-center p-4 animate-fade-in" onclick="if(event.target===this)ordCloseItemDetail()">
+        <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6" id="ordItemDetailContent"></div>
+    </div>
 </div>
 
 <script>
@@ -252,12 +283,18 @@ function ordRenderEditableLines(req, lines) {
 
     html += `</div>`;
 
-    // Submit button
-    html += `<button onclick="ordSubmitToStore(${req.id})" id="ord-submit-${req.id}"
-        class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition mt-3 flex items-center justify-center gap-2">
-        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-        Submit to Store
-    </button>`;
+    // Submit + Delete buttons
+    html += `<div class="flex gap-2 mt-3">
+        <button onclick="ordDeleteOrder(${req.id})"
+            class="px-4 py-3 rounded-xl border-2 border-red-200 text-red-500 font-semibold text-sm hover:bg-red-50 flex items-center justify-center gap-1.5 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+        </button>
+        <button onclick="ordSubmitToStore(${req.id})" id="ord-submit-${req.id}"
+            class="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+            Submit to Store
+        </button>
+    </div>`;
 
     html += '</div>';
     return html;
@@ -302,67 +339,55 @@ function ordShowEditLine(lineId, reqId) {
 
     const qty = ordAdjustments[lineId] !== undefined ? ordAdjustments[lineId] : (parseFloat(line.order_qty) || 0);
     const uom = line.uom || 'kg';
+    const uomOptions = ORD_UOM_OPTIONS.map(u => `<option value="${u}" ${u === uom ? 'selected' : ''}>${u}</option>`).join('');
 
-    const uomOptions = ORD_UOM_OPTIONS.map(u =>
-        `<option value="${u}" ${u === uom ? 'selected' : ''}>${u}</option>`
-    ).join('');
-
-    openSheet(`
-        <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
-        <div class="px-5 py-4">
-            <h3 class="text-base font-bold text-gray-900 mb-1">${escHtml(line.item_name)}</h3>
-            <p class="text-xs text-gray-400 mb-4">Edit quantity, UOM, or remove</p>
-
-            <div class="space-y-4">
-                <div>
-                    <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1 block">Quantity</label>
-                    <div class="flex items-center gap-2">
-                        <button onclick="document.getElementById('ordEditQty').value = Math.max(0, parseFloat(document.getElementById('ordEditQty').value||0) - 1)"
-                            class="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 font-bold text-lg flex items-center justify-center">-</button>
-                        <input type="number" id="ordEditQty" value="${qty}" step="0.5" min="0"
-                            class="flex-1 text-center text-xl font-bold border-2 border-green-300 rounded-xl py-2.5 focus:outline-none focus:ring-2 focus:ring-green-200 bg-green-50">
-                        <button onclick="document.getElementById('ordEditQty').value = parseFloat(document.getElementById('ordEditQty').value||0) + 1"
-                            class="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 font-bold text-lg flex items-center justify-center">+</button>
-                    </div>
-                </div>
-
-                <div>
-                    <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1 block">Unit of Measure</label>
-                    <select id="ordEditUom" class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 bg-white">
-                        ${uomOptions}
-                    </select>
-                </div>
-
-                <div class="flex gap-3 pt-2">
-                    <button onclick="ordRemoveLine(${lineId}, ${reqId})"
-                        class="flex-1 py-3 rounded-xl border-2 border-red-200 text-red-600 font-semibold text-sm hover:bg-red-50 flex items-center justify-center gap-1.5">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
-                        Remove
-                    </button>
-                    <button onclick="ordSaveLine(${lineId}, ${reqId})"
-                        class="flex-1 py-3 rounded-xl bg-orange-500 text-white font-semibold text-sm hover:bg-orange-600 flex items-center justify-center gap-1.5">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
-                        Save
-                    </button>
+    document.getElementById('ordItemDetailContent').innerHTML = `
+        <h3 class="text-base font-bold text-gray-900 mb-1">${escHtml(line.item_name)}</h3>
+        <p class="text-xs text-gray-400 mb-4">Edit quantity, UOM, or remove</p>
+        <div class="space-y-4">
+            <div>
+                <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1 block">Quantity</label>
+                <div class="flex items-center gap-2">
+                    <button onclick="document.getElementById('ordEditQty').value = Math.max(0, parseFloat(document.getElementById('ordEditQty').value||0) - 1)"
+                        class="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 font-bold text-lg flex items-center justify-center active:bg-gray-200">-</button>
+                    <input type="number" id="ordEditQty" value="${qty}" step="0.5" min="0"
+                        class="flex-1 text-center text-xl font-bold border-2 border-green-300 rounded-xl py-2.5 focus:outline-none focus:ring-2 focus:ring-green-200 bg-green-50">
+                    <button onclick="document.getElementById('ordEditQty').value = parseFloat(document.getElementById('ordEditQty').value||0) + 1"
+                        class="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 font-bold text-lg flex items-center justify-center active:bg-gray-200">+</button>
                 </div>
             </div>
-        </div>
-    `);
+            <div>
+                <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1 block">Unit of Measure</label>
+                <select id="ordEditUom" class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 bg-white">${uomOptions}</select>
+            </div>
+            <div class="flex gap-3 pt-1">
+                <button onclick="ordRemoveLine(${lineId}, ${reqId})"
+                    class="flex-1 py-3 rounded-xl border-2 border-red-200 text-red-600 font-semibold text-sm hover:bg-red-50 flex items-center justify-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+                    Remove
+                </button>
+                <button onclick="ordSaveLine(${lineId}, ${reqId})"
+                    class="flex-1 py-3 rounded-xl bg-orange-500 text-white font-semibold text-sm hover:bg-orange-600 flex items-center justify-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+                    Save
+                </button>
+            </div>
+        </div>`;
+    document.getElementById('ordItemDetailModal').classList.remove('hidden');
 }
 
 async function ordSaveLine(lineId, reqId) {
     const qty = parseFloat(document.getElementById('ordEditQty').value) || 0;
     const uom = document.getElementById('ordEditUom').value;
-
     try {
         await api('api/requisitions.php?action=update_line', {
             method: 'POST',
             body: { line_id: lineId, order_qty: qty, uom: uom }
         });
         ordAdjustments[lineId] = qty;
-        closeSheet();
+        ordCloseItemDetail();
         showToast('Item updated');
-        ordLoad(); // reload to reflect changes
+        ordLoad();
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -375,7 +400,7 @@ async function ordRemoveLine(lineId, reqId) {
             method: 'POST',
             body: { line_id: lineId }
         });
-        closeSheet();
+        ordCloseItemDetail();
         showToast('Item removed');
         ordLoad();
     } catch (err) {
@@ -384,17 +409,35 @@ async function ordRemoveLine(lineId, reqId) {
 }
 
 // ══════════════════════════════════════════════
-//  Add Staple Item (floating + button)
-//  Works independently — no locked menu required
+//  Delete/Cancel Order (before store accepts)
+// ══════════════════════════════════════════════
+async function ordDeleteOrder(reqId) {
+    const req = ordRequisitions.find(r => r.id == reqId);
+    if (!req) return;
+    const mealLabel = typeof reqLabel === 'function' ? reqLabel(req) : (req.meals || 'Order');
+
+    if (!await customConfirm('Delete Order', `Cancel and delete the ${mealLabel} order? This will remove all items and reset to draft.`)) return;
+
+    try {
+        await api('api/requisitions.php?action=cancel_order', {
+            method: 'POST',
+            body: { requisition_id: reqId }
+        });
+        showToast(`${mealLabel} order cancelled`, 'success');
+        ordLoad();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
+// ══════════════════════════════════════════════
+//  Add Staple Item (popup modal, not drawer)
 // ══════════════════════════════════════════════
 let ordAddTargetReqId = null;
 
 async function ordShowAddItem() {
-    // Find any requisition for this date, or auto-create one
     let targetReq = ordRequisitions.find(r => ['draft', 'processing', 'submitted'].includes(r.status));
-
     if (!targetReq) {
-        // Auto-create requisitions for this date via page_init
         try {
             showToast('Creating order...', 'info');
             const initData = await api('api/requisitions.php?action=page_init', {
@@ -402,162 +445,121 @@ async function ordShowAddItem() {
                 body: { req_date: ordDate, kitchen_id: ORD_KITCHEN_ID, guest_count: 20 }
             });
             const newReqs = initData.requisitions || [];
-            if (newReqs.length > 0) {
-                targetReq = newReqs[0]; // use first available
-            }
+            if (newReqs.length > 0) targetReq = newReqs[0];
         } catch (e) {}
     }
-
-    if (!targetReq) {
-        showToast('Could not create order. Try again.', 'error');
-        return;
-    }
-
+    if (!targetReq) { showToast('Could not create order. Try again.', 'error'); return; }
     ordAddTargetReqId = targetReq.id;
 
-    // Cache items list
     if (!ordAllItems) {
-        try {
-            const res = await api('api/items.php?action=list&active=1');
-            ordAllItems = res.items || [];
-        } catch (e) { ordAllItems = []; }
+        try { const res = await api('api/items.php?action=list&active=1'); ordAllItems = res.items || []; } catch (e) { ordAllItems = []; }
     }
 
-    openSheet(`
-        <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
-        <div class="px-5 py-4">
-            <h3 class="text-base font-bold text-gray-900 mb-1">Add Staple Item</h3>
-            <p class="text-xs text-gray-400 mb-3">Search and tap an item to add</p>
-            <div class="relative mb-3">
-                <input type="text" id="ordAddSearch" placeholder="Search items..."
-                    oninput="ordFilterAddItems()"
-                    class="w-full text-sm border border-gray-200 rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="absolute left-3 top-3 text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
-            </div>
-            <div id="ordAddResults" class="max-h-[50vh] overflow-y-auto space-y-1">
-                <p class="text-xs text-gray-400 text-center py-3">Type to search items...</p>
-            </div>
-        </div>
-    `);
-
+    document.getElementById('ordAddModal').classList.remove('hidden');
+    document.getElementById('ordAddSearch').value = '';
+    document.getElementById('ordAddResults').innerHTML = '<p class="text-xs text-gray-400 text-center py-3">Type to search items...</p>';
     setTimeout(() => document.getElementById('ordAddSearch')?.focus(), 100);
+}
+
+function ordCloseAddModal() {
+    document.getElementById('ordAddModal').classList.add('hidden');
 }
 
 function ordFilterAddItems() {
     const q = (document.getElementById('ordAddSearch')?.value || '').toLowerCase().trim();
     const results = document.getElementById('ordAddResults');
     if (!results || !ordAllItems) return;
-
-    if (q.length < 2) {
-        results.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">Type at least 2 characters...</p>';
-        return;
-    }
+    if (q.length < 2) { results.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">Type at least 2 characters...</p>'; return; }
 
     const matches = ordAllItems.filter(item =>
         item.name.toLowerCase().includes(q) || (item.code && item.code.toLowerCase().includes(q))
     ).slice(0, 15);
 
-    if (matches.length === 0) {
-        results.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">No items found</p>';
-        return;
-    }
+    if (matches.length === 0) { results.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">No items found</p>'; return; }
 
     results.innerHTML = matches.map(item => {
         const safeName = escHtml(item.name);
-        const safeCat = escHtml(item.category || 'Uncategorized');
-        const safeUom = escHtml(item.uom || 'kg');
-        return `<button onclick="ordShowAddCard(${item.id}, '${safeName.replace(/'/g, "\\'")}', '${safeUom}')"
-            class="w-full flex items-center gap-3 px-3 py-3 hover:bg-orange-50 active:bg-orange-100 transition text-left border-b border-gray-100 last:border-0">
+        return `<button onclick="ordShowItemDetail(${item.id}, '${safeName.replace(/'/g, "\\'")}', '${escHtml(item.uom||'kg')}')"
+            class="w-full flex items-center gap-3 px-3 py-3 hover:bg-orange-50 active:bg-orange-100 transition text-left border-b border-gray-100 last:border-0 rounded-lg">
             <div class="w-9 h-9 rounded-lg bg-green-100 flex items-center justify-center shrink-0">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
             </div>
             <div class="flex-1 min-w-0">
                 <p class="text-sm font-medium text-gray-800 truncate">${safeName}</p>
-                <p class="text-[10px] text-gray-400">${safeCat} &middot; ${safeUom}</p>
+                <p class="text-[10px] text-gray-400">${escHtml(item.category || '')} &middot; ${escHtml(item.uom||'kg')}</p>
             </div>
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" class="shrink-0"><path d="m9 18 6-6-6-6"/></svg>
         </button>`;
     }).join('');
 }
 
-// ── Popup card for setting qty + UOM before adding ──
-function ordShowAddCard(itemId, itemName, itemUom) {
-    const uomOptions = ORD_UOM_OPTIONS.map(u =>
-        `<option value="${u}" ${u === itemUom ? 'selected' : ''}>${u}</option>`
-    ).join('');
+// ── Item detail popup tile (centered modal) ──
+function ordShowItemDetail(itemId, itemName, itemUom) {
+    ordCloseAddModal(); // close search modal
+    const uomOptions = ORD_UOM_OPTIONS.map(u => `<option value="${u}" ${u === itemUom ? 'selected' : ''}>${u}</option>`).join('');
 
-    openSheet(`
-        <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
-        <div class="px-5 py-4">
-            <div class="flex items-center gap-3 mb-4">
-                <div class="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center shrink-0">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
-                </div>
-                <div>
-                    <h3 class="text-base font-bold text-gray-900">${itemName}</h3>
-                    <p class="text-xs text-gray-400">Add to staple order</p>
-                </div>
+    document.getElementById('ordItemDetailContent').innerHTML = `
+        <div class="flex items-center gap-3 mb-5">
+            <div class="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
             </div>
-
-            <div class="space-y-4">
-                <div>
-                    <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1.5 block">Quantity</label>
-                    <div class="flex items-center gap-2">
-                        <button onclick="document.getElementById('ordAddQty').value = Math.max(0.5, parseFloat(document.getElementById('ordAddQty').value||0) - 1)"
-                            class="w-11 h-11 rounded-xl bg-gray-100 text-gray-600 font-bold text-xl flex items-center justify-center active:bg-gray-200">-</button>
-                        <input type="number" id="ordAddQty" value="1" step="0.5" min="0.5"
-                            class="flex-1 text-center text-2xl font-bold border-2 border-green-300 rounded-xl py-3 focus:outline-none focus:ring-2 focus:ring-green-200 bg-green-50">
-                        <button onclick="document.getElementById('ordAddQty').value = parseFloat(document.getElementById('ordAddQty').value||0) + 1"
-                            class="w-11 h-11 rounded-xl bg-gray-100 text-gray-600 font-bold text-xl flex items-center justify-center active:bg-gray-200">+</button>
-                    </div>
-                </div>
-
-                <div>
-                    <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1.5 block">Unit of Measure</label>
-                    <select id="ordAddUom" class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 bg-white">
-                        ${uomOptions}
-                    </select>
-                </div>
-
-                <button onclick="ordConfirmAddItem(${itemId}, '${itemName.replace(/'/g, "\\'")}')" id="ordAddConfirmBtn"
-                    class="w-full bg-green-600 hover:bg-green-700 text-white py-3.5 rounded-xl text-sm font-bold transition flex items-center justify-center gap-2 mt-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                    Add to Order
-                </button>
+            <div>
+                <h3 class="text-base font-bold text-gray-900">${itemName}</h3>
+                <p class="text-xs text-gray-400">Add to staple order</p>
             </div>
         </div>
-    `);
+        <div class="space-y-4">
+            <div>
+                <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1.5 block">Quantity</label>
+                <div class="flex items-center gap-2">
+                    <button onclick="document.getElementById('ordAddQty').value = Math.max(0.5, parseFloat(document.getElementById('ordAddQty').value||0) - 1)"
+                        class="w-11 h-11 rounded-xl bg-gray-100 text-gray-600 font-bold text-xl flex items-center justify-center active:bg-gray-200">-</button>
+                    <input type="number" id="ordAddQty" value="1" step="0.5" min="0.5"
+                        class="flex-1 text-center text-2xl font-bold border-2 border-green-300 rounded-xl py-3 focus:outline-none focus:ring-2 focus:ring-green-200 bg-green-50">
+                    <button onclick="document.getElementById('ordAddQty').value = parseFloat(document.getElementById('ordAddQty').value||0) + 1"
+                        class="w-11 h-11 rounded-xl bg-gray-100 text-gray-600 font-bold text-xl flex items-center justify-center active:bg-gray-200">+</button>
+                </div>
+            </div>
+            <div>
+                <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1.5 block">Unit of Measure</label>
+                <select id="ordAddUom" class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 bg-white">${uomOptions}</select>
+            </div>
+            <div class="flex gap-3 pt-1">
+                <button onclick="ordCloseItemDetail()" class="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-semibold text-sm">Cancel</button>
+                <button onclick="ordConfirmAddItem(${itemId}, '${itemName.replace(/'/g, "\\'")}')" id="ordAddConfirmBtn"
+                    class="flex-1 py-3 rounded-xl bg-green-600 text-white font-bold text-sm hover:bg-green-700 flex items-center justify-center gap-1.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg> Add
+                </button>
+            </div>
+        </div>`;
+    document.getElementById('ordItemDetailModal').classList.remove('hidden');
+}
+
+function ordCloseItemDetail() {
+    document.getElementById('ordItemDetailModal').classList.add('hidden');
 }
 
 async function ordConfirmAddItem(itemId, itemName) {
     const qty = parseFloat(document.getElementById('ordAddQty')?.value) || 0;
     const uom = document.getElementById('ordAddUom')?.value || 'kg';
-
     if (qty <= 0) { showToast('Enter a valid quantity', 'error'); return; }
 
     const btn = document.getElementById('ordAddConfirmBtn');
-    if (btn) { btn.disabled = true; btn.innerHTML = '<svg class="animate-spin" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg> Adding...'; }
+    if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
 
     try {
         await api('api/requisitions.php?action=add_line_to_order', {
             method: 'POST',
-            body: {
-                requisition_id: ordAddTargetReqId,
-                item_id: itemId,
-                item_name: itemName,
-                order_qty: qty,
-                uom: uom,
-                is_staple: 1
-            }
+            body: { requisition_id: ordAddTargetReqId, item_id: itemId, item_name: itemName, order_qty: qty, uom: uom, is_staple: 1 }
         });
         showToast(`${itemName} added!`, 'success');
-        closeSheet();
+        ordCloseItemDetail();
         ordActiveTab = 'staple';
         ordSwitchTab('staple');
         ordLoad();
     } catch (err) {
         showToast(err.message, 'error');
-        if (btn) { btn.disabled = false; btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg> Add to Order'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Add'; }
     }
 }
 
