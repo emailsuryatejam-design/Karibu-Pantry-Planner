@@ -1205,6 +1205,35 @@ switch ($action) {
         jsonResponse(['removed' => true]);
         break;
 
+    // ── Cancel/delete an order (chef can cancel before store fulfills) ──
+    case 'cancel_order':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        if (!$reqId) jsonError('Requisition ID required');
+
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft','processing','submitted')");
+        $stmt->execute([$reqId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Order not found or already fulfilled');
+
+        // Delete all lines and reset to draft
+        $db->beginTransaction();
+        try {
+            $db->prepare("DELETE FROM requisition_lines WHERE requisition_id = ?")->execute([$reqId]);
+            $db->prepare("DELETE FROM requisition_dishes WHERE requisition_id = ?")->execute([$reqId]);
+            $db->prepare("UPDATE requisitions SET status = 'draft', updated_at = NOW() WHERE id = ?")->execute([$reqId]);
+            $db->commit();
+        } catch (Exception $e) {
+            $db->rollBack();
+            jsonError('Failed to cancel order');
+        }
+
+        auditLog('cancel_order', 'requisitions', $reqId, ['status' => $req['status']], ['status' => 'draft']);
+        jsonResponse(['cancelled' => true]);
+        break;
+
     // ── Save dish-based requisition lines ──
     // ── Atomic save + submit (prevents race condition between separate save and submit calls) ──
     case 'save_and_submit':
