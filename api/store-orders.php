@@ -97,7 +97,8 @@ switch ($action) {
                 rl.order_qty AS requested_qty,
                 rl.fulfilled_qty,
                 rl.received_qty,
-                rl.status AS line_status
+                rl.status AS line_status,
+                IFNULL(rl.is_staple, 0) AS is_staple
             FROM requisition_lines rl
             WHERE rl.requisition_id = ?
             ORDER BY FIELD(rl.status, 'rejected', 'pending', 'approved', 'adjusted') DESC, rl.id");
@@ -114,8 +115,8 @@ switch ($action) {
         $lines = $input['lines'] ?? [];
         if (!$orderId) jsonError('Order ID required');
 
-        // Update fulfilled qty per line (skip rejected/removed lines)
-        $stmt = $db->prepare("UPDATE requisition_lines SET fulfilled_qty = ? WHERE id = ? AND requisition_id = ? AND status != 'rejected'");
+        // Update fulfilled qty per line and set status to approved (skip rejected/removed lines)
+        $stmt = $db->prepare("UPDATE requisition_lines SET fulfilled_qty = ?, status = 'approved' WHERE id = ? AND requisition_id = ? AND status != 'rejected'");
         $lineDetails = [];
         foreach ($lines as $line) {
             $fulfilledQty = (float)($line['fulfilled_qty'] ?? 0);
@@ -231,8 +232,8 @@ switch ($action) {
         $existing = $existCheck->fetch();
         if ($existing) jsonError('Item already exists in this order. Adjust quantity instead.');
 
-        // Insert new line
-        $ins = $db->prepare("INSERT INTO requisition_lines (requisition_id, item_id, item_name, uom, order_qty, status, store_notes) VALUES (?, ?, ?, ?, ?, 'pending', '[Added by store]')");
+        // Insert new line (store-added items are staple by default)
+        $ins = $db->prepare("INSERT INTO requisition_lines (requisition_id, item_id, item_name, uom, order_qty, status, store_notes, is_staple) VALUES (?, ?, ?, ?, ?, 'pending', '[Added by store]', 1)");
         $ins->execute([$orderId, $itemId, $item['name'], $item['uom'], $qty]);
         $newLineId = $db->lastInsertId();
 
