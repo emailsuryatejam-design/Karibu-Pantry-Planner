@@ -1151,6 +1151,10 @@ switch ($action) {
 
         if (!$reqId || (!$itemId && !$itemName)) jsonError('Requisition ID and item required');
 
+        // Self-healing: ensure is_staple column exists
+        try { $db->query("SELECT is_staple FROM requisition_lines LIMIT 0"); }
+        catch (Exception $e) { $db->exec("ALTER TABLE requisition_lines ADD COLUMN is_staple TINYINT(1) DEFAULT 0"); }
+
         // Get item name from items table if item_id provided
         if ($itemId && !$itemName) {
             $iStmt = $db->prepare('SELECT name, uom FROM items WHERE id = ?');
@@ -1302,6 +1306,12 @@ switch ($action) {
             $db->query("SELECT source_dish_id FROM requisition_lines LIMIT 0");
         } catch (Exception $e) {
             $db->exec("ALTER TABLE requisition_lines ADD COLUMN source_dish_id INT DEFAULT NULL, ADD COLUMN source_recipe_id INT DEFAULT NULL");
+        }
+        // Self-healing: add is_staple column if missing
+        try {
+            $db->query("SELECT is_staple FROM requisition_lines LIMIT 0");
+        } catch (Exception $e) {
+            $db->exec("ALTER TABLE requisition_lines ADD COLUMN is_staple TINYINT(1) DEFAULT 0");
         }
 
         $db->beginTransaction();
