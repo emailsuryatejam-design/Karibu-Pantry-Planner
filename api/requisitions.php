@@ -1147,7 +1147,7 @@ switch ($action) {
             if ($iRow) { $itemName = $iRow['name']; if (!$uom || $uom === 'kg') $uom = $iRow['uom']; }
         }
 
-        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft','processing')");
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft','processing','submitted')");
         $stmt->execute([$reqId]);
         $req = $stmt->fetch();
         if (!$req) jsonError('Requisition not found or not editable');
@@ -1198,7 +1198,7 @@ switch ($action) {
         $check->execute([$lineId]);
         $row = $check->fetch();
         if (!$row) jsonError('Line not found', 404);
-        if (!in_array($row['status'], ['draft', 'processing'])) jsonError('Cannot modify submitted orders');
+        if (!in_array($row['status'], ['draft', 'processing', 'submitted'])) jsonError('Cannot modify fulfilled orders');
 
         $db->prepare("DELETE FROM requisition_lines WHERE id = ?")->execute([$lineId]);
         auditLog('chef_remove_line', 'requisition_lines', $lineId);

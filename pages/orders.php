@@ -387,10 +387,11 @@ async function ordRemoveLine(lineId, reqId) {
 //  Add Item (floating + button)
 // ══════════════════════════════════════════════
 async function ordShowAddItem() {
-    // Find the first processing requisition to add items to
-    const processingReq = ordRequisitions.find(r => r.status === 'processing');
+    // Find any editable requisition (processing or submitted)
+    const processingReq = ordRequisitions.find(r => r.status === 'processing')
+        || ordRequisitions.find(r => r.status === 'submitted');
     if (!processingReq) {
-        showToast('No active order to add items to. Lock a menu first.', 'warning');
+        showToast('No active order to add items to. Lock a menu on the Dashboard first.', 'warning');
         return;
     }
 
