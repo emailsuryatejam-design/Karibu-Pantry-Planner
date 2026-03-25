@@ -244,7 +244,7 @@ async function soOpenDetail(orderId) {
                 const diffCls = diff > 0 ? 'text-blue-600 font-semibold' : diff < 0 ? 'text-red-600 font-semibold' : 'text-gray-300';
                 const rowBg = Math.abs(diff) > 0.01 ? 'bg-red-50/50' : '';
                 html += `<tr class="${rowBg}">
-                    <td class="px-2 py-1.5 text-gray-700">${line.item_name}${parseInt(line.is_staple) ? ' <span class="text-[8px] px-1 py-0.5 rounded bg-purple-100 text-purple-500">S</span>' : ''} <span class="text-gray-300 text-[9px]">${line.uom || ''}</span></td>
+                    <td class="px-2 py-1.5 text-gray-700">${line.item_code ? '<span class="text-[9px] text-blue-400 mr-1">#'+line.item_code+'</span>' : ''}${line.item_name}${parseInt(line.is_staple) ? ' <span class="text-[8px] px-1 py-0.5 rounded bg-purple-100 text-purple-500">S</span>' : ''} <span class="text-gray-300 text-[9px]">${line.uom || ''}</span></td>
                     <td class="text-center px-1 py-1.5 text-blue-700 font-medium">${oq > 0 ? oq.toFixed(1) : '—'}</td>
                     <td class="text-center px-1 py-1.5 text-green-700 font-medium">${fq > 0 ? fq.toFixed(1) : '—'}</td>
                     <td class="text-center px-1 py-1.5 text-orange-700 font-medium">${rq > 0 ? rq.toFixed(1) : '—'}</td>
@@ -319,7 +319,7 @@ function soActiveLineHtml(line, reqQty) {
         <div class="flex items-center justify-between mb-2">
             <div class="min-w-0 flex-1">
                 <p class="font-semibold text-sm text-gray-800 truncate">${line.item_name}${parseInt(line.is_staple) ? ' <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-600 font-semibold ml-1">Staple</span>' : ''}</p>
-                <p class="text-[10px] text-gray-400">${line.uom}</p>
+                <p class="text-[10px] text-gray-400">${line.item_code ? '#'+line.item_code+' · ' : ''}${line.uom}</p>
             </div>
             <button onclick="soRemoveLine(${line.id}, ${soCurrentOrderId || 0})" title="Remove item"
                 class="w-8 h-8 rounded-lg bg-red-50 hover:bg-red-100 border border-red-200 text-red-400 hover:text-red-600 flex items-center justify-center transition compact-btn ml-2">
@@ -405,16 +405,17 @@ async function soShowAddItem(orderId) {
     panel.classList.remove('hidden');
     panel.innerHTML = `
         <div class="bg-white border border-green-200 rounded-xl p-3 shadow-sm">
-            <div class="flex items-center gap-2 mb-3">
+            <div class="flex items-center gap-2 mb-2">
                 <div class="relative flex-1">
-                    <input type="text" id="soAddItemSearch" placeholder="Search items..."
+                    <input type="text" id="soAddItemSearch" placeholder="Search by name or item #..."
                         oninput="soSearchItems(this.value)"
                         class="w-full text-sm border border-gray-200 rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:ring-2 focus:ring-green-200 focus:border-green-300">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="absolute left-2.5 top-2.5 text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                 </div>
             </div>
+            <div id="soAddCatFilter" class="flex gap-1 overflow-x-auto pb-1 mb-2 scroll-touch"></div>
             <div id="soAddItemResults" class="max-h-48 overflow-y-auto space-y-1">
-                <p class="text-xs text-gray-400 text-center py-3">Type to search items...</p>
+                <p class="text-xs text-gray-400 text-center py-3">Type to search or pick a category...</p>
             </div>
         </div>`;
 
@@ -433,22 +434,56 @@ async function soShowAddItem(orderId) {
             soItemsList = [];
         }
     }
+
+    // Build category filter chips
+    soSelectedCat = '';
+    const cats = [...new Set(soItemsList.map(i => i.category).filter(Boolean))].sort();
+    const foodCats = ['Dry', 'Dairy', 'Veg', 'Meat', 'Fruits', 'Juice', 'Bar'];
+    const priorityCats = foodCats.filter(c => cats.includes(c));
+    const otherCats = cats.filter(c => !foodCats.includes(c));
+    const orderedCats = [...priorityCats, ...otherCats];
+
+    const catContainer = document.getElementById('soAddCatFilter');
+    if (catContainer) {
+        catContainer.innerHTML = orderedCats.map(c =>
+            `<button onclick="soFilterByCat('${c}')" class="so-cat-btn px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap bg-gray-100 text-gray-600 hover:bg-green-100 hover:text-green-700 transition">${c}</button>`
+        ).join('');
+    }
+}
+
+let soSelectedCat = '';
+
+function soFilterByCat(cat) {
+    soSelectedCat = (soSelectedCat === cat) ? '' : cat;
+    document.querySelectorAll('.so-cat-btn').forEach(btn => {
+        btn.className = btn.textContent === soSelectedCat
+            ? 'so-cat-btn px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap bg-green-600 text-white'
+            : 'so-cat-btn px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap bg-gray-100 text-gray-600 hover:bg-green-100 hover:text-green-700 transition';
+    });
+    const searchVal = document.getElementById('soAddItemSearch')?.value || '';
+    soSearchItems(searchVal);
 }
 
 function soSearchItems(query) {
     const results = document.getElementById('soAddItemResults');
     if (!results || !soItemsList) return;
 
-    if (!query || query.length < 2) {
-        results.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">Type at least 2 characters...</p>';
+    let filtered = soItemsList;
+    if (soSelectedCat) {
+        filtered = filtered.filter(item => item.category === soSelectedCat);
+    }
+
+    const q = (query || '').toLowerCase();
+    if (q.length >= 2) {
+        filtered = filtered.filter(item =>
+            item.name.toLowerCase().includes(q) || (item.code && item.code.toLowerCase().includes(q))
+        );
+    } else if (!soSelectedCat) {
+        results.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">Type to search or pick a category above</p>';
         return;
     }
 
-    const q = query.toLowerCase();
-    const matches = soItemsList.filter(item =>
-        item.name.toLowerCase().includes(q) || (item.code && item.code.toLowerCase().includes(q))
-    ).slice(0, 15);
-
+    const matches = filtered.slice(0, 20);
     if (matches.length === 0) {
         results.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">No items found</p>';
         return;
@@ -457,12 +492,13 @@ function soSearchItems(query) {
     results.innerHTML = matches.map(item => {
         const safeName = (item.name || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
         const safeUom = (item.uom || 'kg').replace(/&/g,'&amp;').replace(/</g,'&lt;');
-        const safeCat = (item.category || 'Uncategorized').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        const safeCat = (item.category || '').replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        const safeCode = (item.code || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;');
         return `
         <div class="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-green-50 transition" data-item-id="${item.id}" data-item-name="${safeName}" data-item-uom="${safeUom}">
             <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-gray-800">${safeName}</p>
-                <p class="text-[10px] text-gray-400">${safeCat} &middot; ${safeUom}</p>
+                <p class="text-sm font-medium text-gray-800">${safeCode ? '<span class="text-blue-500 text-[10px] mr-1">#'+safeCode+'</span>' : ''}${safeName}</p>
+                <p class="text-[10px] text-gray-400">${safeCat} · ${safeUom}</p>
             </div>
             <input type="number" step="0.5" min="0.5" value="1" placeholder="Qty"
                 class="w-16 text-center text-sm border border-gray-200 rounded-lg py-1.5 focus:outline-none focus:ring-2 focus:ring-green-200 bg-white">
