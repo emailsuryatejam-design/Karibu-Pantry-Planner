@@ -17,7 +17,7 @@ if (isStorekeeper()) $defaultPage = 'store-dashboard';
 $page = $_GET['page'] ?? $defaultPage;
 
 // Valid pages per role
-$chefPages = ['dashboard', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'recipes', 'kitchen-inventory', 'reports', 'settings'];
+$chefPages = ['dashboard', 'orders', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'recipes', 'kitchen-inventory', 'reports', 'settings'];
 $storePages = ['store-dashboard', 'store-orders', 'store-inventory', 'store-history', 'reports', 'settings'];
 $adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus']));
 
@@ -29,6 +29,7 @@ if (!in_array($page, $allowedPages)) {
 // Page titles
 $pageTitles = [
     'dashboard' => 'Dashboard',
+    'orders' => 'Orders',
     'requisition' => 'Requisition',
     'review-supply' => 'Review Supply',
     'day-close' => 'Day Close',
@@ -132,11 +133,11 @@ $isAdminRole = isAdmin();
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
                     <span class="text-[9px] font-medium">Home</span>
                 </a>
-                <!-- Chef: Requisition -->
-                <a href="app.php?page=requisition"
-                   class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= $page === 'requisition' ? 'text-orange-600' : 'text-gray-400' ?>">
+                <!-- Chef: Orders -->
+                <a href="app.php?page=orders"
+                   class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= $page === 'orders' ? 'text-orange-600' : 'text-gray-400' ?>">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
-                    <span class="text-[9px] font-medium">Order</span>
+                    <span class="text-[9px] font-medium">Orders</span>
                 </a>
                 <!-- Chef: Recipes -->
                 <a href="app.php?page=recipes"

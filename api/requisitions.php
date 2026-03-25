@@ -1048,26 +1048,94 @@ switch ($action) {
 
         jsonResponse(['added' => true, 'recipe_name' => $recipe['name']]);
 
-    // ── Save dish-based requisition lines ──
-    // ── Atomic save + submit (prevents race condition between separate save and submit calls) ──
-    case 'save_and_submit':
+    // ── Lock menu: save dishes + generate items, set status to 'processing' ──
+    case 'lock_menu':
         requireMethod('POST');
         requireRole(['chef', 'admin']);
         $data = getJsonInput();
         $reqId = (int)($data['requisition_id'] ?? 0);
         if (!$reqId) jsonError('Requisition ID required');
 
-        // Verify draft status
         $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'draft'");
         $stmt->execute([$reqId]);
         $req = $stmt->fetch();
         if (!$req) jsonError('Requisition not found or not in draft status');
 
-        // Delegate to save_dish_lines logic (will be caught by fall-through)
-        // But we set a flag to also submit after saving
-        $data['_also_submit'] = true;
-        $input = $data; // Ensure save_dish_lines sees the data
-        $_GET['action'] = 'save_dish_lines'; // Fall through
+        $data['_lock_menu'] = true;
+        $input = $data;
+        $_GET['action'] = 'save_dish_lines';
+        // FALL THROUGH to save_dish_lines
+
+    // ── Submit order: take a processing requisition and submit to store ──
+    case 'submit_order':
+        if (($_GET['action'] ?? '') === 'submit_order') {
+            requireMethod('POST');
+            requireRole(['chef', 'admin']);
+            $data = getJsonInput();
+            $reqId = (int)($data['requisition_id'] ?? 0);
+            if (!$reqId) jsonError('Requisition ID required');
+
+            $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft', 'processing')");
+            $stmt->execute([$reqId]);
+            $req = $stmt->fetch();
+            if (!$req) jsonError('Requisition not found or not ready to submit');
+
+            // Apply any quantity adjustments from the orders page
+            $lineUpdates = $data['lines'] ?? [];
+            if (!empty($lineUpdates)) {
+                $updStmt = $db->prepare('UPDATE requisition_lines SET order_qty = ? WHERE id = ? AND requisition_id = ?');
+                foreach ($lineUpdates as $lu) {
+                    $qty = max(0, (float)($lu['order_qty'] ?? 0));
+                    $updStmt->execute([$qty, (int)$lu['id'], $reqId]);
+                }
+            }
+
+            // Submit
+            $db->prepare("UPDATE requisitions SET status = 'submitted', updated_at = NOW() WHERE id = ?")->execute([$reqId]);
+
+            // Send push notification to storekeeper
+            try {
+                $kitchenName = '';
+                $kStmt = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
+                $kStmt->execute([$req['kitchen_id']]);
+                $kRow = $kStmt->fetch();
+                if ($kRow) $kitchenName = $kRow['name'];
+                $mealLabel = ucfirst($req['meals'] ?? 'order');
+                $suppNum = (int)($req['supplement_number'] ?? 0);
+                if ($suppNum > 0) $mealLabel .= ' (' . ($suppNum + 1) . ')';
+                $pushPayload = [
+                    'title' => 'New Requisition',
+                    'body'  => "{$user['name']} submitted {$mealLabel} for {$kitchenName}",
+                    'url'   => '/app.php?page=store-dashboard',
+                    'tag'   => 'req-submitted-' . $reqId,
+                ];
+                sendPushToKitchen((int)$req['kitchen_id'], $pushPayload, 'storekeeper', $user['id']);
+                storeNotification((int)$req['kitchen_id'], null, $pushPayload['title'], $pushPayload['body'], 'requisition_submitted', $reqId);
+            } catch (Exception $e) {}
+
+            auditLog('requisition_submit_order', 'requisition', $reqId);
+            jsonResponse(['submitted' => true, 'requisition_id' => $reqId]);
+        }
+
+    // ── Save dish-based requisition lines ──
+    // ── Atomic save + submit (prevents race condition between separate save and submit calls) ──
+    case 'save_and_submit':
+        if (($_GET['action'] ?? '') === 'save_and_submit') {
+            requireMethod('POST');
+            requireRole(['chef', 'admin']);
+            $data = getJsonInput();
+            $reqId = (int)($data['requisition_id'] ?? 0);
+            if (!$reqId) jsonError('Requisition ID required');
+
+            $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'draft'");
+            $stmt->execute([$reqId]);
+            $req = $stmt->fetch();
+            if (!$req) jsonError('Requisition not found or not in draft status');
+
+            $data['_also_submit'] = true;
+            $input = $data;
+            $_GET['action'] = 'save_dish_lines';
+        }
         // FALL THROUGH to save_dish_lines
 
     case 'save_dish_lines':
@@ -1233,10 +1301,13 @@ switch ($action) {
                 $totalKg += $orderQty;
             }
 
-            // Also submit if atomic save_and_submit was called
+            // Set status based on which action was called
             $alsoSubmit = !empty($data['_also_submit']);
+            $lockMenu = !empty($data['_lock_menu']);
             if ($alsoSubmit && $totalItems > 0) {
                 $db->prepare("UPDATE requisitions SET guest_count = ?, status = 'submitted', created_by = ?, updated_at = NOW() WHERE id = ?")->execute([$guestCount, $user['id'], $reqId]);
+            } elseif ($lockMenu && $totalItems > 0) {
+                $db->prepare("UPDATE requisitions SET guest_count = ?, status = 'processing', created_by = ?, updated_at = NOW() WHERE id = ?")->execute([$guestCount, $user['id'], $reqId]);
             } else {
                 $db->prepare("UPDATE requisitions SET guest_count = ?, created_by = ?, updated_at = NOW() WHERE id = ?")->execute([$guestCount, $user['id'], $reqId]);
             }
