@@ -1081,10 +1081,11 @@ switch ($action) {
         $req = $stmt->fetch();
         if (!$req) jsonError('Requisition not found or not in draft status');
 
+        // Set lock flag and redirect to save_dish_lines via goto
         $data['_lock_menu'] = true;
         $input = $data;
         $_GET['action'] = 'save_dish_lines';
-        // FALL THROUGH to save_dish_lines
+        goto save_dish_lines_entry;
 
     // ── Submit order: take a processing requisition and submit to store ──
     case 'submit_order':
@@ -1136,6 +1137,9 @@ switch ($action) {
             auditLog('requisition_submit_order', 'requisition', $reqId);
             jsonResponse(['submitted' => true, 'requisition_id' => $reqId]);
         }
+        // If we got here without matching submit_order, we came from lock_menu fall-through
+        // Continue to save_dish_lines
+        break;
 
     // ── Add a line item to an order (chef can add items not from menu) ──
     case 'add_line_to_order':
@@ -1281,6 +1285,7 @@ switch ($action) {
         }
         // FALL THROUGH to save_dish_lines
 
+    save_dish_lines_entry:
     case 'save_dish_lines':
         requireMethod('POST');
         requireRole(['chef', 'admin']);
