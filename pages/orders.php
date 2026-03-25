@@ -162,13 +162,13 @@ async function ordLoad() {
         const allReqs = res.requisitions || [];
         const linesByReq = res.lines_by_req || {};
 
-        const validStatuses = ['processing', 'submitted', 'fulfilled', 'received'];
-        ordRequisitions = allReqs.filter(r => validStatuses.includes(r.status));
+        const validStatuses = ['draft', 'processing', 'submitted', 'fulfilled', 'received'];
+        ordRequisitions = allReqs.filter(r => validStatuses.includes(r.status) && (r.status !== 'draft' || parseInt(r.line_count) > 0));
         ordLinesByReq = linesByReq;
         ordAdjustments = {};
 
-        // Fetch full lines for processing requisitions
-        const processingReqs = ordRequisitions.filter(r => r.status === 'processing');
+        // Fetch full lines for draft/processing requisitions (editable orders)
+        const processingReqs = ordRequisitions.filter(r => ['draft', 'processing'].includes(r.status));
         await Promise.all(processingReqs.map(r =>
             api(`api/requisitions.php?action=get&id=${r.id}`).then(data => {
                 ordLinesByReq[r.id] = data.lines || [];
