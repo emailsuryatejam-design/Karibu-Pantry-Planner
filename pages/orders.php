@@ -74,15 +74,16 @@ $kitchenId = currentKitchenId();
                 </button>
             </div>
             <div class="px-5 py-3">
-                <div class="relative">
-                    <input type="text" id="ordAddSearch" placeholder="Search items..."
+                <div class="relative mb-2">
+                    <input type="text" id="ordAddSearch" placeholder="Search by name or item #..."
                         oninput="ordFilterAddItems()"
                         class="w-full text-sm border border-gray-200 rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="absolute left-3 top-3 text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                 </div>
+                <div id="ordAddCatFilter" class="flex gap-1 overflow-x-auto pb-1 scroll-touch"></div>
             </div>
             <div id="ordAddResults" class="flex-1 overflow-y-auto px-5 pb-4 space-y-1">
-                <p class="text-xs text-gray-400 text-center py-3">Type to search items...</p>
+                <p class="text-xs text-gray-400 text-center py-3">Type to search or pick a category</p>
             </div>
         </div>
     </div>
@@ -455,10 +456,37 @@ async function ordShowAddItem() {
         try { const res = await api('api/items.php?action=list&active=1'); ordAllItems = res.items || []; } catch (e) { ordAllItems = []; }
     }
 
+    ordSelectedCat = '';
     document.getElementById('ordAddModal').classList.remove('hidden');
     document.getElementById('ordAddSearch').value = '';
-    document.getElementById('ordAddResults').innerHTML = '<p class="text-xs text-gray-400 text-center py-3">Type to search items...</p>';
+    document.getElementById('ordAddResults').innerHTML = '<p class="text-xs text-gray-400 text-center py-3">Type to search or pick a category</p>';
+
+    // Build category chips
+    const foodCats = ['Dry', 'Dairy', 'Veg', 'Meat', 'Fruits', 'Juice', 'Bar'];
+    const allCats = [...new Set(ordAllItems.map(i => i.category).filter(Boolean))].sort();
+    const priorityCats = foodCats.filter(c => allCats.includes(c));
+    const otherCats = allCats.filter(c => !foodCats.includes(c));
+    const orderedCats = [...priorityCats, ...otherCats];
+    const catContainer = document.getElementById('ordAddCatFilter');
+    if (catContainer) {
+        catContainer.innerHTML = orderedCats.map(c =>
+            `<button onclick="ordFilterByCat('${c}')" class="ord-cat-btn px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap bg-gray-100 text-gray-600 hover:bg-orange-100 hover:text-orange-700 transition">${c}</button>`
+        ).join('');
+    }
+
     setTimeout(() => document.getElementById('ordAddSearch')?.focus(), 100);
+}
+
+let ordSelectedCat = '';
+
+function ordFilterByCat(cat) {
+    ordSelectedCat = (ordSelectedCat === cat) ? '' : cat;
+    document.querySelectorAll('.ord-cat-btn').forEach(btn => {
+        btn.className = btn.textContent === ordSelectedCat
+            ? 'ord-cat-btn px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap bg-orange-500 text-white'
+            : 'ord-cat-btn px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap bg-gray-100 text-gray-600 hover:bg-orange-100 hover:text-orange-700 transition';
+    });
+    ordFilterAddItems();
 }
 
 function ordCloseAddModal() {
@@ -469,24 +497,34 @@ function ordFilterAddItems() {
     const q = (document.getElementById('ordAddSearch')?.value || '').toLowerCase().trim();
     const results = document.getElementById('ordAddResults');
     if (!results || !ordAllItems) return;
-    if (q.length < 2) { results.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">Type at least 2 characters...</p>'; return; }
 
-    const matches = ordAllItems.filter(item =>
-        item.name.toLowerCase().includes(q) || (item.code && item.code.toLowerCase().includes(q))
-    ).slice(0, 15);
+    let filtered = ordAllItems;
+    if (ordSelectedCat) {
+        filtered = filtered.filter(item => item.category === ordSelectedCat);
+    }
+    if (q.length >= 2) {
+        filtered = filtered.filter(item =>
+            item.name.toLowerCase().includes(q) || (item.code && item.code.toLowerCase().includes(q))
+        );
+    } else if (!ordSelectedCat) {
+        results.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">Type to search or pick a category</p>';
+        return;
+    }
 
+    const matches = filtered.slice(0, 20);
     if (matches.length === 0) { results.innerHTML = '<p class="text-xs text-gray-400 text-center py-3">No items found</p>'; return; }
 
     results.innerHTML = matches.map(item => {
         const safeName = escHtml(item.name);
+        const safeCode = escHtml(item.code || '');
         return `<button onclick="ordShowItemDetail(${item.id}, '${safeName.replace(/'/g, "\\'")}', '${escHtml(item.uom||'kg')}')"
             class="w-full flex items-center gap-3 px-3 py-3 hover:bg-orange-50 active:bg-orange-100 transition text-left border-b border-gray-100 last:border-0 rounded-lg">
             <div class="w-9 h-9 rounded-lg bg-green-100 flex items-center justify-center shrink-0">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2"><path d="m7.5 4.27 9 5.15"/><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
             </div>
             <div class="flex-1 min-w-0">
-                <p class="text-sm font-medium text-gray-800 truncate">${safeName}</p>
-                <p class="text-[10px] text-gray-400">${escHtml(item.category || '')} &middot; ${escHtml(item.uom||'kg')}</p>
+                <p class="text-sm font-medium text-gray-800 truncate">${safeCode ? '<span class="text-blue-500 text-[10px] mr-1">#'+safeCode+'</span>' : ''}${safeName}</p>
+                <p class="text-[10px] text-gray-400">${escHtml(item.category || '')} · ${escHtml(item.uom||'kg')}</p>
             </div>
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2" class="shrink-0"><path d="m9 18 6-6-6-6"/></svg>
         </button>`;

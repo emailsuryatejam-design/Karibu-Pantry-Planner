@@ -102,8 +102,10 @@ switch ($action) {
                 rl.fulfilled_qty,
                 rl.received_qty,
                 rl.status AS line_status,
-                IFNULL(rl.is_staple, 0) AS is_staple
+                IFNULL(rl.is_staple, 0) AS is_staple,
+                i.code AS item_code, i.category AS item_category
             FROM requisition_lines rl
+            LEFT JOIN items i ON i.id = rl.item_id
             WHERE rl.requisition_id = ?
             ORDER BY FIELD(rl.status, 'rejected', 'pending', 'approved', 'adjusted') DESC, rl.id");
         $lines->execute([$orderId]);
