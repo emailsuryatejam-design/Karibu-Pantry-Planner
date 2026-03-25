@@ -11,6 +11,10 @@ $kitchenId = $user['kitchen_id'] ?? null;
 $input = $_SERVER['REQUEST_METHOD'] === 'POST' ? getJsonInput() : [];
 $action = $_GET['action'] ?? ($input['action'] ?? ($_POST['action'] ?? ''));
 
+// Self-healing: ensure is_staple column exists
+try { $db->query("SELECT is_staple FROM requisition_lines LIMIT 0"); }
+catch (Exception $e) { $db->exec("ALTER TABLE requisition_lines ADD COLUMN is_staple TINYINT(1) DEFAULT 0"); }
+
 // Map store-orders statuses to requisition statuses
 $statusMap = [
     'pending'   => 'submitted',
