@@ -1141,44 +1141,50 @@ switch ($action) {
     case 'add_line_to_order':
         requireMethod('POST');
         requireRole(['chef', 'admin']);
-        $data = getJsonInput();
-        $reqId = (int)($data['requisition_id'] ?? 0);
-        $itemId = (int)($data['item_id'] ?? 0);
-        $itemName = trim($data['item_name'] ?? '');
-        $orderQty = max(0, (float)($data['order_qty'] ?? 1));
-        $uom = trim($data['uom'] ?? 'kg');
-        $isStaple = (int)($data['is_staple'] ?? 1);
+        try {
+            $data = getJsonInput();
+            $reqId = (int)($data['requisition_id'] ?? 0);
+            $itemId = (int)($data['item_id'] ?? 0);
+            $itemName = trim($data['item_name'] ?? '');
+            $orderQty = max(0, (float)($data['order_qty'] ?? 1));
+            $uom = trim($data['uom'] ?? 'kg');
+            $isStaple = (int)($data['is_staple'] ?? 1);
 
-        if (!$reqId || (!$itemId && !$itemName)) jsonError('Requisition ID and item required');
+            if (!$reqId || (!$itemId && !$itemName)) jsonError('Requisition ID and item required');
 
-        // Self-healing: ensure is_staple column exists
-        try { $db->query("SELECT is_staple FROM requisition_lines LIMIT 0"); }
-        catch (Exception $e) { $db->exec("ALTER TABLE requisition_lines ADD COLUMN is_staple TINYINT(1) DEFAULT 0"); }
+            // Self-healing: ensure is_staple column exists
+            try { $db->query("SELECT is_staple FROM requisition_lines LIMIT 0"); }
+            catch (Exception $e) { $db->exec("ALTER TABLE requisition_lines ADD COLUMN is_staple TINYINT(1) DEFAULT 0"); }
 
-        // Get item name from items table if item_id provided
-        if ($itemId && !$itemName) {
-            $iStmt = $db->prepare('SELECT name, uom FROM items WHERE id = ?');
-            $iStmt->execute([$itemId]);
-            $iRow = $iStmt->fetch();
-            if ($iRow) { $itemName = $iRow['name']; if (!$uom || $uom === 'kg') $uom = $iRow['uom']; }
+            // Get item name from items table if item_id provided
+            if ($itemId && !$itemName) {
+                $iStmt = $db->prepare('SELECT name, uom FROM items WHERE id = ?');
+                $iStmt->execute([$itemId]);
+                $iRow = $iStmt->fetch();
+                if ($iRow) { $itemName = $iRow['name']; if (!$uom || $uom === 'kg') $uom = $iRow['uom']; }
+            }
+
+            $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft','processing','submitted')");
+            $stmt->execute([$reqId]);
+            $req = $stmt->fetch();
+            if (!$req) jsonError('Requisition not found or not editable');
+
+            // Check if item already exists (only if item_id is provided)
+            if ($itemId) {
+                $existCheck = $db->prepare("SELECT id FROM requisition_lines WHERE requisition_id = ? AND item_id = ? AND status != 'rejected'");
+                $existCheck->execute([$reqId, $itemId]);
+                if ($existCheck->fetch()) jsonError('Item already in this order');
+            }
+
+            $ins = $db->prepare("INSERT INTO requisition_lines (requisition_id, item_id, item_name, uom, order_qty, status, is_staple) VALUES (?, ?, ?, ?, ?, 'pending', ?)");
+            $ins->execute([$reqId, $itemId ?: null, $itemName, $uom, $orderQty, $isStaple]);
+            $lineId = $db->lastInsertId();
+
+            auditLog('add_line_to_order', 'requisition_lines', $lineId, null, ['item' => $itemName, 'qty' => $orderQty]);
+            jsonResponse(['line_id' => $lineId, 'added' => true]);
+        } catch (Exception $e) {
+            jsonError('Failed to add item: ' . $e->getMessage());
         }
-
-        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft','processing','submitted')");
-        $stmt->execute([$reqId]);
-        $req = $stmt->fetch();
-        if (!$req) jsonError('Requisition not found or not editable');
-
-        // Check if item already exists
-        $existCheck = $db->prepare("SELECT id FROM requisition_lines WHERE requisition_id = ? AND item_id = ? AND status != 'rejected'");
-        $existCheck->execute([$reqId, $itemId]);
-        if ($existCheck->fetch()) jsonError('Item already in this order');
-
-        $ins = $db->prepare("INSERT INTO requisition_lines (requisition_id, item_id, item_name, uom, order_qty, status, is_staple) VALUES (?, ?, ?, ?, ?, 'pending', ?)");
-        $ins->execute([$reqId, $itemId ?: null, $itemName, $uom, $orderQty, $isStaple]);
-        $lineId = $db->lastInsertId();
-
-        auditLog('add_line_to_order', 'requisition_lines', $lineId, null, ['item' => $itemName, 'qty' => $orderQty]);
-        jsonResponse(['line_id' => $lineId, 'added' => true]);
         break;
 
     // ── Update a single line item (qty/uom) ──
