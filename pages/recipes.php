@@ -378,9 +378,16 @@ function rShowAddIngredient(recipeId) {
                     class="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
                 <select id="riUom" class="w-20 bg-gray-50 border border-gray-200 rounded-lg px-2 py-2.5 text-sm">
                     <option value="kg">kg</option>
+                    <option value="grams">grams</option>
                     <option value="ltr">ltr</option>
+                    <option value="ml">ml</option>
                     <option value="pcs">pcs</option>
-                    <option value="g">g</option>
+                    <option value="tins">tins</option>
+                    <option value="box">box</option>
+                    <option value="pkt">pkt</option>
+                    <option value="bottle">bottle</option>
+                    <option value="bunch">bunch</option>
+                    <option value="unit">unit</option>
                 </select>
             </div>
             <label class="flex items-center gap-2 text-xs text-gray-600">

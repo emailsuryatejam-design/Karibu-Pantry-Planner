@@ -1,6 +1,7 @@
 <?php
 /**
  * Karibu Pantry Planner — Chef Dashboard
+ * Today's Menu Planning + Quick Links
  */
 $user = currentUser();
 $kitchenName = $user['kitchen_name'] ?? 'No Kitchen';
@@ -16,66 +17,158 @@ $kitchenId = $user['kitchen_id'] ?? 0;
 <!-- Stats Cards -->
 <div class="flex gap-3 overflow-x-auto pb-2 mb-4" id="dbStats">
     <div class="min-w-[120px] bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-3 text-white flex-1">
-        <div class="text-2xl font-bold" id="dbStatSessions">—</div>
+        <div class="text-2xl font-bold" id="dbStatSessions">&mdash;</div>
         <div class="text-[10px] opacity-80 font-medium">Active Requisitions</div>
     </div>
     <div class="min-w-[120px] bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-3 text-white flex-1">
-        <div class="text-2xl font-bold" id="dbStatAwaiting">—</div>
+        <div class="text-2xl font-bold" id="dbStatAwaiting">&mdash;</div>
         <div class="text-[10px] opacity-80 font-medium">Awaiting Supply</div>
     </div>
     <div class="min-w-[120px] bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-3 text-white flex-1">
-        <div class="text-2xl font-bold" id="dbStatReceive">—</div>
+        <div class="text-2xl font-bold" id="dbStatReceive">&mdash;</div>
         <div class="text-[10px] opacity-80 font-medium">Ready to Close</div>
     </div>
 </div>
 
-<!-- Quick Actions -->
-<div class="grid grid-cols-2 gap-3 mb-4">
-    <a href="app.php?page=requisition" class="bg-white border border-gray-200 rounded-xl p-4 hover:border-orange-300 hover:bg-orange-50 transition group">
-        <div class="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center mb-2 group-hover:bg-orange-200 transition">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
-        </div>
-        <div class="text-sm font-semibold text-gray-800">New Requisition</div>
-        <div class="text-[10px] text-gray-400">Order items for kitchen</div>
-    </a>
-    <a href="app.php?page=store-history" class="bg-white border border-gray-200 rounded-xl p-4 hover:border-green-300 hover:bg-green-50 transition group">
-        <div class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center mb-2 group-hover:bg-green-200 transition">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-        </div>
-        <div class="text-sm font-semibold text-gray-800">Order History</div>
-        <div class="text-[10px] text-gray-400">Past orders & records</div>
-    </a>
-    <a href="app.php?page=day-close" class="bg-white border border-gray-200 rounded-xl p-4 hover:border-blue-300 hover:bg-blue-50 transition group">
-        <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center mb-2 group-hover:bg-blue-200 transition">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
-        </div>
-        <div class="text-sm font-semibold text-gray-800">Day Close</div>
-        <div class="text-[10px] text-gray-400">End of day closeout</div>
-    </a>
-    <a href="app.php?page=reports" class="bg-white border border-gray-200 rounded-xl p-4 hover:border-purple-300 hover:bg-purple-50 transition group">
-        <div class="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center mb-2 group-hover:bg-purple-200 transition">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-        </div>
-        <div class="text-sm font-semibold text-gray-800">Reports</div>
-        <div class="text-[10px] text-gray-400">View analytics</div>
-    </a>
+<!-- ══════════════════════════════════════════════ -->
+<!--  TODAY'S MENU SECTION                          -->
+<!-- ══════════════════════════════════════════════ -->
+
+<!-- Global Guest Count -->
+<div class="bg-white rounded-xl border border-gray-200 p-3 mb-3 flex items-center justify-between">
+    <div>
+        <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Guest Count</div>
+        <div class="text-[9px] text-gray-400">Applies to all meal dishes</div>
+    </div>
+    <div class="flex items-center gap-2">
+        <button onclick="dbStepGuests(-5)" class="w-8 h-8 rounded-lg bg-gray-100 text-gray-500 font-bold flex items-center justify-center text-sm active:bg-gray-200">-5</button>
+        <input type="number" id="dbGuestCount" value="20" min="1" onchange="dbSetGuests(this.value)"
+            class="w-20 text-center text-lg font-bold text-gray-800 border border-gray-200 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
+        <button onclick="dbStepGuests(5)" class="w-8 h-8 rounded-lg bg-orange-100 text-orange-600 font-bold flex items-center justify-center text-sm active:bg-orange-200">+5</button>
+    </div>
 </div>
 
-<!-- Today's Requisitions -->
+<!-- Section Title -->
+<div class="flex items-center justify-between mb-2">
+    <h3 class="text-sm font-semibold text-gray-700">Today's Menu</h3>
+    <span class="text-[10px] text-gray-400" id="dbMenuDate"></span>
+</div>
+
+<!-- Meal Cards Container -->
+<div id="dbMealCards" class="space-y-3 mb-3">
+    <div class="text-center py-8 text-xs text-gray-400">Loading menu...</div>
+</div>
+
+<!-- Lock Menu & Generate Order -->
+<div class="mb-4" id="dbLockWrap">
+    <button onclick="dbLockMenu()" id="dbLockBtn"
+        class="w-full bg-orange-500 text-white py-3.5 rounded-xl text-sm font-bold hover:bg-orange-600 active:bg-orange-700 transition flex items-center justify-center gap-2 shadow-sm">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        Lock Menu &amp; Generate Order
+    </button>
+    <p class="text-[10px] text-gray-400 text-center mt-1.5">Submits all meal requisitions at once</p>
+</div>
+
+<!-- Quick Links -->
 <div class="mb-3">
-    <h3 class="text-sm font-semibold text-gray-700 mb-2">Today's Requisitions</h3>
-    <div id="dbSessionList" class="space-y-2">
-        <div class="text-center py-6 text-xs text-gray-400">Loading...</div>
+    <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Quick Links</div>
+    <div class="flex gap-2 overflow-x-auto pb-1">
+        <a href="app.php?page=requisition" class="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium text-gray-700 hover:border-orange-200 hover:bg-orange-50 transition whitespace-nowrap">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/></svg>
+            Requisitions
+        </a>
+        <a href="app.php?page=day-close" class="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium text-gray-700 hover:border-blue-200 hover:bg-blue-50 transition whitespace-nowrap">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="4" rx="2" ry="2"/><line x1="16" x2="16" y1="2" y2="6"/><line x1="8" x2="8" y1="2" y2="6"/><line x1="3" x2="21" y1="10" y2="10"/></svg>
+            Day Close
+        </a>
+        <a href="app.php?page=reports" class="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium text-gray-700 hover:border-purple-200 hover:bg-purple-50 transition whitespace-nowrap">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+            Reports
+        </a>
+        <a href="app.php?page=store-history" class="flex items-center gap-1.5 bg-white border border-gray-200 rounded-xl px-3 py-2 text-xs font-medium text-gray-700 hover:border-green-200 hover:bg-green-50 transition whitespace-nowrap">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+            Order History
+        </a>
+    </div>
+</div>
+
+<!-- Dish Portions Modal (reused from requisition pattern) -->
+<div id="dbPortionsModal" class="hidden fixed inset-0 z-[200] bg-black/50 flex items-center justify-center p-4 animate-fade-in">
+    <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+        <input type="hidden" id="dbPmMealCode">
+        <input type="hidden" id="dbPmRecipeId">
+        <h3 class="text-lg font-bold text-gray-900 mb-0.5" id="dbPmDishName">&mdash;</h3>
+        <p class="text-xs text-gray-400 mb-5" id="dbPmStd">&mdash;</p>
+        <label class="text-xs text-gray-500 font-medium mb-3 block">How many portions?</label>
+        <div class="flex items-center justify-center gap-3 mb-5">
+            <button onclick="dbPmStep(-5)" class="stepper-btn bg-gray-100 text-gray-600 text-base">-5</button>
+            <button onclick="dbPmStep(-1)" class="stepper-btn bg-red-100 text-red-600 text-xl">&minus;</button>
+            <input type="number" id="dbPmInput" min="1" class="w-24 text-center text-3xl font-bold border-2 border-gray-200 rounded-xl py-3 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300">
+            <button onclick="dbPmStep(1)" class="stepper-btn bg-green-100 text-green-600 text-xl">+</button>
+            <button onclick="dbPmStep(5)" class="stepper-btn bg-gray-100 text-gray-600 text-base">+5</button>
+        </div>
+        <div class="flex gap-3">
+            <button onclick="dbPmClose()" class="flex-1 py-3 rounded-xl border border-gray-300 text-gray-700 font-semibold text-sm">Cancel</button>
+            <button onclick="dbPmSave()" class="flex-1 py-3 rounded-xl bg-orange-600 text-white font-semibold text-sm">Save</button>
+        </div>
+    </div>
+</div>
+
+<!-- Add Dish Modal -->
+<div id="dbAddDishModal" class="hidden fixed inset-0 z-[200] bg-black/50 flex items-start justify-center pt-[15vh] p-4 animate-fade-in">
+    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 max-h-[70vh] flex flex-col">
+        <div class="flex items-center justify-between mb-4">
+            <h3 class="text-base font-bold text-gray-900">Add Dish</h3>
+            <button onclick="dbCloseAddDish()" class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+        </div>
+        <input type="hidden" id="dbAddDishMealCode">
+        <div class="relative mb-3">
+            <input type="text" id="dbDishSearch" placeholder="Search dishes by name..." oninput="dbSearchDishesDebounced()"
+                class="w-full bg-white border border-gray-200 rounded-xl px-4 py-3 pl-10 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
+            <svg class="absolute left-3 top-3.5 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        </div>
+        <div id="dbDishResults" class="flex-1 overflow-y-auto"></div>
+        <p id="dbDishResultsHint" class="text-[10px] text-gray-400 text-center mt-2">Type at least 2 characters to search</p>
     </div>
 </div>
 
 <script>
+// ══════════════════════════════════════════════
+//  Dashboard State
+// ══════════════════════════════════════════════
 const DB_KITCHEN_ID = <?= (int)$kitchenId ?>;
 
-dbLoadStats();
-dbLoadSessions();
+let dbDate = todayStr();
+let dbGuestCount = 20;
+let dbTypes = [];
+let dbSessions = [];       // All draft requisitions for today, keyed for lookup
+let dbSessionMap = {};     // mealCode -> session object
+let dbMealDishes = {};     // mealCode -> { recipeId: dishObj }
+let dbMealAgg = {};        // mealCode -> { itemId: aggObj }
+let dbSetMenuLoaded = {};  // mealCode -> true
+let dbSettings = { default_guest_count: 20, rounding_mode: 'half', min_order_qty: 0.5 };
+let dbDishSearchResults = [];
+let dbAddDishTargetMeal = null;
 
-// Welcome voice on dashboard load
+// Rounding helper
+function dbRound(qty) {
+    if (dbSettings.rounding_mode === 'none') return qty;
+    if (dbSettings.rounding_mode === 'whole') return Math.ceil(qty);
+    return Math.ceil(qty * 2) / 2;
+}
+
+const dbSearchDishesDebounced = debounce(() => dbSearchDishes(), 350);
+
+// ══════════════════════════════════════════════
+//  Init
+// ══════════════════════════════════════════════
+document.getElementById('dbMenuDate').textContent = formatDate(dbDate);
+dbLoadStats();
+dbInit();
+
+// Welcome voice
 voice.welcome('<?= addslashes($user['name']) ?>', '<?= addslashes($user['role']) ?>');
 
 async function dbLoadStats() {
@@ -88,25 +181,226 @@ async function dbLoadStats() {
     } catch(e) {}
 }
 
-async function dbLoadSessions() {
+async function dbInit() {
     try {
-        const data = await api(`api/requisitions.php?action=day_summary&date=${todayStr()}&kitchen_id=${DB_KITCHEN_ID}`);
-        const reqs = data.requisitions || [];
-        const container = document.getElementById('dbSessionList');
+        const initData = await api('api/requisitions.php?action=page_init', {
+            method: 'POST',
+            body: JSON.stringify({
+                req_date: dbDate,
+                kitchen_id: DB_KITCHEN_ID,
+                guest_count: dbGuestCount
+            })
+        });
 
-        // Filter out empty drafts (0 items)
-        const visibleReqs = reqs.filter(r => !(r.status === 'draft' && parseInt(r.line_count) === 0));
-
-        if (visibleReqs.length === 0) {
-            container.innerHTML = `<div class="text-center py-6">
-                <p class="text-xs text-gray-400 mb-2">No requisitions today</p>
-                <a href="app.php?page=requisition" class="text-xs text-orange-500 font-semibold hover:text-orange-600">+ Create Requisition</a>
-            </div>`;
-            return;
+        // 1. Settings
+        if (initData.settings) {
+            dbSettings = initData.settings;
+            dbGuestCount = dbSettings.default_guest_count || 20;
+            document.getElementById('dbGuestCount').value = dbGuestCount;
         }
 
+        // 2. Types
+        dbTypes = initData.types || [];
+
+        // 3. Sessions — one per meal type
+        dbSessions = initData.requisitions || [];
+        dbSessionMap = {};
+        dbSessions.forEach(s => {
+            // Map first draft per meal type
+            if (!dbSessionMap[s.meals] || s.status === 'draft') {
+                dbSessionMap[s.meals] = s;
+            }
+        });
+
+        // 4. Load set menu dishes for each meal type
+        await dbLoadAllSetMenus();
+
+        // 5. Render
+        dbRenderMealCards();
+
+    } catch(e) {
+        console.warn('Dashboard init failed:', e);
+        document.getElementById('dbMealCards').innerHTML = '<p class="text-center text-red-400 text-xs py-4">Failed to load menu</p>';
+    }
+}
+
+// ══════════════════════════════════════════════
+//  Set Menu Loading — loads for ALL meal types
+// ══════════════════════════════════════════════
+async function dbLoadAllSetMenus() {
+    const dateObj = new Date(dbDate + 'T00:00:00');
+    let dayOfWeek = dateObj.getDay();
+    dayOfWeek = dayOfWeek === 0 ? 7 : dayOfWeek;
+
+    const mealCodes = Object.keys(dbSessionMap);
+    const promises = mealCodes.map(code => dbLoadSetMenuForMeal(code, dayOfWeek));
+    await Promise.allSettled(promises);
+}
+
+async function dbLoadSetMenuForMeal(mealCode, dayOfWeek) {
+    if (dbSetMenuLoaded[mealCode]) return;
+
+    const session = dbSessionMap[mealCode];
+    if (!session || session.status !== 'draft') return;
+
+    if (!dbMealDishes[mealCode]) dbMealDishes[mealCode] = {};
+
+    try {
+        // First check if session already has saved dishes
+        const batchData = await api(`api/requisitions.php?action=get_dishes_with_ingredients&requisition_id=${session.id}`).catch(() => ({ dishes: [], ingredients_by_recipe: {} }));
+        const savedDishes = batchData.dishes || [];
+        const savedIngredients = batchData.ingredients_by_recipe || {};
+
+        // Load saved dishes
+        for (const d of savedDishes) {
+            dbMealDishes[mealCode][d.recipe_id] = {
+                recipe_id: d.recipe_id,
+                recipe_name: d.recipe_name,
+                recipe_servings: d.recipe_servings || 4,
+                dish_portions: parseInt(d.guest_count) || dbGuestCount,
+                ingredients: savedIngredients[d.recipe_id] || []
+            };
+        }
+
+        // If no saved dishes, load from set menu
+        if (savedDishes.length === 0) {
+            const data = await api(`api/set-menus.php?action=get_day_with_ingredients&day=${dayOfWeek}&type=${encodeURIComponent(mealCode)}`);
+            const menuDishes = data.dishes || [];
+            const ingredientsByRecipe = data.ingredients_by_recipe || {};
+
+            for (const md of menuDishes) {
+                if (dbMealDishes[mealCode][md.recipe_id]) continue;
+                const ingredients = ingredientsByRecipe[md.recipe_id] || [];
+                if (ingredients.length === 0) continue;
+
+                dbMealDishes[mealCode][md.recipe_id] = {
+                    recipe_id: md.recipe_id,
+                    recipe_name: md.recipe_name,
+                    recipe_servings: parseInt(md.recipe_servings) || 4,
+                    dish_portions: dbGuestCount,
+                    ingredients: ingredients
+                };
+            }
+        }
+
+        dbSetMenuLoaded[mealCode] = true;
+        dbRecalcMealAgg(mealCode);
+
+    } catch(e) {
+        // 404 = no set menu configured, which is normal
+        if (e && e.status !== 404) {
+            console.warn('Set menu load error for', mealCode, e);
+        }
+        dbSetMenuLoaded[mealCode] = true;
+    }
+}
+
+// ══════════════════════════════════════════════
+//  Guest Count
+// ══════════════════════════════════════════════
+function dbSetGuests(val) {
+    dbGuestCount = Math.max(1, parseInt(val) || 1);
+    document.getElementById('dbGuestCount').value = dbGuestCount;
+    dbApplyGuestCountToAll();
+}
+
+function dbStepGuests(delta) {
+    dbSetGuests(dbGuestCount + delta);
+}
+
+function dbApplyGuestCountToAll() {
+    // Update ALL dish portions across ALL meals
+    for (const mealCode of Object.keys(dbMealDishes)) {
+        for (const recipeId of Object.keys(dbMealDishes[mealCode])) {
+            dbMealDishes[mealCode][recipeId].dish_portions = dbGuestCount;
+        }
+        dbRecalcMealAgg(mealCode);
+    }
+    dbRenderMealCards();
+}
+
+// ══════════════════════════════════════════════
+//  Aggregation per meal type
+// ══════════════════════════════════════════════
+function dbRecalcMealAgg(mealCode) {
+    const dishes = dbMealDishes[mealCode] || {};
+    const newAgg = {};
+
+    for (const [recipeId, dish] of Object.entries(dishes)) {
+        const portions = dish.dish_portions || dbGuestCount;
+        const scaleFactor = portions / (dish.recipe_servings || 4);
+
+        (dish.ingredients || []).forEach(ing => {
+            const itemId = ing.item_id;
+            const scaledQty = parseFloat(ing.qty) * scaleFactor;
+
+            if (newAgg[itemId]) {
+                newAgg[itemId].total_qty += scaledQty;
+                newAgg[itemId].sources.push(dish.recipe_name);
+            } else {
+                newAgg[itemId] = {
+                    item_name: ing.item_name,
+                    total_qty: scaledQty,
+                    uom: ing.uom || 'kg',
+                    stock_qty: parseFloat(ing.stock_qty) || 0,
+                    category: ing.category || '',
+                    sources: [dish.recipe_name]
+                };
+            }
+        });
+    }
+
+    dbMealAgg[mealCode] = newAgg;
+}
+
+// ══════════════════════════════════════════════
+//  Render Meal Cards
+// ══════════════════════════════════════════════
+function dbRenderMealCards() {
+    const container = document.getElementById('dbMealCards');
+    const mealCodes = dbTypes.map(t => t.code).filter(c => dbSessionMap[c]);
+
+    if (mealCodes.length === 0) {
+        container.innerHTML = `<div class="text-center py-8">
+            <p class="text-xs text-gray-400 mb-2">No meal types configured</p>
+            <a href="app.php?page=requisition" class="text-xs text-orange-500 font-semibold hover:text-orange-600">Go to Requisitions</a>
+        </div>`;
+        return;
+    }
+
+    let allEmpty = true;
+    let html = '';
+
+    mealCodes.forEach(mealCode => {
+        const session = dbSessionMap[mealCode];
+        const typeName = dbTypeName(mealCode);
+        const dishes = dbMealDishes[mealCode] || {};
+        const dishList = Object.values(dishes);
+        const agg = dbMealAgg[mealCode] || {};
+        const aggItems = Object.values(agg);
+        const isDraft = session && session.status === 'draft';
+        const isLocked = session && session.status !== 'draft';
+
+        // Summary stats
+        let totalItems = 0;
+        let totalKg = 0;
+        for (const a of aggItems) {
+            const rKg = dbRound(Math.max(0, a.total_qty));
+            if (rKg > 0) { totalItems++; totalKg += rKg; }
+        }
+
+        if (dishList.length > 0) allEmpty = false;
+
+        // Meal type accent colors
+        const accents = {
+            'breakfast': { bg: 'bg-amber-50', border: 'border-amber-200', icon: '&#9749;', pill: 'bg-amber-100 text-amber-700' },
+            'lunch':     { bg: 'bg-orange-50', border: 'border-orange-200', icon: '&#127869;', pill: 'bg-orange-100 text-orange-700' },
+            'dinner':    { bg: 'bg-indigo-50', border: 'border-indigo-200', icon: '&#127769;', pill: 'bg-indigo-100 text-indigo-700' },
+        };
+        const accent = accents[mealCode] || { bg: 'bg-gray-50', border: 'border-gray-200', icon: '&#127860;', pill: 'bg-gray-100 text-gray-700' };
+
+        // Status colors for locked meals
         const statusColors = {
-            draft: 'bg-gray-100 text-gray-700',
             submitted: 'bg-blue-100 text-blue-700',
             processing: 'bg-amber-100 text-amber-700',
             fulfilled: 'bg-green-100 text-green-700',
@@ -114,25 +408,322 @@ async function dbLoadSessions() {
             closed: 'bg-gray-200 text-gray-500'
         };
 
-        let html = '';
-        visibleReqs.forEach(r => {
-            const color = statusColors[r.status] || 'bg-gray-100 text-gray-700';
-            html += `<a href="app.php?page=requisition" class="block bg-white border border-gray-200 rounded-xl px-4 py-3 hover:border-orange-200 transition">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <span class="text-sm font-semibold text-gray-800">${reqLabel(r)}</span>
-                        <div class="flex items-center gap-2 mt-0.5">
-                            <span class="text-[10px] text-gray-400">${r.line_count || 0} items</span>
-                            <span class="text-[10px] text-gray-400">${parseFloat(r.total_kg || 0).toFixed(1)} kg</span>
+        html += `<div class="bg-white rounded-xl border ${isLocked ? accent.border : 'border-gray-200'} overflow-hidden">`;
+
+        // Card Header
+        html += `<div class="${accent.bg} px-3 py-2.5 flex items-center justify-between border-b ${accent.border}">
+            <div class="flex items-center gap-2">
+                <span class="text-lg">${accent.icon}</span>
+                <span class="text-sm font-bold text-gray-800">${escHtml(typeName)}</span>
+            </div>
+            <div class="flex items-center gap-2">`;
+
+        if (isLocked) {
+            const sc = statusColors[session.status] || '';
+            html += `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${sc} capitalize">${session.status}</span>`;
+        } else if (dishList.length > 0) {
+            html += `<span class="text-[10px] ${accent.pill} px-2 py-0.5 rounded-full font-medium">${dishList.length} dish${dishList.length !== 1 ? 'es' : ''}</span>`;
+        }
+
+        html += `</div></div>`;
+
+        // Dish List
+        html += '<div class="px-3 py-2">';
+
+        if (dishList.length === 0) {
+            html += `<div class="text-center py-3">
+                <p class="text-[11px] text-gray-400">No dishes yet</p>
+            </div>`;
+        } else {
+            html += '<div class="space-y-1.5">';
+            dishList.forEach(d => {
+                const portions = d.dish_portions || dbGuestCount;
+                html += `<div class="flex items-center justify-between py-1.5 ${isDraft ? 'cursor-pointer active:bg-orange-50 rounded-lg px-1 -mx-1' : ''}" ${isDraft ? `onclick="dbShowPortionsModal('${escHtml(mealCode)}', ${d.recipe_id})"` : ''}>
+                    <div class="flex items-center gap-2 flex-1 min-w-0">
+                        <div class="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
+                        </div>
+                        <div class="min-w-0">
+                            <div class="text-xs font-medium text-gray-800 truncate">${escHtml(d.recipe_name)}</div>
+                            <div class="text-[9px] text-gray-400">${portions} pax</div>
                         </div>
                     </div>
-                    <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${color}">${r.status}</span>
-                </div>
-            </a>`;
-        });
-        container.innerHTML = html;
+                    <div class="flex items-center gap-1 shrink-0">
+                        ${isDraft ? `<span class="text-xs font-bold text-orange-600">${portions}</span>` : `<span class="text-[10px] text-gray-500">${portions} pax</span>`}
+                        ${isDraft ? `<button onclick="event.stopPropagation();dbRemoveDish('${escHtml(mealCode)}', ${d.recipe_id})" class="text-gray-300 hover:text-red-500 transition p-1 compact-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                        </button>` : ''}
+                    </div>
+                </div>`;
+            });
+            html += '</div>';
+        }
+
+        // Add Dish button (only for drafts)
+        if (isDraft) {
+            html += `<button onclick="dbOpenAddDish('${escHtml(mealCode)}')" class="w-full mt-2 border border-dashed border-orange-200 rounded-lg px-3 py-2 text-xs font-semibold text-orange-500 flex items-center justify-center gap-1.5 hover:bg-orange-50 active:bg-orange-100 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+                Add Dish
+            </button>`;
+        }
+
+        html += '</div>';
+
+        // Summary Footer
+        if (dishList.length > 0) {
+            html += `<div class="px-3 py-2 bg-gray-50 border-t border-gray-100 flex items-center justify-between">
+                <span class="text-[10px] text-gray-500">${dishList.length} dish${dishList.length !== 1 ? 'es' : ''} &bull; ${totalItems} items &bull; ${totalKg.toFixed(1)} kg</span>
+                ${isLocked ? `<a href="app.php?page=requisition" class="text-[10px] text-orange-500 font-semibold">View</a>` : ''}
+            </div>`;
+        }
+
+        html += '</div>';
+    });
+
+    container.innerHTML = html;
+
+    // Show/hide lock button based on whether there are any draft dishes
+    const hasAnyDraftDishes = mealCodes.some(mc => {
+        const session = dbSessionMap[mc];
+        return session && session.status === 'draft' && Object.keys(dbMealDishes[mc] || {}).length > 0;
+    });
+    document.getElementById('dbLockWrap').classList.toggle('hidden', !hasAnyDraftDishes);
+}
+
+function dbTypeName(code) {
+    const t = dbTypes.find(t => t.code === code);
+    return t ? t.name : code;
+}
+
+// ══════════════════════════════════════════════
+//  Dish Portions Modal
+// ══════════════════════════════════════════════
+function dbShowPortionsModal(mealCode, recipeId) {
+    const dishes = dbMealDishes[mealCode] || {};
+    const dish = dishes[recipeId];
+    if (!dish) return;
+
+    const session = dbSessionMap[mealCode];
+    if (!session || session.status !== 'draft') return;
+
+    document.getElementById('dbPmMealCode').value = mealCode;
+    document.getElementById('dbPmRecipeId').value = recipeId;
+    document.getElementById('dbPmDishName').textContent = dish.recipe_name;
+    document.getElementById('dbPmStd').textContent = `Standard recipe serves ${dish.recipe_servings}`;
+    document.getElementById('dbPmInput').value = dish.dish_portions || dbGuestCount;
+    document.getElementById('dbPortionsModal').classList.remove('hidden');
+    setTimeout(() => document.getElementById('dbPmInput').select(), 100);
+}
+
+function dbPmStep(dir) {
+    const inp = document.getElementById('dbPmInput');
+    inp.value = Math.max(1, (parseInt(inp.value) || 0) + dir);
+}
+
+function dbPmSave() {
+    const mealCode = document.getElementById('dbPmMealCode').value;
+    const recipeId = parseInt(document.getElementById('dbPmRecipeId').value);
+    const val = Math.max(1, parseInt(document.getElementById('dbPmInput').value) || 1);
+
+    const dishes = dbMealDishes[mealCode] || {};
+    if (dishes[recipeId]) {
+        dishes[recipeId].dish_portions = val;
+        dbRecalcMealAgg(mealCode);
+        dbRenderMealCards();
+    }
+    dbPmClose();
+}
+
+function dbPmClose() {
+    document.getElementById('dbPortionsModal').classList.add('hidden');
+}
+
+// ══════════════════════════════════════════════
+//  Add Dish Modal
+// ══════════════════════════════════════════════
+async function dbOpenAddDish(mealCode) {
+    dbAddDishTargetMeal = mealCode;
+    document.getElementById('dbAddDishMealCode').value = mealCode;
+    document.getElementById('dbAddDishModal').classList.remove('hidden');
+    document.getElementById('dbDishSearch').value = '';
+    document.getElementById('dbDishResultsHint').classList.add('hidden');
+    setTimeout(() => document.getElementById('dbDishSearch').focus(), 100);
+
+    // Auto-load all recipes
+    try {
+        const data = await api('api/requisitions.php?action=search_recipes&q=');
+        dbDishSearchResults = data.recipes || [];
+        dbRenderDishResults();
+    } catch {
+        document.getElementById('dbDishResults').innerHTML = '';
+        document.getElementById('dbDishResultsHint').classList.remove('hidden');
+    }
+}
+
+function dbCloseAddDish() {
+    document.getElementById('dbAddDishModal').classList.add('hidden');
+    document.getElementById('dbDishSearch').value = '';
+    document.getElementById('dbDishResults').innerHTML = '';
+    dbAddDishTargetMeal = null;
+}
+
+async function dbSearchDishes() {
+    const q = document.getElementById('dbDishSearch').value.trim();
+    const container = document.getElementById('dbDishResults');
+    const hint = document.getElementById('dbDishResultsHint');
+    if (q.length > 0 && q.length < 2) return;
+
+    try {
+        hint.classList.add('hidden');
+        const data = await api(`api/requisitions.php?action=search_recipes&q=${encodeURIComponent(q)}`);
+        dbDishSearchResults = data.recipes || [];
+        dbRenderDishResults();
     } catch(e) {
-        document.getElementById('dbSessionList').innerHTML = '<p class="text-center text-red-400 text-xs py-4">Failed to load</p>';
+        container.innerHTML = '<p class="text-xs text-red-500 p-2">Search failed</p>';
+        hint.classList.add('hidden');
+    }
+}
+
+function dbRenderDishResults() {
+    const container = document.getElementById('dbDishResults');
+    const mealCode = dbAddDishTargetMeal;
+    const dishes = mealCode ? (dbMealDishes[mealCode] || {}) : {};
+
+    if (!dbDishSearchResults.length) {
+        container.innerHTML = '<p class="text-xs text-gray-400 text-center py-4">No dishes found</p>';
+        return;
+    }
+
+    let html = '';
+    dbDishSearchResults.forEach(r => {
+        const alreadyAdded = !!dishes[r.id];
+        html += `<button onclick="dbAddDish(${r.id})" class="w-full flex items-center gap-3 px-3 py-3 hover:bg-orange-50 active:bg-orange-100 transition text-left border-b border-gray-100 last:border-0 ${alreadyAdded ? 'opacity-50' : ''}" ${alreadyAdded ? 'disabled' : ''}>
+            <div class="w-9 h-9 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
+            </div>
+            <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-gray-800 truncate">${escHtml(r.name)}</div>
+                <div class="text-[10px] text-gray-400">${escHtml(r.cuisine || '')} ${r.ingredient_count} items &bull; serves ${r.servings}</div>
+            </div>
+            ${alreadyAdded ? '<span class="text-[10px] text-green-600 font-semibold bg-green-50 px-2 py-1 rounded-lg shrink-0">Added</span>' : '<span class="text-orange-500 shrink-0"><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg></span>'}
+        </button>`;
+    });
+    container.innerHTML = html;
+}
+
+async function dbAddDish(recipeId) {
+    const mealCode = dbAddDishTargetMeal;
+    if (!mealCode || !dbMealDishes[mealCode]) dbMealDishes[mealCode] = {};
+    if (dbMealDishes[mealCode][recipeId]) return;
+
+    try {
+        const data = await api(`api/requisitions.php?action=get_recipe_ingredients&recipe_id=${recipeId}`);
+        const recipe = data.recipe;
+        const ingredients = data.ingredients || [];
+
+        if (ingredients.length === 0) {
+            showToast('This dish has no ingredients. Add ingredients in Recipes first.', 'warning');
+            return;
+        }
+
+        dbMealDishes[mealCode][recipeId] = {
+            recipe_id: recipe.id,
+            recipe_name: recipe.name,
+            recipe_servings: parseInt(recipe.servings) || 4,
+            dish_portions: dbGuestCount,
+            ingredients: ingredients
+        };
+
+        showToast(`${recipe.name} added to ${dbTypeName(mealCode)}`, 'success');
+        dbRecalcMealAgg(mealCode);
+        dbRenderMealCards();
+        dbRenderDishResults();
+
+    } catch(e) {
+        showToast(e.message || 'Failed to load dish', 'error');
+    }
+}
+
+function dbRemoveDish(mealCode, recipeId) {
+    const dishes = dbMealDishes[mealCode];
+    if (!dishes || !dishes[recipeId]) return;
+    const name = dishes[recipeId].recipe_name;
+    delete dishes[recipeId];
+    dbRecalcMealAgg(mealCode);
+    dbRenderMealCards();
+    showToast(`${name} removed`, 'info');
+}
+
+// ══════════════════════════════════════════════
+//  Lock Menu & Generate Order
+// ══════════════════════════════════════════════
+async function dbLockMenu() {
+    const btn = document.getElementById('dbLockBtn');
+
+    // Collect all draft meals with dishes
+    const payload = [];
+    for (const mealCode of Object.keys(dbSessionMap)) {
+        const session = dbSessionMap[mealCode];
+        if (!session || session.status !== 'draft') continue;
+
+        const dishes = dbMealDishes[mealCode] || {};
+        const dishList = Object.values(dishes);
+        if (dishList.length === 0) continue;
+
+        payload.push({
+            requisition_id: session.id,
+            dishes: dishList.map(d => ({
+                recipe_id: d.recipe_id,
+                recipe_name: d.recipe_name,
+                recipe_servings: d.recipe_servings,
+                dish_portions: d.dish_portions || dbGuestCount
+            })),
+            guest_count: dbGuestCount,
+            adjustments: {}
+        });
+    }
+
+    if (payload.length === 0) {
+        showToast('No dishes to submit. Add dishes to at least one meal.', 'warning');
+        return;
+    }
+
+    const mealNames = payload.map(p => {
+        const s = dbSessions.find(s => s.id == p.requisition_id);
+        return s ? dbTypeName(s.meals) : '';
+    }).filter(Boolean).join(', ');
+
+    const confirmed = await customConfirm(
+        'Lock Menu & Generate Orders',
+        `Submit ${payload.length} meal${payload.length > 1 ? 's' : ''} (${mealNames}) to the store?`,
+        'Lock & Submit',
+        'Cancel'
+    );
+    if (!confirmed) return;
+
+    setLoading(btn, true);
+
+    try {
+        // Submit each meal requisition
+        let successCount = 0;
+        for (const p of payload) {
+            await api('api/requisitions.php?action=lock_menu', {
+                method: 'POST',
+                body: JSON.stringify(p)
+            });
+            successCount++;
+        }
+
+        showToast(`${successCount} meal${successCount > 1 ? 's' : ''} submitted!`, 'success');
+        voice.orderSubmitted(0, '<?= addslashes($kitchenName) ?>');
+
+        // Reload everything
+        await dbInit();
+
+    } catch(e) {
+        showToast(e.message || 'Failed to submit menu', 'error');
+    } finally {
+        setLoading(btn, false);
     }
 }
 </script>

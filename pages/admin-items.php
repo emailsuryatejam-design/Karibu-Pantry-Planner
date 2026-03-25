@@ -140,8 +140,16 @@ function aiOpenForm(item) {
                     <label class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">UOM</label>
                     <select id="aiFormUom" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-orange-200">
                         <option value="kg" ${(item?.uom || 'kg') === 'kg' ? 'selected' : ''}>kg</option>
+                        <option value="grams" ${item?.uom === 'grams' ? 'selected' : ''}>grams</option>
                         <option value="ltr" ${item?.uom === 'ltr' ? 'selected' : ''}>ltr</option>
+                        <option value="ml" ${item?.uom === 'ml' ? 'selected' : ''}>ml</option>
                         <option value="pcs" ${item?.uom === 'pcs' ? 'selected' : ''}>pcs</option>
+                        <option value="tins" ${item?.uom === 'tins' ? 'selected' : ''}>tins</option>
+                        <option value="box" ${item?.uom === 'box' ? 'selected' : ''}>box</option>
+                        <option value="pkt" ${item?.uom === 'pkt' ? 'selected' : ''}>pkt</option>
+                        <option value="bottle" ${item?.uom === 'bottle' ? 'selected' : ''}>bottle</option>
+                        <option value="bunch" ${item?.uom === 'bunch' ? 'selected' : ''}>bunch</option>
+                        <option value="unit" ${item?.uom === 'unit' ? 'selected' : ''}>unit</option>
                     </select>
                 </div>
                 <div>
