@@ -270,6 +270,13 @@ switch ($action) {
                     $db->exec("ALTER TABLE requisition_lines ADD COLUMN unused_qty DECIMAL(10,2) DEFAULT 0");
                 }
 
+                // 2e. Add is_staple column to requisition_lines if missing
+                try {
+                    $db->query("SELECT is_staple FROM requisition_lines LIMIT 0");
+                } catch (Exception $e2) {
+                    $db->exec("ALTER TABLE requisition_lines ADD COLUMN is_staple TINYINT(1) DEFAULT 0");
+                }
+
                 // 3. Upgrade UNIQUE constraint to include supplement_number
                 // Drop old constraint if it exists, add new one
                 $indexes = $db->query("SHOW INDEX FROM requisitions WHERE Key_name = 'uk_kitchen_date_meals'")->fetchAll();
@@ -919,7 +926,8 @@ switch ($action) {
                 $db->exec("ALTER TABLE requisition_lines ADD COLUMN unused_qty DECIMAL(10,2) DEFAULT 0");
             }
             $lStmt = $db->prepare("SELECT rl.id, rl.requisition_id, rl.item_id, rl.item_name, rl.uom,
-                rl.order_qty, rl.fulfilled_qty, rl.received_qty, rl.unused_qty
+                rl.order_qty, rl.fulfilled_qty, rl.received_qty, rl.unused_qty,
+                IFNULL(rl.is_staple, 0) AS is_staple
                 FROM requisition_lines rl WHERE rl.requisition_id IN ($ph) AND rl.status != 'rejected' ORDER BY rl.item_name");
             $lStmt->execute(array_values($receivedIds));
             foreach ($lStmt->fetchAll() as $line) {
@@ -1117,6 +1125,86 @@ switch ($action) {
             jsonResponse(['submitted' => true, 'requisition_id' => $reqId]);
         }
 
+    // ── Add a line item to an order (chef can add items not from menu) ──
+    case 'add_line_to_order':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        $itemId = (int)($data['item_id'] ?? 0);
+        $itemName = trim($data['item_name'] ?? '');
+        $orderQty = max(0, (float)($data['order_qty'] ?? 1));
+        $uom = trim($data['uom'] ?? 'kg');
+        $isStaple = (int)($data['is_staple'] ?? 1);
+
+        if (!$reqId || (!$itemId && !$itemName)) jsonError('Requisition ID and item required');
+
+        // Get item name from items table if item_id provided
+        if ($itemId && !$itemName) {
+            $iStmt = $db->prepare('SELECT name, uom FROM items WHERE id = ?');
+            $iStmt->execute([$itemId]);
+            $iRow = $iStmt->fetch();
+            if ($iRow) { $itemName = $iRow['name']; if (!$uom || $uom === 'kg') $uom = $iRow['uom']; }
+        }
+
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft','processing')");
+        $stmt->execute([$reqId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Requisition not found or not editable');
+
+        // Check if item already exists
+        $existCheck = $db->prepare("SELECT id FROM requisition_lines WHERE requisition_id = ? AND item_id = ? AND status != 'rejected'");
+        $existCheck->execute([$reqId, $itemId]);
+        if ($existCheck->fetch()) jsonError('Item already in this order');
+
+        $ins = $db->prepare("INSERT INTO requisition_lines (requisition_id, item_id, item_name, uom, order_qty, status, is_staple) VALUES (?, ?, ?, ?, ?, 'pending', ?)");
+        $ins->execute([$reqId, $itemId ?: null, $itemName, $uom, $orderQty, $isStaple]);
+        $lineId = $db->lastInsertId();
+
+        auditLog('add_line_to_order', 'requisition_lines', $lineId, null, ['item' => $itemName, 'qty' => $orderQty]);
+        jsonResponse(['line_id' => $lineId, 'added' => true]);
+        break;
+
+    // ── Update a single line item (qty/uom) ──
+    case 'update_line':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $lineId = (int)($data['line_id'] ?? 0);
+        $orderQty = isset($data['order_qty']) ? (float)$data['order_qty'] : -1;
+        $uom = trim($data['uom'] ?? '');
+        if (!$lineId) jsonError('Line ID required');
+
+        $sets = []; $params = [];
+        if ($orderQty >= 0) { $sets[] = 'order_qty = ?'; $params[] = $orderQty; }
+        if ($uom) { $sets[] = 'uom = ?'; $params[] = $uom; }
+        if (empty($sets)) jsonError('Nothing to update');
+
+        $params[] = $lineId;
+        $db->prepare("UPDATE requisition_lines SET " . implode(', ', $sets) . " WHERE id = ?")->execute($params);
+        jsonResponse(['updated' => true]);
+        break;
+
+    // ── Remove a line item (chef-side delete) ──
+    case 'chef_remove_line':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $lineId = (int)($data['line_id'] ?? 0);
+        if (!$lineId) jsonError('Line ID required');
+
+        // Verify line belongs to a draft/processing requisition owned by this kitchen
+        $check = $db->prepare("SELECT rl.id, r.status, r.kitchen_id FROM requisition_lines rl JOIN requisitions r ON r.id = rl.requisition_id WHERE rl.id = ?");
+        $check->execute([$lineId]);
+        $row = $check->fetch();
+        if (!$row) jsonError('Line not found', 404);
+        if (!in_array($row['status'], ['draft', 'processing'])) jsonError('Cannot modify submitted orders');
+
+        $db->prepare("DELETE FROM requisition_lines WHERE id = ?")->execute([$lineId]);
+        auditLog('chef_remove_line', 'requisition_lines', $lineId);
+        jsonResponse(['removed' => true]);
+        break;
+
     // ── Save dish-based requisition lines ──
     // ── Atomic save + submit (prevents race condition between separate save and submit calls) ──
     case 'save_and_submit':
@@ -1267,8 +1355,8 @@ switch ($action) {
 
             // Insert aggregated lines
             $insertStmt = $db->prepare("INSERT INTO requisition_lines
-                (requisition_id, item_id, item_name, meal, order_mode, portions, portion_weight, required_kg, stock_qty, order_qty, uom, source_dish_id, source_recipe_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                (requisition_id, item_id, item_name, meal, order_mode, portions, portion_weight, required_kg, stock_qty, order_qty, uom, source_dish_id, source_recipe_id, is_staple)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)");
 
             $totalItems = 0;
             $totalKg = 0;
