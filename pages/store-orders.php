@@ -244,7 +244,7 @@ async function soOpenDetail(orderId) {
                 const diffCls = diff > 0 ? 'text-blue-600 font-semibold' : diff < 0 ? 'text-red-600 font-semibold' : 'text-gray-300';
                 const rowBg = Math.abs(diff) > 0.01 ? 'bg-red-50/50' : '';
                 html += `<tr class="${rowBg}">
-                    <td class="px-2 py-1.5 text-gray-700">${line.item_name} <span class="text-gray-300 text-[9px]">${line.uom || ''}</span></td>
+                    <td class="px-2 py-1.5 text-gray-700">${line.item_name}${parseInt(line.is_staple) ? ' <span class="text-[8px] px-1 py-0.5 rounded bg-purple-100 text-purple-500">S</span>' : ''} <span class="text-gray-300 text-[9px]">${line.uom || ''}</span></td>
                     <td class="text-center px-1 py-1.5 text-blue-700 font-medium">${oq > 0 ? oq.toFixed(1) : '—'}</td>
                     <td class="text-center px-1 py-1.5 text-green-700 font-medium">${fq > 0 ? fq.toFixed(1) : '—'}</td>
                     <td class="text-center px-1 py-1.5 text-orange-700 font-medium">${rq > 0 ? rq.toFixed(1) : '—'}</td>
@@ -318,7 +318,7 @@ function soActiveLineHtml(line, reqQty) {
     return `<div class="bg-gray-50 rounded-xl px-3 py-3" id="so-line-${line.id}">
         <div class="flex items-center justify-between mb-2">
             <div class="min-w-0 flex-1">
-                <p class="font-semibold text-sm text-gray-800 truncate">${line.item_name}</p>
+                <p class="font-semibold text-sm text-gray-800 truncate">${line.item_name}${parseInt(line.is_staple) ? ' <span class="text-[9px] px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-600 font-semibold ml-1">Staple</span>' : ''}</p>
                 <p class="text-[10px] text-gray-400">${line.uom}</p>
             </div>
             <button onclick="soRemoveLine(${line.id}, ${soCurrentOrderId || 0})" title="Remove item"

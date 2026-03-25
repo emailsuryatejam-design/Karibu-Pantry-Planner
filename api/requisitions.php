@@ -677,6 +677,18 @@ switch ($action) {
             }
         }
 
+        // For any lines NOT in the receipt confirmation, default received_qty to fulfilled_qty
+        // This ensures no lines are left with NULL received_qty
+        if (!empty($lineIds)) {
+            $ph2 = implode(',', array_fill(0, count($lineIds), '?'));
+            $db->prepare("UPDATE requisition_lines SET received_qty = COALESCE(fulfilled_qty, 0) WHERE requisition_id = ? AND id NOT IN ($ph2) AND received_qty IS NULL AND status != 'rejected'")
+               ->execute(array_merge([$reqId], $lineIds));
+        } else {
+            // No lines confirmed at all — default everything to fulfilled
+            $db->prepare("UPDATE requisition_lines SET received_qty = COALESCE(fulfilled_qty, 0) WHERE requisition_id = ? AND received_qty IS NULL AND status != 'rejected'")
+               ->execute([$reqId]);
+        }
+
         $db->prepare("UPDATE requisitions SET status = 'received', has_dispute = ?, updated_at = NOW() WHERE id = ?")->execute([$hasDispute ? 1 : 0, $reqId]);
 
         auditLog('requisition_receipt', 'requisition', $reqId, null, ['has_dispute' => $hasDispute]);
@@ -1294,9 +1306,9 @@ switch ($action) {
 
         $db->beginTransaction();
         try {
-            // Clear old dish entries and lines for this requisition
+            // Clear old dish entries and menu-generated lines (preserve manually-added staple lines)
             $db->prepare("DELETE FROM requisition_dishes WHERE requisition_id = ?")->execute([$reqId]);
-            $db->prepare("DELETE FROM requisition_lines WHERE requisition_id = ?")->execute([$reqId]);
+            $db->prepare("DELETE FROM requisition_lines WHERE requisition_id = ? AND is_staple = 0")->execute([$reqId]);
 
             // Aggregated items: itemId => { item_name, total_qty, uom, stock_qty, portion_weight, order_mode, category, sources[] }
             $aggregated = [];
@@ -1422,12 +1434,19 @@ switch ($action) {
                 $totalKg += $orderQty;
             }
 
+            // Count total including preserved staple lines
+            $stapleLineCount = $db->prepare("SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = ? AND is_staple = 1");
+            $stapleLineCount->execute([$reqId]);
+            $existingStaples = (int)$stapleLineCount->fetchColumn();
+            $grandTotal = $totalItems + $existingStaples;
+
             // Set status based on which action was called
             $alsoSubmit = !empty($data['_also_submit']);
             $lockMenu = !empty($data['_lock_menu']);
-            if ($alsoSubmit && $totalItems > 0) {
+            if ($alsoSubmit && $grandTotal > 0) {
                 $db->prepare("UPDATE requisitions SET guest_count = ?, status = 'submitted', created_by = ?, updated_at = NOW() WHERE id = ?")->execute([$guestCount, $user['id'], $reqId]);
-            } elseif ($lockMenu && $totalItems > 0) {
+            } elseif ($lockMenu) {
+                // Always transition to processing on lock_menu — chef can add staples on Orders page even if 0 menu items
                 $db->prepare("UPDATE requisitions SET guest_count = ?, status = 'processing', created_by = ?, updated_at = NOW() WHERE id = ?")->execute([$guestCount, $user['id'], $reqId]);
             } else {
                 $db->prepare("UPDATE requisitions SET guest_count = ?, created_by = ?, updated_at = NOW() WHERE id = ?")->execute([$guestCount, $user['id'], $reqId]);
@@ -1440,7 +1459,7 @@ switch ($action) {
             ]);
 
             // Send push notification if submitting
-            if ($alsoSubmit && $totalItems > 0) {
+            if ($alsoSubmit && $grandTotal > 0) {
                 try {
                     $kitchenName = '';
                     $kStmt2 = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
