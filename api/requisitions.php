@@ -55,7 +55,7 @@ switch ($action) {
         $req = $stmt->fetch();
         if (!$req) jsonError('Requisition not found', 404);
 
-        $lines = $db->prepare("SELECT rl.*, i.stock_qty AS current_stock FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? AND rl.status != 'rejected' ORDER BY rl.item_name");
+        $lines = $db->prepare("SELECT rl.*, i.stock_qty AS current_stock, i.code AS item_code FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? AND rl.status != 'rejected' ORDER BY rl.item_name");
         $lines->execute([$id]);
         $lineData = $lines->fetchAll();
 
