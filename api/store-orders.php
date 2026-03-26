@@ -238,8 +238,8 @@ switch ($action) {
         $existing = $existCheck->fetch();
         if ($existing) jsonError('Item already exists in this order. Adjust quantity instead.');
 
-        // Insert new line (store-added items are staple by default)
-        $ins = $db->prepare("INSERT INTO requisition_lines (requisition_id, item_id, item_name, uom, order_qty, status, store_notes, is_staple) VALUES (?, ?, ?, ?, ?, 'pending', '[Added by store]', 1)");
+        // Insert new line (store-added items are NOT staple — they're ad-hoc chef requests)
+        $ins = $db->prepare("INSERT INTO requisition_lines (requisition_id, item_id, item_name, uom, order_qty, status, store_notes, is_staple) VALUES (?, ?, ?, ?, ?, 'pending', '[Added by store]', 0)");
         $ins->execute([$orderId, $itemId, $item['name'], $item['uom'], $qty]);
         $newLineId = $db->lastInsertId();
 
