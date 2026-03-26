@@ -423,8 +423,10 @@ async function printOrder(reqId, kitchenNameOverride) {
             const diffStyle = diff < 0 ? 'color:#dc2626;font-weight:bold' : (diff > 0 ? 'color:#16a34a;font-weight:bold' : 'color:#6b7280');
             const rowBg = hasDiff ? 'background:#fef2f2;' : '';
 
+            const itemCode = l.item_code || l.code || '';
             tableRows += `<tr style="border-bottom:1px solid #e5e7eb;${rowBg}">
                 <td style="padding:6px 8px;text-align:center;color:#6b7280">${i + 1}</td>
+                <td style="padding:6px 8px;font-size:11px;color:#9ca3af;font-family:monospace">${escHtml(itemCode) || '—'}</td>
                 <td style="padding:6px 8px;font-weight:500">${escHtml(l.item_name)}</td>
                 <td style="padding:6px 8px;text-align:center;color:#6b7280;font-size:11px">${escHtml(l.uom || 'kg')}</td>
                 <td style="padding:6px 8px;text-align:center">${orderQty}</td>
@@ -534,14 +536,15 @@ async function printOrder(reqId, kitchenNameOverride) {
     <table>
         <thead>
             <tr>
-                <th style="width:36px;text-align:center">#</th>
+                <th style="width:30px;text-align:center">#</th>
+                <th style="width:70px">Item No</th>
                 <th>Item</th>
-                <th class="center" style="width:50px">UOM</th>
-                <th class="center" style="width:70px">Requested</th>
-                <th class="center" style="width:70px">Sent</th>
-                <th class="center" style="width:70px">Received</th>
-                <th class="center" style="width:60px">Unused</th>
-                <th class="center" style="width:60px">Diff</th>
+                <th class="center" style="width:45px">UOM</th>
+                <th class="center" style="width:60px">Requested</th>
+                <th class="center" style="width:60px">Sent</th>
+                <th class="center" style="width:60px">Received</th>
+                <th class="center" style="width:50px">Unused</th>
+                <th class="center" style="width:50px">Diff</th>
             </tr>
         </thead>
         <tbody>
@@ -608,8 +611,10 @@ async function printStoreOrder(orderId) {
             const diffStyle = diff < 0 ? 'color:#dc2626;font-weight:bold' : (diff > 0 ? 'color:#16a34a;font-weight:bold' : 'color:#6b7280');
             const rowBg = hasDiff ? 'background:#fef2f2;' : '';
 
+            const itemCode = l.item_code || '';
             tableRows += `<tr style="border-bottom:1px solid #e5e7eb;${rowBg}">
                 <td style="padding:6px 8px;text-align:center;color:#6b7280">${i + 1}</td>
+                <td style="padding:6px 8px;font-size:11px;color:#9ca3af;font-family:monospace">${escHtml(itemCode) || '—'}</td>
                 <td style="padding:6px 8px;font-weight:500">${escHtml(l.item_name)}</td>
                 <td style="padding:6px 8px;text-align:center;color:#6b7280;font-size:11px">${escHtml(l.uom || 'kg')}</td>
                 <td style="padding:6px 8px;text-align:center">${reqQty}</td>
@@ -680,13 +685,14 @@ async function printStoreOrder(orderId) {
     <table>
         <thead>
             <tr>
-                <th style="width:36px;text-align:center">#</th>
+                <th style="width:30px;text-align:center">#</th>
+                <th style="width:70px">Item No</th>
                 <th>Item</th>
-                <th class="center" style="width:50px">UOM</th>
-                <th class="center" style="width:70px">Requested</th>
-                <th class="center" style="width:70px">Sent</th>
-                <th class="center" style="width:70px">Received</th>
-                <th class="center" style="width:60px">Diff</th>
+                <th class="center" style="width:45px">UOM</th>
+                <th class="center" style="width:60px">Requested</th>
+                <th class="center" style="width:60px">Sent</th>
+                <th class="center" style="width:60px">Received</th>
+                <th class="center" style="width:50px">Diff</th>
             </tr>
         </thead>
         <tbody>
