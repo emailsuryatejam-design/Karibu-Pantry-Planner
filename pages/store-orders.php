@@ -153,6 +153,7 @@ async function soOpenDetail(orderId) {
         const order = res.order;
         const allLines = res.lines || [];
         const canSend = order.status === 'pending';
+        const canEdit = ['pending', 'fulfilled'].includes(order.status); // storekeeper can edit pending + fulfilled
 
         // Separate active and removed lines
         const activeLines = allLines.filter(l => l.line_status !== 'rejected');
@@ -253,11 +254,47 @@ async function soOpenDetail(orderId) {
             });
             html += `</tbody></table></div>`;
 
-            // Show removed lines count if any
-            if (removedLines.length > 0) {
+            // Show removed lines with restore option (for fulfilled orders that canEdit)
+            if (removedLines.length > 0 && canEdit) {
+                html += `
+                    <div class="mt-3 mb-2">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-[10px] font-semibold text-red-400 uppercase tracking-wider">Removed Items</span>
+                            <span class="text-[10px] text-red-300">(${removedLines.length})</span>
+                        </div>
+                        <div class="space-y-1.5">`;
+                removedLines.forEach(line => {
+                    const reqQty = parseFloat(line.requested_qty) || 0;
+                    html += `<div class="bg-red-50/50 rounded-xl px-3 py-2.5 border border-red-100 opacity-60">
+                        <div class="flex items-center justify-between">
+                            <div class="min-w-0 flex-1">
+                                <p class="font-medium text-sm text-gray-500 truncate line-through">${line.item_name}</p>
+                                <p class="text-[10px] text-gray-400">${line.uom} &middot; was ${reqQty} ${line.uom}</p>
+                            </div>
+                            <button onclick="soRestoreLine(${line.id}, ${orderId})"
+                                class="ml-2 px-3 py-1.5 bg-white border border-green-200 rounded-lg text-[11px] font-semibold text-green-600 hover:bg-green-50 active:bg-green-100 transition compact-btn flex items-center gap-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                                Restore
+                            </button>
+                        </div>
+                    </div>`;
+                });
+                html += `</div></div>`;
+            } else if (removedLines.length > 0) {
                 html += `<div class="bg-red-50 border border-red-100 rounded-lg px-3 py-2 mt-3">
                     <p class="text-[11px] text-red-500">${removedLines.length} item${removedLines.length > 1 ? 's' : ''} removed by store: ${removedLines.map(l => l.item_name).join(', ')}</p>
                 </div>`;
+            }
+
+            // Add Item button for fulfilled orders (storekeeper can add late items like ad-hoc chicken)
+            if (canEdit) {
+                html += `
+                    <button onclick="soShowAddItem(${orderId})" id="soAddItemBtn"
+                        class="w-full border-2 border-dashed border-gray-200 hover:border-green-300 rounded-xl py-2.5 text-xs font-medium text-gray-400 hover:text-green-600 transition mt-3 flex items-center justify-center gap-1.5">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                        Add Item
+                    </button>
+                    <div id="soAddItemPanel" class="hidden mt-3"></div>`;
             }
         }
 

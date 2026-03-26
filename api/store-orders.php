@@ -160,12 +160,12 @@ switch ($action) {
         $orderId = (int)($input['order_id'] ?? 0);
         if (!$lineId || !$orderId) jsonError('Line ID and Order ID required');
 
-        // Verify the requisition belongs to this kitchen and is in pending/submitted state
+        // Verify the requisition belongs to this kitchen (allow submitted, processing, fulfilled)
         $check = $db->prepare("SELECT r.status FROM requisitions r WHERE r.id = ? AND r.kitchen_id = ?");
         $check->execute([$orderId, $kitchenId]);
         $reqStatus = $check->fetchColumn();
         if (!$reqStatus) jsonError('Order not found', 404);
-        if (!in_array($reqStatus, ['submitted', 'processing'])) jsonError('Can only modify pending orders');
+        if (!in_array($reqStatus, ['submitted', 'processing', 'fulfilled'])) jsonError('Cannot modify received/closed orders');
 
         // Get current line info for audit
         $lineStmt = $db->prepare("SELECT item_name, order_qty, uom, status FROM requisition_lines WHERE id = ? AND requisition_id = ?");
@@ -189,12 +189,12 @@ switch ($action) {
         $orderId = (int)($input['order_id'] ?? 0);
         if (!$lineId || !$orderId) jsonError('Line ID and Order ID required');
 
-        // Verify the requisition belongs to this kitchen and is in pending/submitted state
+        // Verify the requisition belongs to this kitchen (allow submitted, processing, fulfilled)
         $check = $db->prepare("SELECT r.status FROM requisitions r WHERE r.id = ? AND r.kitchen_id = ?");
         $check->execute([$orderId, $kitchenId]);
         $reqStatus = $check->fetchColumn();
         if (!$reqStatus) jsonError('Order not found', 404);
-        if (!in_array($reqStatus, ['submitted', 'processing'])) jsonError('Can only modify pending orders');
+        if (!in_array($reqStatus, ['submitted', 'processing', 'fulfilled'])) jsonError('Cannot modify received/closed orders');
 
         // Verify the line is currently rejected
         $lineStmt = $db->prepare("SELECT item_name, order_qty, status FROM requisition_lines WHERE id = ? AND requisition_id = ?");
@@ -219,12 +219,12 @@ switch ($action) {
         $qty = (float)($input['qty'] ?? 0);
         if (!$orderId || !$itemId || $qty <= 0) jsonError('Order ID, item ID, and quantity required');
 
-        // Verify the requisition belongs to this kitchen and is in pending/submitted state
+        // Verify the requisition belongs to this kitchen (allow submitted, processing, fulfilled)
         $check = $db->prepare("SELECT r.status FROM requisitions r WHERE r.id = ? AND r.kitchen_id = ?");
         $check->execute([$orderId, $kitchenId]);
         $reqStatus = $check->fetchColumn();
         if (!$reqStatus) jsonError('Order not found', 404);
-        if (!in_array($reqStatus, ['submitted', 'processing'])) jsonError('Can only modify pending orders');
+        if (!in_array($reqStatus, ['submitted', 'processing', 'fulfilled'])) jsonError('Cannot modify received/closed orders');
 
         // Get item details
         $itemStmt = $db->prepare("SELECT id, name, uom FROM items WHERE id = ? AND is_active = 1");
