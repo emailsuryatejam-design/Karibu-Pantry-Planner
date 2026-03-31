@@ -204,22 +204,106 @@ function ordRender() {
     list.classList.remove('hidden');
     document.getElementById('ordEmpty').classList.add('hidden');
 
-    // Render cards, filtering lines by active tab
-    let cardsHtml = ordRequisitions.map(req => ordRenderCard(req)).join('');
-
-    // In staple tab, add a global "+ Add Staple Item" button at the bottom
     if (ordActiveTab === 'staple') {
-        const anyEditableReq = ordRequisitions.find(r => ['draft', 'processing', 'submitted'].includes(r.status));
-        if (anyEditableReq) {
-            cardsHtml += `<button onclick="ordShowAddItem(${anyEditableReq.id})"
-                class="w-full border-2 border-dashed border-gray-200 hover:border-green-300 rounded-xl py-3 text-xs font-medium text-gray-400 hover:text-green-600 transition flex items-center justify-center gap-1.5">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                Add Staple Item
-            </button>`;
-        }
+        // Staple tab: flat list of all staple items across all requisitions — no meal cards
+        list.innerHTML = ordRenderStapleTab();
+    } else {
+        // Menu tab: render per-meal order cards
+        list.innerHTML = ordRequisitions.map(req => ordRenderCard(req)).join('');
+    }
+}
+
+function ordRenderStapleTab() {
+    // Collect all staple items across all requisitions into one flat list
+    const allStapleLines = [];
+    const anyEditableReq = ordRequisitions.find(r => ['draft', 'processing', 'submitted'].includes(r.status));
+
+    ordRequisitions.forEach(req => {
+        const lines = ordLinesByReq[req.id] || [];
+        lines.forEach(l => {
+            if (parseInt(l.is_staple) === 1) {
+                allStapleLines.push({ ...l, reqId: req.id, reqStatus: req.status });
+            }
+        });
+    });
+
+    let html = '';
+
+    if (allStapleLines.length > 0) {
+        const isEditable = allStapleLines.some(l => ['draft', 'processing', 'submitted'].includes(l.reqStatus));
+        html += `<div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+            <div class="flex items-center justify-between px-4 py-3 bg-purple-50 border-b border-purple-100">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-bold text-purple-700">Staple Items</span>
+                    <span class="text-[10px] bg-purple-100 rounded-full px-2 py-0.5 text-purple-600 font-medium">${allStapleLines.length}</span>
+                </div>
+                ${anyEditableReq ? `<button onclick="ordShowAddItem(${anyEditableReq.id})" class="w-8 h-8 rounded-lg bg-white/80 border border-green-300 text-green-600 flex items-center justify-center hover:bg-green-50 active:bg-green-100 transition" title="Add staple item">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                </button>` : ''}
+            </div>
+            <div class="px-4 py-3 space-y-2">`;
+
+        allStapleLines.forEach(line => {
+            const qty = parseFloat(line.order_qty) || 0;
+            if (ordAdjustments[line.id] === undefined) ordAdjustments[line.id] = qty;
+            const currentQty = ordAdjustments[line.id];
+            const canEdit = ['draft', 'processing', 'submitted'].includes(line.reqStatus);
+
+            if (canEdit) {
+                html += `<div class="bg-gray-50 rounded-xl px-3 py-3 cursor-pointer active:bg-gray-100 transition" onclick="ordShowEditLine(${line.id}, ${line.reqId})">
+                    <div class="flex items-center justify-between">
+                        <div class="min-w-0 flex-1">
+                            <p class="font-semibold text-sm text-gray-800 truncate">${escHtml(line.item_name)}</p>
+                            <p class="text-[10px] text-gray-400">${escHtml(line.uom || 'kg')}</p>
+                        </div>
+                        <div class="bg-green-50 border border-green-300 rounded-lg px-3 py-1 text-center min-w-[50px]">
+                            <span class="text-[9px] text-green-500 block">Order</span>
+                            <span class="text-sm font-bold text-green-700">${currentQty}</span>
+                        </div>
+                    </div>
+                </div>`;
+            } else {
+                const fq = parseFloat(line.fulfilled_qty) || 0;
+                const rq = parseFloat(line.received_qty) || 0;
+                html += `<div class="bg-gray-50 rounded-xl px-3 py-2">
+                    <div class="flex items-center justify-between">
+                        <div class="min-w-0 flex-1">
+                            <p class="text-sm text-gray-700">${escHtml(line.item_name)} <span class="text-gray-300 text-[10px]">${line.uom || ''}</span></p>
+                        </div>
+                        <div class="flex gap-2 text-[10px]">
+                            <span class="text-blue-600 font-medium">Req: ${qty}</span>
+                            ${fq > 0 ? `<span class="text-green-600 font-medium">Sent: ${fq}</span>` : ''}
+                            ${rq > 0 ? `<span class="text-orange-600 font-medium">Recv: ${rq}</span>` : ''}
+                        </div>
+                    </div>
+                </div>`;
+            }
+        });
+
+        html += `</div></div>`;
     }
 
-    list.innerHTML = cardsHtml;
+    // Always show "+ Add Staple Item" button
+    if (anyEditableReq) {
+        html += `<button onclick="ordShowAddItem(${anyEditableReq.id})"
+            class="w-full border-2 border-dashed border-gray-200 hover:border-green-300 rounded-xl py-3 text-xs font-medium text-gray-400 hover:text-green-600 transition flex items-center justify-center gap-1.5 mt-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            Add Staple Item
+        </button>`;
+    }
+
+    if (!html) {
+        html = `<div class="text-center py-12">
+            <p class="text-gray-400 text-sm mb-3">No staple items added yet</p>
+            ${anyEditableReq ? `<button onclick="ordShowAddItem(${anyEditableReq.id})"
+                class="px-6 py-2.5 bg-purple-500 text-white rounded-xl text-sm font-semibold hover:bg-purple-600 transition inline-flex items-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add Staple Item
+            </button>` : ''}
+        </div>`;
+    }
+
+    return html;
 }
 
 function ordRenderCard(req) {
