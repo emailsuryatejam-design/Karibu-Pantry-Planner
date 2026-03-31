@@ -55,19 +55,13 @@ $kitchenId = currentKitchenId();
         <p class="text-gray-400 text-xs">Plan your menu on the Dashboard first.</p>
     </div>
 
-    <!-- Floating Add Item Button -->
-    <button onclick="ordShowAddItem()" id="ordAddItemBtn"
-        class="fixed bottom-20 right-4 w-14 h-14 bg-orange-500 text-white rounded-full shadow-lg flex items-center justify-center z-50 hover:bg-orange-600 active:bg-orange-700 transition">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-    </button>
-
-    <!-- Add Staple Popup Modal (centered tile, not drawer) -->
+    <!-- Add Item Popup Modal (centered tile, not drawer) -->
     <div id="ordAddModal" class="hidden fixed inset-0 z-[200] bg-black/50 flex items-start justify-center pt-[10vh] p-4 animate-fade-in" onclick="if(event.target===this)ordCloseAddModal()">
         <div class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[80vh] flex flex-col overflow-hidden">
             <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
                 <div>
-                    <h3 class="text-base font-bold text-gray-900">Add Staple Item</h3>
-                    <p class="text-xs text-gray-400">Search and tap to add</p>
+                    <h3 class="text-base font-bold text-gray-900" id="ordAddModalTitle">Add Item</h3>
+                    <p class="text-xs text-gray-400" id="ordAddModalSub">Search and tap to add</p>
                 </div>
                 <button onclick="ordCloseAddModal()" class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
@@ -97,6 +91,7 @@ $kitchenId = currentKitchenId();
 <script>
 const ORD_KITCHEN_ID = <?= (int)$kitchenId ?>;
 const ORD_UOM_OPTIONS = ['kg', 'g', 'ltr', 'ml', 'pcs', 'tins', 'box', 'pkt', 'bunch', 'bottle', 'unit'];
+let ordCollapsed = {}; // { reqId: true/false }
 
 let ordDate = todayStr();
 let ordActiveTab = 'menu'; // 'menu' or 'staple'
@@ -153,6 +148,18 @@ function ordSwitchTab(tab) {
 
 function ordRefresh() { ordLoad(); }
 
+function ordToggleCollapse(reqId) {
+    ordCollapsed[reqId] = !ordCollapsed[reqId];
+    const body = document.getElementById('ord-body-' + reqId);
+    const card = document.getElementById('ord-card-' + reqId);
+    if (body) body.classList.toggle('hidden');
+    // Rotate chevron
+    if (card) {
+        const chevron = card.querySelector('svg.transition-transform');
+        if (chevron) chevron.classList.toggle('rotate-90');
+    }
+}
+
 async function ordLoad() {
     document.getElementById('ordLoading').classList.remove('hidden');
     document.getElementById('ordList').classList.add('hidden');
@@ -198,7 +205,21 @@ function ordRender() {
     document.getElementById('ordEmpty').classList.add('hidden');
 
     // Render cards, filtering lines by active tab
-    list.innerHTML = ordRequisitions.map(req => ordRenderCard(req)).join('');
+    let cardsHtml = ordRequisitions.map(req => ordRenderCard(req)).join('');
+
+    // In staple tab, add a global "+ Add Staple Item" button at the bottom
+    if (ordActiveTab === 'staple') {
+        const anyEditableReq = ordRequisitions.find(r => ['draft', 'processing', 'submitted'].includes(r.status));
+        if (anyEditableReq) {
+            cardsHtml += `<button onclick="ordShowAddItem(${anyEditableReq.id})"
+                class="w-full border-2 border-dashed border-gray-200 hover:border-green-300 rounded-xl py-3 text-xs font-medium text-gray-400 hover:text-green-600 transition flex items-center justify-center gap-1.5">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add Staple Item
+            </button>`;
+        }
+    }
+
+    list.innerHTML = cardsHtml;
 }
 
 function ordRenderCard(req) {
@@ -213,16 +234,23 @@ function ordRenderCard(req) {
         return ordActiveTab === 'staple' ? staple === 1 : staple === 0;
     });
 
+    const canAddItems = ['draft', 'processing', 'submitted'].includes(req.status);
+
     if (lines.length === 0 && allLines.length > 0) {
-        // Has lines but not in this tab — show minimal indicator
+        // Has lines but not in this tab — show minimal indicator with add button
         const otherCount = allLines.filter(l => {
             const s = parseInt(l.is_staple) || 0;
             return ordActiveTab === 'staple' ? s === 0 : s === 1;
         }).length;
         return `<div class="bg-white rounded-xl border ${color.border} overflow-hidden opacity-50">
             <div class="flex items-center justify-between px-4 py-3 ${color.header} border-b">
-                <span class="text-sm font-bold ${color.text}">${escHtml(mealLabel)} Order</span>
-                ${ordStatusBadge(req.status)}
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-bold ${color.text}">${escHtml(mealLabel)} Order</span>
+                    ${ordStatusBadge(req.status)}
+                </div>
+                ${canAddItems ? `<button onclick="event.stopPropagation();ordShowAddItem(${req.id})" class="w-8 h-8 rounded-lg bg-white/80 border border-green-300 text-green-600 flex items-center justify-center hover:bg-green-50 active:bg-green-100 transition" title="Add item">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                </button>` : ''}
             </div>
             <div class="px-4 py-3 text-center text-xs text-gray-400">
                 No ${ordActiveTab} items — ${otherCount} item${otherCount !== 1 ? 's' : ''} in other tab
@@ -230,16 +258,44 @@ function ordRenderCard(req) {
         </div>`;
     }
 
-    if (lines.length === 0) return '';
+    if (lines.length === 0) {
+        // No lines at all — still show card with add button if applicable
+        if (!canAddItems) return '';
+        return `<div class="bg-white rounded-xl border ${color.border} overflow-hidden shadow-sm">
+            <div class="flex items-center justify-between px-4 py-3 ${color.header} border-b">
+                <div class="flex items-center gap-2">
+                    <span class="text-sm font-bold ${color.text}">${escHtml(mealLabel)} Order</span>
+                    <span class="text-[10px] text-gray-400">#${req.id}</span>
+                </div>
+                <button onclick="ordShowAddItem(${req.id})" class="w-8 h-8 rounded-lg bg-white/80 border border-green-300 text-green-600 flex items-center justify-center hover:bg-green-50 active:bg-green-100 transition" title="Add item">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                </button>
+            </div>
+            <div class="px-4 py-3 text-center text-xs text-gray-400">No items yet — tap + to add</div>
+        </div>`;
+    }
+
+    const isCollapsed = ordCollapsed[req.id] || false;
 
     let html = `<div class="bg-white rounded-xl border ${color.border} overflow-hidden shadow-sm" id="ord-card-${req.id}">`;
-    html += `<div class="flex items-center justify-between px-4 py-3 ${color.header} border-b">
-        <div class="flex items-center gap-2">
-            <span class="text-sm font-bold ${color.text}">${escHtml(mealLabel)} Order</span>
+    // Header with collapse toggle + add button
+    html += `<div class="flex items-center justify-between px-4 py-3 ${color.header} border-b cursor-pointer select-none" onclick="ordToggleCollapse(${req.id})">
+        <div class="flex items-center gap-2 flex-1 min-w-0">
+            <svg class="w-4 h-4 text-gray-400 transition-transform shrink-0 ${isCollapsed ? '' : 'rotate-90'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
+            <span class="text-sm font-bold ${color.text} truncate">${escHtml(mealLabel)} Order</span>
             <span class="text-[10px] text-gray-400">#${req.id}</span>
+            <span class="text-[10px] bg-white/60 rounded-full px-2 py-0.5 text-gray-500 font-medium">${lines.length}</span>
         </div>
-        <div>${ordStatusBadge(req.status)}</div>
+        <div class="flex items-center gap-2 shrink-0">
+            ${ordStatusBadge(req.status)}
+            ${canAddItems ? `<button onclick="event.stopPropagation();ordShowAddItem(${req.id})" class="w-8 h-8 rounded-lg bg-white/80 border border-green-300 text-green-600 flex items-center justify-center hover:bg-green-50 active:bg-green-100 transition" title="Add item">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            </button>` : ''}
+        </div>
     </div>`;
+
+    // Collapsible body
+    html += `<div id="ord-body-${req.id}" class="${isCollapsed ? 'hidden' : ''}">`;
 
     if (isProcessing) {
         html += ordRenderEditableLines(req, lines);
@@ -247,7 +303,8 @@ function ordRenderCard(req) {
         html += ordRenderReadOnlyLines(req, lines);
     }
 
-    html += '</div>';
+    html += '</div>'; // close collapsible body
+    html += '</div>'; // close card
     return html;
 }
 
@@ -436,8 +493,14 @@ async function ordDeleteOrder(reqId) {
 // ══════════════════════════════════════════════
 let ordAddTargetReqId = null;
 
-async function ordShowAddItem() {
-    let targetReq = ordRequisitions.find(r => ['draft', 'processing', 'submitted'].includes(r.status));
+async function ordShowAddItem(reqId) {
+    let targetReq = null;
+    if (reqId) {
+        targetReq = ordRequisitions.find(r => r.id == reqId);
+    }
+    if (!targetReq) {
+        targetReq = ordRequisitions.find(r => ['draft', 'processing', 'submitted'].includes(r.status));
+    }
     if (!targetReq) {
         try {
             showToast('Creating order...', 'info');
@@ -451,6 +514,18 @@ async function ordShowAddItem() {
     }
     if (!targetReq) { showToast('Could not create order. Try again.', 'error'); return; }
     ordAddTargetReqId = targetReq.id;
+
+    // Update modal title based on context
+    const titleEl = document.getElementById('ordAddModalTitle');
+    const subEl = document.getElementById('ordAddModalSub');
+    if (ordActiveTab === 'staple') {
+        if (titleEl) titleEl.textContent = 'Add Staple Item';
+        if (subEl) subEl.textContent = 'Search and tap to add';
+    } else {
+        const mealLabel = typeof reqLabel === 'function' ? reqLabel(targetReq) : (targetReq.meals || 'Order');
+        if (titleEl) titleEl.textContent = 'Add to ' + mealLabel;
+        if (subEl) subEl.textContent = 'Item will be added to this order';
+    }
 
     if (!ordAllItems) {
         try { const res = await api('api/items.php?action=list&active=1'); ordAllItems = res.items || []; } catch (e) { ordAllItems = []; }
@@ -543,7 +618,7 @@ function ordShowItemDetail(itemId, itemName, itemUom) {
             </div>
             <div>
                 <h3 class="text-base font-bold text-gray-900">${itemName}</h3>
-                <p class="text-xs text-gray-400">Add to staple order</p>
+                <p class="text-xs text-gray-400">${ordActiveTab === 'staple' ? 'Add to staple order' : 'Add to menu order'}</p>
             </div>
         </div>
         <div class="space-y-4">
