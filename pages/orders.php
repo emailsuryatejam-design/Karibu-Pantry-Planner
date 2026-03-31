@@ -209,7 +209,51 @@ function ordRender() {
         list.innerHTML = ordRenderStapleTab();
     } else {
         // Menu tab: render per-meal order cards
-        list.innerHTML = ordRequisitions.map(req => ordRenderCard(req)).join('');
+        let cardsHtml = ordRequisitions.map(req => ordRenderCard(req)).join('');
+
+        // Always show Breakfast card even if no breakfast order exists
+        const hasBreakfast = ordRequisitions.some(r => r.meals === 'breakfast');
+        if (!hasBreakfast) {
+            cardsHtml = ordRenderEmptyMealCard('breakfast') + cardsHtml;
+        }
+
+        list.innerHTML = cardsHtml;
+    }
+}
+
+function ordRenderEmptyMealCard(meal) {
+    const color = ordGetColor(meal);
+    const mealLabel = meal.charAt(0).toUpperCase() + meal.slice(1);
+    return `<div class="bg-white rounded-xl border ${color.border} overflow-hidden shadow-sm">
+        <div class="flex items-center justify-between px-4 py-3 ${color.header} border-b">
+            <div class="flex items-center gap-2">
+                <span class="text-sm font-bold ${color.text}">${mealLabel} Order</span>
+            </div>
+            <button onclick="ordCreateAndAddItem('${meal}')" class="w-8 h-8 rounded-lg bg-white/80 border border-green-300 text-green-600 flex items-center justify-center hover:bg-green-50 active:bg-green-100 transition" title="Add item">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            </button>
+        </div>
+        <div class="px-4 py-3 text-center text-xs text-gray-400">No items yet — tap + to add</div>
+    </div>`;
+}
+
+async function ordCreateAndAddItem(meal) {
+    // Auto-create a requisition for this meal, then open add item modal
+    try {
+        showToast('Creating ' + meal + ' order...', 'info');
+        const res = await api('api/requisitions.php?action=page_init', {
+            method: 'POST',
+            body: { req_date: ordDate, kitchen_id: ORD_KITCHEN_ID, guest_count: 20, meals: meal }
+        });
+        // Reload to get the new requisition
+        await ordLoad();
+        // Find the newly created req for this meal
+        const newReq = ordRequisitions.find(r => r.meals === meal);
+        if (newReq) {
+            ordShowAddItem(newReq.id);
+        }
+    } catch (err) {
+        showToast(err.message, 'error');
     }
 }
 
