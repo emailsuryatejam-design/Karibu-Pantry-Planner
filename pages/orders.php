@@ -238,19 +238,25 @@ function ordRenderEmptyMealCard(meal) {
 }
 
 async function ordCreateAndAddItem(meal) {
-    // Auto-create a requisition for this meal, then open add item modal
+    // Auto-create requisitions for all meals (page_init), then open add item modal for the target meal
     try {
         showToast('Creating ' + meal + ' order...', 'info');
         const res = await api('api/requisitions.php?action=page_init', {
             method: 'POST',
-            body: { req_date: ordDate, kitchen_id: ORD_KITCHEN_ID, guest_count: 20, meals: meal }
+            body: { req_date: ordDate, kitchen_id: ORD_KITCHEN_ID, guest_count: 20 }
         });
-        // Reload to get the new requisition
-        await ordLoad();
-        // Find the newly created req for this meal
-        const newReq = ordRequisitions.find(r => r.meals === meal);
+        // Find the newly created req for this meal from the response
+        const allReqs = res.requisitions || [];
+        const newReq = allReqs.find(r => r.meals === meal);
         if (newReq) {
+            // Add to our local state so the modal can reference it
+            if (!ordRequisitions.find(r => r.id == newReq.id)) {
+                ordRequisitions.push(newReq);
+                ordLinesByReq[newReq.id] = [];
+            }
             ordShowAddItem(newReq.id);
+        } else {
+            showToast('Could not create ' + meal + ' order', 'error');
         }
     } catch (err) {
         showToast(err.message, 'error');
@@ -789,14 +795,13 @@ async function ordConfirmAddItem(itemId, itemName) {
     if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
 
     try {
+        const isStaple = ordActiveTab === 'staple' ? 1 : 0;
         await api('api/requisitions.php?action=add_line_to_order', {
             method: 'POST',
-            body: { requisition_id: ordAddTargetReqId, item_id: itemId, item_name: itemName, order_qty: qty, uom: uom, is_staple: 1 }
+            body: { requisition_id: ordAddTargetReqId, item_id: itemId, item_name: itemName, order_qty: qty, uom: uom, is_staple: isStaple }
         });
         showToast(`${itemName} added!`, 'success');
         ordCloseItemDetail();
-        ordActiveTab = 'staple';
-        ordSwitchTab('staple');
         ordLoad();
     } catch (err) {
         showToast(err.message, 'error');
