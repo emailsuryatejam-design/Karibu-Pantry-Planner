@@ -32,8 +32,16 @@
     </div>
     <?php endif; ?>
 
-    <!-- Category Tabs -->
-    <div class="flex gap-1.5 mb-3 overflow-x-auto pb-1">
+    <!-- Meals / Breakfast Tabs -->
+    <div class="flex gap-1.5 mb-3">
+        <button onclick="rSwitchTab('meals')" id="rTabMeals"
+            class="flex-1 py-2.5 rounded-xl text-xs font-semibold transition bg-orange-500 text-white">Meals</button>
+        <button onclick="rSwitchTab('breakfast')" id="rTabBreakfast"
+            class="flex-1 py-2.5 rounded-xl text-xs font-semibold transition bg-gray-100 text-gray-600">Breakfast</button>
+    </div>
+
+    <!-- Category Tabs (only shown for Meals tab) -->
+    <div id="rCatTabs" class="flex gap-1.5 mb-3 overflow-x-auto pb-1">
         <button onclick="rFilterCat('')" id="rCatAll" class="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-orange-500 text-white compact-btn">All</button>
         <button onclick="rFilterCat('main_course')" id="rCat_main_course" class="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600 compact-btn">Main Course</button>
         <button onclick="rFilterCat('appetizer')" id="rCat_appetizer" class="px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600 compact-btn">Appetizer</button>
@@ -64,8 +72,30 @@ let rRecipes = [];
 let rCategory = '';
 let rSearchTimer = null;
 let rExpandedId = null;
+let rActiveTab = 'meals'; // 'meals' or 'breakfast'
 
 rLoadRecipes();
+
+function rSwitchTab(tab) {
+    rActiveTab = tab;
+    rCategory = '';
+    // Update tab styles
+    document.getElementById('rTabMeals').className = tab === 'meals'
+        ? 'flex-1 py-2.5 rounded-xl text-xs font-semibold transition bg-orange-500 text-white'
+        : 'flex-1 py-2.5 rounded-xl text-xs font-semibold transition bg-gray-100 text-gray-600';
+    document.getElementById('rTabBreakfast').className = tab === 'breakfast'
+        ? 'flex-1 py-2.5 rounded-xl text-xs font-semibold transition bg-orange-500 text-white'
+        : 'flex-1 py-2.5 rounded-xl text-xs font-semibold transition bg-gray-100 text-gray-600';
+    // Show/hide category tabs
+    document.getElementById('rCatTabs').classList.toggle('hidden', tab === 'breakfast');
+    // Reset category filter
+    document.querySelectorAll('[id^="rCat"]').forEach(btn => {
+        if (btn.id !== 'rCatTabs') btn.className = 'px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-gray-100 text-gray-600 compact-btn';
+    });
+    const allBtn = document.getElementById('rCatAll');
+    if (allBtn) allBtn.className = 'px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap bg-orange-500 text-white compact-btn';
+    rRender();
+}
 
 function rSearch() {
     clearTimeout(rSearchTimer);
@@ -121,15 +151,26 @@ async function rLoadRecipes() {
     finally { document.getElementById('rLoading').classList.add('hidden'); }
 }
 
+function rRender() { rRenderList(); }
+
 function rRenderList() {
-    if (rRecipes.length === 0) { document.getElementById('rEmpty').classList.remove('hidden'); return; }
+    // Filter by active tab: 'breakfast' shows only breakfast category, 'meals' shows everything else
+    let filtered = rRecipes;
+    if (rActiveTab === 'breakfast') {
+        filtered = rRecipes.filter(r => r.category === 'breakfast');
+    } else {
+        filtered = rRecipes.filter(r => r.category !== 'breakfast');
+    }
+
+    if (filtered.length === 0) { document.getElementById('rEmpty').classList.remove('hidden'); document.getElementById('rList').classList.add('hidden'); return; }
+    document.getElementById('rEmpty').classList.add('hidden');
 
     const list = document.getElementById('rList');
     list.classList.remove('hidden');
     const catLabels = { appetizer: 'Appetizer', soup: 'Soup', salad: 'Salad', main_course: 'Main', side: 'Side', dessert: 'Dessert', beverage: 'Beverage', breakfast: 'Breakfast', lunch: 'Lunch', dinner: 'Dinner', snack: 'Snack', sauce: 'Sauce', bread: 'Bread', other: 'Other' };
     const diffColors = { easy: 'bg-green-100 text-green-700', medium: 'bg-amber-100 text-amber-700', hard: 'bg-red-100 text-red-700' };
 
-    list.innerHTML = rRecipes.map(r => `
+    list.innerHTML = filtered.map(r => `
         <div class="bg-white rounded-xl border border-gray-100 overflow-hidden shadow-sm">
             <div class="flex items-center gap-3 px-4 py-3 cursor-pointer" onclick="rToggleExpand(${r.id})">
                 <div class="flex-1 min-w-0">
@@ -285,7 +326,7 @@ function rOpenForm(recipe) {
             <input type="text" id="rFormName" value="${isEdit ? recipe.name : ''}" placeholder="Recipe name" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
             <div class="flex gap-2">
                 <select id="rFormCategory" class="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm compact-btn">
-                    ${categories.map(c => `<option value="${c}" ${(isEdit ? recipe.category : 'main_course') === c ? 'selected' : ''}>${c.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>`).join('')}
+                    ${categories.map(c => `<option value="${c}" ${(isEdit ? recipe.category : (rActiveTab === 'breakfast' ? 'breakfast' : 'main_course')) === c ? 'selected' : ''}>${c.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>`).join('')}
                 </select>
                 <select id="rFormDifficulty" class="w-28 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm compact-btn">
                     <option value="easy" ${(isEdit && recipe.difficulty === 'easy') ? 'selected' : ''}>Easy</option>
