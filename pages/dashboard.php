@@ -459,9 +459,10 @@ function dbRenderActiveMeal() {
                     <div class="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
                     </div>
-                    <div class="min-w-0">
+                    <div class="min-w-0 flex-1">
                         <div class="text-xs font-medium text-gray-800 truncate">${escHtml(d.recipe_name)}</div>
                         <div class="text-[9px] text-gray-400">${portions} pax</div>
+                        ${d.ingredients ? `<div class="text-[9px] text-gray-400 mt-0.5 leading-relaxed">${d.ingredients.map(i => i.item_name + ' ' + (Math.round(i.qty * (portions / (d.recipe_servings || 4)) * 10) / 10) + i.uom).join(', ')}</div>` : ''}
                     </div>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">

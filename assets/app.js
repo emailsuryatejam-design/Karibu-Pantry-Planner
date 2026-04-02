@@ -559,14 +559,21 @@ async function printOrder(reqId, kitchenNameOverride) {
     </div>` : ''}
 
     <!-- Signature area -->
-    <div style="margin-top:32px;display:grid;grid-template-columns:1fr 1fr;gap:40px">
+    <div style="margin-top:32px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
         <div>
-            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:32px"></div>
-            <div style="font-size:11px;color:#6b7280">Chef Signature / Date</div>
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:12px">Prepared by</div>
+            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:28px"></div>
+            <div style="font-size:10px;color:#9ca3af">Signature &amp; Date</div>
         </div>
         <div>
-            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:32px"></div>
-            <div style="font-size:11px;color:#6b7280">Store Signature / Date</div>
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:12px">Issued by</div>
+            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:28px"></div>
+            <div style="font-size:10px;color:#9ca3af">Signature &amp; Date</div>
+        </div>
+        <div>
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:12px">Received by (Manager)</div>
+            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:28px"></div>
+            <div style="font-size:10px;color:#9ca3af">Signature &amp; Date</div>
         </div>
     </div>
 
@@ -700,14 +707,21 @@ async function printStoreOrder(orderId) {
         </tbody>
     </table>
     ${disputeHtml}
-    <div style="margin-top:32px;display:grid;grid-template-columns:1fr 1fr;gap:40px">
+    <div style="margin-top:32px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
         <div>
-            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:32px"></div>
-            <div style="font-size:11px;color:#6b7280">Chef Signature / Date</div>
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:12px">Prepared by</div>
+            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:28px"></div>
+            <div style="font-size:10px;color:#9ca3af">Signature &amp; Date</div>
         </div>
         <div>
-            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:32px"></div>
-            <div style="font-size:11px;color:#6b7280">Store Signature / Date</div>
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:12px">Issued by</div>
+            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:28px"></div>
+            <div style="font-size:10px;color:#9ca3af">Signature &amp; Date</div>
+        </div>
+        <div>
+            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:12px">Received by (Manager)</div>
+            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:28px"></div>
+            <div style="font-size:10px;color:#9ca3af">Signature &amp; Date</div>
         </div>
     </div>
     <div style="margin-top:24px;text-align:center;font-size:10px;color:#9ca3af">
