@@ -148,31 +148,31 @@ function ordSwitchTab(tab) {
 
 function ordRefresh() { ordLoad(); }
 
-function ordAdjustGuests(reqId, delta) {
+function ordAdjustGuestsLocal(reqId, delta) {
     const el = document.getElementById('ord-gc-' + reqId);
     if (!el) return;
-    const current = parseInt(el.value) || 20;
-    const newCount = Math.max(1, current + delta);
-    el.value = newCount;
-    ordSetGuests(reqId, newCount);
+    el.value = Math.max(1, (parseInt(el.value) || 20) + delta);
 }
 
-let ordGuestTimer = null;
-function ordSetGuests(reqId, value) {
-    const newCount = Math.max(1, parseInt(value) || 1);
-    clearTimeout(ordGuestTimer);
-    ordGuestTimer = setTimeout(async () => {
-        try {
-            await api('api/requisitions.php?action=recalculate_order', {
-                method: 'POST',
-                body: { requisition_id: reqId, guest_count: newCount }
-            });
-            showToast(`Updated to ${newCount} guests`);
-            ordLoad();
-        } catch (err) {
-            showToast(err.message, 'error');
-        }
-    }, 600); // debounce 600ms so rapid +/- clicks batch
+async function ordSaveGuests(reqId) {
+    const el = document.getElementById('ord-gc-' + reqId);
+    const btn = document.getElementById('ord-gc-save-' + reqId);
+    if (!el) return;
+    const newCount = Math.max(1, parseInt(el.value) || 1);
+
+    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+    try {
+        await api('api/requisitions.php?action=recalculate_order', {
+            method: 'POST',
+            body: { requisition_id: reqId, guest_count: newCount }
+        });
+        showToast(`Recalculated for ${newCount} guests`);
+        ordLoad();
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> Save'; }
+    }
 }
 
 function ordToggleCollapse(reqId) {
@@ -462,12 +462,16 @@ function ordRenderCard(req) {
         html += `<div class="flex items-center justify-between px-4 py-2 bg-blue-50/50 border-b border-blue-100">
             <span class="text-[10px] text-blue-600 font-semibold uppercase tracking-wider">Guest Count</span>
             <div class="flex items-center gap-1.5">
-                <button onclick="event.stopPropagation();ordAdjustGuests(${req.id}, -1)" class="w-8 h-8 rounded-lg bg-white border border-blue-200 text-blue-600 text-sm font-bold flex items-center justify-center active:bg-blue-50">-</button>
+                <button onclick="event.stopPropagation();ordAdjustGuestsLocal(${req.id}, -1)" class="w-8 h-8 rounded-lg bg-white border border-blue-200 text-blue-600 text-sm font-bold flex items-center justify-center active:bg-blue-50">-</button>
                 <input type="number" id="ord-gc-${req.id}" value="${guestCount}" min="1" step="1"
                     onclick="event.stopPropagation();this.select()"
-                    onchange="ordSetGuests(${req.id}, this.value)"
                     class="w-14 text-center text-sm font-bold text-blue-700 border border-blue-300 rounded-lg py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200">
-                <button onclick="event.stopPropagation();ordAdjustGuests(${req.id}, 1)" class="w-8 h-8 rounded-lg bg-blue-500 text-white text-sm font-bold flex items-center justify-center active:bg-blue-600">+</button>
+                <button onclick="event.stopPropagation();ordAdjustGuestsLocal(${req.id}, 1)" class="w-8 h-8 rounded-lg bg-blue-500 text-white text-sm font-bold flex items-center justify-center active:bg-blue-600">+</button>
+                <button onclick="event.stopPropagation();ordSaveGuests(${req.id})" id="ord-gc-save-${req.id}"
+                    class="ml-1 px-3 h-8 rounded-lg bg-green-600 text-white text-xs font-bold flex items-center justify-center gap-1 active:bg-green-700 transition">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
+                    Save
+                </button>
             </div>
         </div>`;
     } else if (guestCount) {
