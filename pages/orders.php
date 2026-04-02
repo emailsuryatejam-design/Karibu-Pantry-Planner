@@ -148,24 +148,31 @@ function ordSwitchTab(tab) {
 
 function ordRefresh() { ordLoad(); }
 
-async function ordAdjustGuests(reqId, delta) {
+function ordAdjustGuests(reqId, delta) {
     const el = document.getElementById('ord-gc-' + reqId);
     if (!el) return;
-    const current = parseInt(el.textContent) || 20;
+    const current = parseInt(el.value) || 20;
     const newCount = Math.max(1, current + delta);
-    el.textContent = newCount;
+    el.value = newCount;
+    ordSetGuests(reqId, newCount);
+}
 
-    try {
-        await api('api/requisitions.php?action=recalculate_order', {
-            method: 'POST',
-            body: { requisition_id: reqId, guest_count: newCount }
-        });
-        showToast(`Updated to ${newCount} guests`);
-        ordLoad();
-    } catch (err) {
-        el.textContent = current; // revert
-        showToast(err.message, 'error');
-    }
+let ordGuestTimer = null;
+function ordSetGuests(reqId, value) {
+    const newCount = Math.max(1, parseInt(value) || 1);
+    clearTimeout(ordGuestTimer);
+    ordGuestTimer = setTimeout(async () => {
+        try {
+            await api('api/requisitions.php?action=recalculate_order', {
+                method: 'POST',
+                body: { requisition_id: reqId, guest_count: newCount }
+            });
+            showToast(`Updated to ${newCount} guests`);
+            ordLoad();
+        } catch (err) {
+            showToast(err.message, 'error');
+        }
+    }, 600); // debounce 600ms so rapid +/- clicks batch
 }
 
 function ordToggleCollapse(reqId) {
@@ -455,9 +462,12 @@ function ordRenderCard(req) {
         html += `<div class="flex items-center justify-between px-4 py-2 bg-blue-50/50 border-b border-blue-100">
             <span class="text-[10px] text-blue-600 font-semibold uppercase tracking-wider">Guest Count</span>
             <div class="flex items-center gap-1.5">
-                <button onclick="event.stopPropagation();ordAdjustGuests(${req.id}, -5)" class="w-7 h-7 rounded-lg bg-white border border-blue-200 text-blue-600 text-xs font-bold flex items-center justify-center">-5</button>
-                <span class="text-sm font-bold text-blue-700 w-8 text-center" id="ord-gc-${req.id}">${guestCount}</span>
-                <button onclick="event.stopPropagation();ordAdjustGuests(${req.id}, 5)" class="w-7 h-7 rounded-lg bg-blue-500 text-white text-xs font-bold flex items-center justify-center">+5</button>
+                <button onclick="event.stopPropagation();ordAdjustGuests(${req.id}, -1)" class="w-8 h-8 rounded-lg bg-white border border-blue-200 text-blue-600 text-sm font-bold flex items-center justify-center active:bg-blue-50">-</button>
+                <input type="number" id="ord-gc-${req.id}" value="${guestCount}" min="1" step="1"
+                    onclick="event.stopPropagation();this.select()"
+                    onchange="ordSetGuests(${req.id}, this.value)"
+                    class="w-14 text-center text-sm font-bold text-blue-700 border border-blue-300 rounded-lg py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200">
+                <button onclick="event.stopPropagation();ordAdjustGuests(${req.id}, 1)" class="w-8 h-8 rounded-lg bg-blue-500 text-white text-sm font-bold flex items-center justify-center active:bg-blue-600">+</button>
             </div>
         </div>`;
     } else if (guestCount) {
