@@ -1142,6 +1142,49 @@ switch ($action) {
         break;
 
     // ── Add a line item to an order (chef can add items not from menu) ──
+    // ── Recalculate order quantities after guest count change (before store issues) ──
+    case 'recalculate_order':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        $newGuestCount = (int)($data['guest_count'] ?? 0);
+        if (!$reqId || $newGuestCount < 1) jsonError('Requisition ID and valid guest count required');
+
+        // Only allow editing before store fulfills
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('processing', 'submitted')");
+        $stmt->execute([$reqId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Order not found or already fulfilled');
+
+        $oldGuestCount = (int)($req['guest_count'] ?: 20);
+        if ($oldGuestCount === $newGuestCount) jsonResponse(['updated' => true, 'message' => 'No change']);
+
+        $ratio = $newGuestCount / max(1, $oldGuestCount);
+
+        $db->beginTransaction();
+        try {
+            // Update requisition guest count
+            $db->prepare("UPDATE requisitions SET guest_count = ?, updated_at = NOW() WHERE id = ?")
+               ->execute([$newGuestCount, $reqId]);
+
+            // Recalculate all non-staple line quantities proportionally
+            $db->prepare("UPDATE requisition_lines SET order_qty = ROUND(order_qty * ?, 1), portions = ? WHERE requisition_id = ? AND (is_staple = 0 OR is_staple IS NULL)")
+               ->execute([$ratio, $newGuestCount, $reqId]);
+
+            // Also update requisition_dishes guest_count and scale_factor
+            $db->prepare("UPDATE requisition_dishes SET guest_count = ?, scale_factor = ROUND(scale_factor * ?, 3) WHERE requisition_id = ?")
+               ->execute([$newGuestCount, $ratio, $reqId]);
+
+            $db->commit();
+            auditLog('recalculate_order', 'requisitions', $reqId, ['guest_count' => $oldGuestCount], ['guest_count' => $newGuestCount, 'ratio' => $ratio]);
+            jsonResponse(['updated' => true, 'old_guest_count' => $oldGuestCount, 'new_guest_count' => $newGuestCount, 'ratio' => round($ratio, 3)]);
+        } catch (Exception $e) {
+            $db->rollBack();
+            jsonError('Failed to recalculate: ' . $e->getMessage());
+        }
+        break;
+
     case 'add_line_to_order':
         requireMethod('POST');
         requireRole(['chef', 'admin']);
@@ -1318,6 +1361,12 @@ switch ($action) {
         } catch (Exception $e) {
             $db->exec("ALTER TABLE requisition_lines ADD COLUMN source_dish_id INT DEFAULT NULL, ADD COLUMN source_recipe_id INT DEFAULT NULL");
         }
+        // Self-healing: add source_dishes JSON column if missing
+        try {
+            $db->query("SELECT source_dishes FROM requisition_lines LIMIT 0");
+        } catch (Exception $e) {
+            $db->exec("ALTER TABLE requisition_lines ADD COLUMN source_dishes TEXT DEFAULT NULL");
+        }
         // Self-healing: add is_staple column if missing
         try {
             $db->query("SELECT is_staple FROM requisition_lines LIMIT 0");
@@ -1395,7 +1444,7 @@ switch ($action) {
 
                     if (isset($aggregated[$itemId])) {
                         $aggregated[$itemId]['total_qty'] += $scaledQty;
-                        $aggregated[$itemId]['sources'][] = ['dish_id' => $dishId, 'recipe_id' => $recipeId, 'recipe_name' => $recipeName];
+                        $aggregated[$itemId]['sources'][] = ['dish_id' => $dishId, 'recipe_id' => $recipeId, 'recipe_name' => $recipeName, 'qty' => $scaledQty];
                     } else {
                         $aggregated[$itemId] = [
                             'item_name' => $ing['item_name'],
@@ -1405,7 +1454,7 @@ switch ($action) {
                             'portion_weight' => (float)$ing['portion_weight'],
                             'order_mode' => $ing['order_mode'],
                             'category' => $ing['category'],
-                            'sources' => [['dish_id' => $dishId, 'recipe_id' => $recipeId, 'recipe_name' => $recipeName]],
+                            'sources' => [['dish_id' => $dishId, 'recipe_id' => $recipeId, 'recipe_name' => $recipeName, 'qty' => $scaledQty]],
                         ];
                     }
                 }
@@ -1421,8 +1470,8 @@ switch ($action) {
 
             // Insert aggregated lines
             $insertStmt = $db->prepare("INSERT INTO requisition_lines
-                (requisition_id, item_id, item_name, meal, order_mode, portions, portion_weight, required_kg, stock_qty, order_qty, uom, source_dish_id, source_recipe_id, is_staple)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)");
+                (requisition_id, item_id, item_name, meal, order_mode, portions, portion_weight, required_kg, stock_qty, order_qty, uom, source_dish_id, source_recipe_id, source_dishes, is_staple)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)");
 
             $totalItems = 0;
             $totalKg = 0;
@@ -1441,14 +1490,17 @@ switch ($action) {
 
                 if ($requiredKg <= 0) continue;
 
-                // Use first source for tracking
+                // Use first source for tracking + store all sources as JSON
                 $sourceDishId = $agg['sources'][0]['dish_id'] ?? null;
                 $sourceRecipeId = $agg['sources'][0]['recipe_id'] ?? null;
+                $sourceDishesJson = json_encode(array_map(function($s) {
+                    return ['name' => $s['recipe_name'] ?? '', 'qty' => round($s['qty'] ?? 0, 2)];
+                }, $agg['sources']));
 
                 $insertStmt->execute([
                     $reqId, $itemId, $agg['item_name'], $meal, $agg['order_mode'],
                     $guestCount, $agg['portion_weight'], $requiredKg, $agg['stock_qty'], $orderQty,
-                    $agg['uom'], $sourceDishId, $sourceRecipeId
+                    $agg['uom'], $sourceDishId, $sourceRecipeId, $sourceDishesJson
                 ]);
 
                 $totalItems++;

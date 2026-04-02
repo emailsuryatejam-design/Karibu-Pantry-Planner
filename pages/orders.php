@@ -148,6 +148,26 @@ function ordSwitchTab(tab) {
 
 function ordRefresh() { ordLoad(); }
 
+async function ordAdjustGuests(reqId, delta) {
+    const el = document.getElementById('ord-gc-' + reqId);
+    if (!el) return;
+    const current = parseInt(el.textContent) || 20;
+    const newCount = Math.max(1, current + delta);
+    el.textContent = newCount;
+
+    try {
+        await api('api/requisitions.php?action=recalculate_order', {
+            method: 'POST',
+            body: { requisition_id: reqId, guest_count: newCount }
+        });
+        showToast(`Updated to ${newCount} guests`);
+        ordLoad();
+    } catch (err) {
+        el.textContent = current; // revert
+        showToast(err.message, 'error');
+    }
+}
+
 function ordToggleCollapse(reqId) {
     ordCollapsed[reqId] = !ordCollapsed[reqId];
     const body = document.getElementById('ord-body-' + reqId);
@@ -170,14 +190,14 @@ async function ordLoad() {
         const allReqs = res.requisitions || [];
         const linesByReq = res.lines_by_req || {};
 
-        const validStatuses = ['draft', 'processing', 'submitted', 'fulfilled', 'received'];
+        const validStatuses = ['draft', 'processing', 'submitted', 'fulfilled', 'received', 'closed'];
         ordRequisitions = allReqs.filter(r => validStatuses.includes(r.status) && (r.status !== 'draft' || parseInt(r.line_count) > 0));
         ordLinesByReq = linesByReq;
         ordAdjustments = {};
 
-        // Fetch full lines for draft/processing requisitions (editable orders)
-        const processingReqs = ordRequisitions.filter(r => ['draft', 'processing'].includes(r.status));
-        await Promise.all(processingReqs.map(r =>
+        // Fetch full lines for editable AND viewable requisitions
+        const regsNeedingLines = ordRequisitions.filter(r => ['draft', 'processing', 'submitted', 'fulfilled', 'received'].includes(r.status));
+        await Promise.all(regsNeedingLines.map(r =>
             api(`api/requisitions.php?action=get&id=${r.id}`).then(data => {
                 ordLinesByReq[r.id] = data.lines || [];
             }).catch(() => { ordLinesByReq[r.id] = []; })
@@ -428,10 +448,30 @@ function ordRenderCard(req) {
         </div>
     </div>`;
 
+    // Guest count row (editable for processing/submitted)
+    const canEditGuests = ['processing', 'submitted'].includes(req.status);
+    const guestCount = parseInt(req.guest_count) || 20;
+    if (canEditGuests) {
+        html += `<div class="flex items-center justify-between px-4 py-2 bg-blue-50/50 border-b border-blue-100">
+            <span class="text-[10px] text-blue-600 font-semibold uppercase tracking-wider">Guest Count</span>
+            <div class="flex items-center gap-1.5">
+                <button onclick="event.stopPropagation();ordAdjustGuests(${req.id}, -5)" class="w-7 h-7 rounded-lg bg-white border border-blue-200 text-blue-600 text-xs font-bold flex items-center justify-center">-5</button>
+                <span class="text-sm font-bold text-blue-700 w-8 text-center" id="ord-gc-${req.id}">${guestCount}</span>
+                <button onclick="event.stopPropagation();ordAdjustGuests(${req.id}, 5)" class="w-7 h-7 rounded-lg bg-blue-500 text-white text-xs font-bold flex items-center justify-center">+5</button>
+            </div>
+        </div>`;
+    } else if (guestCount) {
+        html += `<div class="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-100">
+            <span class="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Guest Count</span>
+            <span class="text-xs font-bold text-gray-500">${guestCount} pax</span>
+        </div>`;
+    }
+
     // Collapsible body
     html += `<div id="ord-body-${req.id}" class="${isCollapsed ? 'hidden' : ''}">`;
 
-    if (isProcessing) {
+    const isEditable = ['processing', 'submitted'].includes(req.status);
+    if (isEditable) {
         html += ordRenderEditableLines(req, lines);
     } else {
         html += ordRenderReadOnlyLines(req, lines);
@@ -453,11 +493,23 @@ function ordRenderEditableLines(req, lines) {
         if (ordAdjustments[line.id] === undefined) ordAdjustments[line.id] = qty;
         const currentQty = ordAdjustments[line.id];
 
+        // Parse source dishes breakdown
+        let sourcesHtml = '';
+        if (line.source_dishes) {
+            try {
+                const sources = JSON.parse(line.source_dishes);
+                if (sources && sources.length > 0) {
+                    sourcesHtml = `<p class="text-[9px] text-gray-400 mt-0.5 truncate">${sources.map(s => s.name + ' (' + s.qty + ')').join(' + ')}</p>`;
+                }
+            } catch(e) {}
+        }
+
         html += `<div class="bg-gray-50 rounded-xl px-3 py-3 cursor-pointer active:bg-gray-100 transition" onclick="ordShowEditLine(${line.id}, ${req.id})">
             <div class="flex items-center justify-between">
                 <div class="min-w-0 flex-1">
                     <p class="font-semibold text-sm text-gray-800 truncate">${escHtml(line.item_name)}</p>
                     <p class="text-[10px] text-gray-400">${escHtml(line.uom || 'kg')}</p>
+                    ${sourcesHtml}
                 </div>
                 <div class="flex items-center gap-2 shrink-0">
                     <div class="bg-orange-50 border border-orange-200 rounded-lg px-2 py-1 text-center">
