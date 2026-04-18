@@ -358,6 +358,19 @@ function ordRenderStapleTab() {
         });
 
         html += `</div></div>`;
+
+        // Submit to Store button — for requisitions with processing status that have staples
+        const processingReqIds = [...new Set(allStapleLines
+            .filter(l => l.reqStatus === 'processing')
+            .map(l => l.reqId))];
+
+        if (processingReqIds.length > 0) {
+            html += `<button onclick="ordSubmitStapleOrders(${JSON.stringify(processingReqIds).replace(/"/g, '&quot;')})"
+                class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2 mt-3 shadow-sm">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                Submit to Store
+            </button>`;
+        }
     }
 
     // Always show "+ Add Staple Item" button
@@ -876,6 +889,33 @@ async function ordConfirmAddItem(itemId, itemName) {
 }
 
 // ── Submit order ──
+// Submit multiple requisitions with staple items to store
+async function ordSubmitStapleOrders(reqIds) {
+    if (!reqIds || reqIds.length === 0) return;
+    const plural = reqIds.length > 1 ? 'orders' : 'order';
+    if (!await customConfirm('Submit to Store', `Submit ${reqIds.length} ${plural} with staple items to the store?`)) return;
+
+    try {
+        for (const reqId of reqIds) {
+            const allLines = ordLinesByReq[reqId] || [];
+            if (allLines.length === 0) continue;
+            const lineData = allLines.map(line => ({
+                id: parseInt(line.id),
+                order_qty: ordAdjustments[line.id] !== undefined ? ordAdjustments[line.id] : parseFloat(line.order_qty) || 0,
+                uom: line.uom || 'kg'
+            }));
+            await api('api/requisitions.php?action=submit_order', {
+                method: 'POST',
+                body: { requisition_id: reqId, lines: lineData }
+            });
+        }
+        showToast(`Submitted to store!`, 'success');
+        ordLoad();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
 async function ordSubmitToStore(reqId) {
     const allLines = ordLinesByReq[reqId] || [];
     if (allLines.length === 0) { showToast('No items to submit', 'error'); return; }
