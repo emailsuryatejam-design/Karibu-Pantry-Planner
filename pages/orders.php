@@ -359,13 +359,13 @@ function ordRenderStapleTab() {
 
         html += `</div></div>`;
 
-        // Submit to Store button — for requisitions with processing status that have staples
-        const processingReqIds = [...new Set(allStapleLines
-            .filter(l => l.reqStatus === 'processing')
+        // Submit to Store button — for draft OR processing requisitions that have staples
+        const submittableReqIds = [...new Set(allStapleLines
+            .filter(l => ['draft', 'processing'].includes(l.reqStatus))
             .map(l => l.reqId))];
 
-        if (processingReqIds.length > 0) {
-            html += `<button onclick="ordSubmitStapleOrders(${JSON.stringify(processingReqIds).replace(/"/g, '&quot;')})"
+        if (submittableReqIds.length > 0) {
+            html += `<button onclick="ordSubmitStapleOrders(${JSON.stringify(submittableReqIds).replace(/"/g, '&quot;')})"
                 class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2 mt-3 shadow-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
                 Submit to Store
