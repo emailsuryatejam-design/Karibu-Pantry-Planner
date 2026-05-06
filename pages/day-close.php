@@ -292,7 +292,6 @@ async function dcCloseDay() {
             ? `Day closed! ${totalUnusedKg.toFixed(1)} kg returned to inventory.`
             : 'Day closed successfully';
         showToast(msg, 'success');
-        voice.dayClosed(formatDate(dcDate));
         dcLoad();
     } catch(e) { showToast(e.message || 'Failed', 'error'); }
 }

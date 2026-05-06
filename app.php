@@ -411,7 +411,7 @@ $isAdminRole = isAdmin();
             navigator.serviceWorker.addEventListener('message', (event) => {
                 if (event.data && event.data.type === 'push-notification') {
                     const d = event.data.payload;
-                    voice.say(d.body || d.title || 'New notification', 'high');
+
                 }
             });
 

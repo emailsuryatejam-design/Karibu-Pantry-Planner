@@ -157,7 +157,6 @@ document.getElementById('dbDateDisplay').textContent = formatDate(dbDate);
 dbLoadStats();
 dbInit();
 
-voice.welcome('<?= addslashes($user['name']) ?>', '<?= addslashes($user['role']) ?>');
 
 // ── Date Switcher ──
 function dbChangeDate(days) {
@@ -715,7 +714,6 @@ async function dbLockMeal(mealCode) {
             })
         });
         showToast(`${typeName} submitted!`, 'success');
-        voice.orderSubmitted(0, '<?= addslashes($kitchenName) ?>');
         dbSetMenuLoaded[mealCode] = false;
         await dbInit();
         dbLoadStats();

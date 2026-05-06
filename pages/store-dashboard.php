@@ -54,7 +54,6 @@ async function sdLoadStats() {
         document.getElementById('sdStatDone').textContent = s.fulfilled_today || 0;
         // Voice: announce new orders on page load
         if ((s.new_orders || 0) > 0) {
-            voice.say(`Store dashboard. You have ${s.new_orders} new order${s.new_orders > 1 ? 's' : ''} to fulfill.`);
         }
     } catch(e) {}
 }
@@ -156,12 +155,10 @@ async function sdDoFulfill(reqId) {
         });
         closeSheet();
         showToast('Requisition fulfilled', 'success');
-        voice.orderFulfilled('', '<?= addslashes($kitchenName) ?>');
         sdLoadStats();
         sdLoadIncoming();
     } catch(e) {
         showToast(e.message || 'Failed', 'error');
-        voice.error('Failed to fulfill order');
     }
 }
 </script>
