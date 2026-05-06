@@ -46,20 +46,10 @@ switch ($action) {
         $stmt->execute([$name, $username, $pin, $pinHash, $role, $kitchenId]);
         $newUserId = $db->lastInsertId();
 
-        // Auto-copy recipes for new chefs from an existing chef in the same kitchen (or admin)
+        // Auto-copy recipes for new chefs — always use Vinaya (id 22) as the master template
         $recipesCopied = 0;
         if ($role === 'chef') {
-            // Find a template chef: first chef in same kitchen, or admin (id=1)
-            $templateChefId = null;
-            if ($kitchenId) {
-                $tStmt = $db->prepare("SELECT id FROM users WHERE role = 'chef' AND kitchen_id = ? AND id != ? AND is_active = 1 LIMIT 1");
-                $tStmt->execute([$kitchenId, $newUserId]);
-                $templateChefId = $tStmt->fetchColumn();
-            }
-            // Fallback: find any chef with recipes
-            if (!$templateChefId) {
-                $templateChefId = $db->query("SELECT created_by FROM recipes WHERE created_by IS NOT NULL GROUP BY created_by ORDER BY COUNT(*) DESC LIMIT 1")->fetchColumn();
-            }
+            $templateChefId = 22; // Vinaya — master recipe template for all new chefs
 
             if ($templateChefId) {
                 $db->beginTransaction();
