@@ -12,9 +12,14 @@ $kitchenId = currentKitchenId();
                 My Orders
             </h1>
         </div>
-        <button onclick="ordRefresh()" class="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 active:bg-gray-300 transition">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
-        </button>
+        <div class="flex items-center gap-1.5">
+            <button onclick="ordPrintOrder()" class="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 active:bg-gray-300 transition" title="Print Order Report">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            </button>
+            <button onclick="ordRefresh()" class="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 active:bg-gray-300 transition" title="Refresh">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
+            </button>
+        </div>
     </div>
 
     <!-- Date Switcher -->
@@ -55,6 +60,12 @@ $kitchenId = currentKitchenId();
         <p class="text-gray-400 text-xs">Plan your menu on the Dashboard first.</p>
     </div>
 
+    <!-- Floating Add Item Button -->
+    <button onclick="ordShowAddItem()" id="ordAddItemBtn"
+        class="fixed bottom-20 right-4 w-14 h-14 bg-orange-500 text-white rounded-full shadow-lg flex items-center justify-center z-50 hover:bg-orange-600 active:bg-orange-700 transition">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+    </button>
+
     <!-- Add Item Popup Modal (centered tile, not drawer) -->
     <div id="ordAddModal" class="hidden fixed inset-0 z-[200] bg-black/50 flex items-start justify-center pt-[10vh] p-4 animate-fade-in" onclick="if(event.target===this)ordCloseAddModal()">
         <div class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[80vh] flex flex-col overflow-hidden">
@@ -86,12 +97,63 @@ $kitchenId = currentKitchenId();
     <div id="ordItemDetailModal" class="hidden fixed inset-0 z-[210] bg-black/50 flex items-center justify-center p-4 animate-fade-in" onclick="if(event.target===this)ordCloseItemDetail()">
         <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6" id="ordItemDetailContent"></div>
     </div>
+
+    <!-- Print View (hidden, revealed only during print) -->
+    <div id="ordPrintView" class="hidden"></div>
 </div>
+
+<!-- Print CSS -->
+<style>
+@media print {
+    body > *:not(#ordPrintView),
+    #ordersPage > *:not(#ordPrintView),
+    nav, .nav-bar, .bottom-nav,
+    #ordAddItemBtn, #ordAddModal, #ordItemDetailModal,
+    .fixed, [class*="fixed"] {
+        display: none !important;
+    }
+    #ordPrintView {
+        display: block !important;
+        position: fixed;
+        top: 0; left: 0;
+        width: 100%;
+        z-index: 99999;
+        background: white;
+        padding: 20px;
+        font-family: Arial, Helvetica, sans-serif;
+        color: #000;
+        font-size: 12px;
+    }
+    #ordPrintView .print-header {
+        text-align: center;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #000;
+        padding-bottom: 10px;
+    }
+    #ordPrintView .print-header h1 { font-size: 18px; font-weight: bold; margin: 0 0 4px 0; }
+    #ordPrintView .print-header p  { font-size: 12px; margin: 2px 0; color: #333; }
+    #ordPrintView .print-section   { margin-bottom: 16px; page-break-inside: avoid; }
+    #ordPrintView .print-section h2 {
+        font-size: 14px; font-weight: bold;
+        margin: 0 0 6px 0; padding: 4px 8px;
+        background: #f0f0f0; border: 1px solid #ccc;
+    }
+    #ordPrintView table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    #ordPrintView th, #ordPrintView td { border: 1px solid #999; padding: 4px 8px; text-align: left; font-size: 11px; }
+    #ordPrintView th { background: #e8e8e8; font-weight: bold; font-size: 10px; text-transform: uppercase; }
+    #ordPrintView td.num { text-align: center; }
+    #ordPrintView .print-summary { margin: 16px 0; font-size: 12px; border-top: 1px solid #999; padding-top: 8px; }
+    #ordPrintView .print-signatures { margin-top: 40px; page-break-inside: avoid; }
+    #ordPrintView .sig-table { width: 100%; border-collapse: collapse; }
+    #ordPrintView .sig-table td { border: none; padding: 6px 4px; font-size: 12px; vertical-align: bottom; }
+    #ordPrintView .sig-table .sig-underline { border-bottom: 1px solid #000; min-width: 120px; display: inline-block; margin-left: 4px; }
+    @page { margin: 15mm; size: A4; }
+}
+</style>
 
 <script>
 const ORD_KITCHEN_ID = <?= (int)$kitchenId ?>;
 const ORD_UOM_OPTIONS = ['kg', 'g', 'ltr', 'ml', 'pcs', 'tins', 'box', 'pkt', 'bunch', 'bottle', 'unit'];
-let ordCollapsed = {}; // { reqId: true/false }
 
 let ordDate = todayStr();
 let ordActiveTab = 'menu'; // 'menu' or 'staple'
@@ -99,6 +161,9 @@ let ordRequisitions = [];
 let ordLinesByReq = {};
 let ordAdjustments = {};
 let ordAllItems = null; // cached for add-item
+let ordCollapsed = {}; // reqId -> true/false
+let ordDishBreakdown = {}; // reqId -> { itemId: [{dish_name, qty, uom}] }
+let ordTypes = []; // all active requisition types (meal codes)
 
 // Meal colors
 const ordMealColors = {
@@ -111,6 +176,7 @@ function ordGetColor(meals) { return ordMealColors[(meals||'').toLowerCase()] ||
 
 function ordStatusBadge(status) {
     const map = {
+        draft:      { cls: 'bg-gray-100 text-gray-600', label: 'Draft' },
         processing: { cls: 'bg-amber-100 text-amber-700', label: 'Processing' },
         submitted:  { cls: 'bg-blue-100 text-blue-700', label: 'Submitted' },
         fulfilled:  { cls: 'bg-emerald-100 text-emerald-700', label: 'Sent' },
@@ -148,43 +214,32 @@ function ordSwitchTab(tab) {
 
 function ordRefresh() { ordLoad(); }
 
-function ordAdjustGuestsLocal(reqId, delta) {
-    const el = document.getElementById('ord-gc-' + reqId);
-    if (!el) return;
-    el.value = Math.max(1, (parseInt(el.value) || 20) + delta);
-}
-
-async function ordSaveGuests(reqId) {
-    const el = document.getElementById('ord-gc-' + reqId);
-    const btn = document.getElementById('ord-gc-save-' + reqId);
-    if (!el) return;
-    const newCount = Math.max(1, parseInt(el.value) || 1);
-
-    if (btn) { btn.disabled = true; btn.textContent = '...'; }
+// ── Update guest count (calls API directly) ──
+async function ordUpdateGuestCount(reqId, newCount) {
+    newCount = Math.max(1, parseInt(newCount) || 1);
     try {
         await api('api/requisitions.php?action=recalculate_order', {
             method: 'POST',
             body: { requisition_id: reqId, guest_count: newCount }
         });
-        showToast(`Recalculated for ${newCount} guests`);
-        ordLoad();
-    } catch (err) {
-        showToast(err.message, 'error');
-    } finally {
-        if (btn) { btn.disabled = false; btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg> Save'; }
+        await ordLoad();
+        showToast(`Guest count updated to ${newCount}`, 'success');
+    } catch(e) {
+        showToast(e.message || 'Failed to update', 'error');
     }
+}
+
+function ordStepGuests(reqId, delta) {
+    const inp = document.getElementById('ordGuestInput_' + reqId);
+    if (!inp) return;
+    const next = Math.max(1, (parseInt(inp.value) || 20) + delta);
+    inp.value = next;
+    ordUpdateGuestCount(reqId, next);
 }
 
 function ordToggleCollapse(reqId) {
     ordCollapsed[reqId] = !ordCollapsed[reqId];
-    const body = document.getElementById('ord-body-' + reqId);
-    const card = document.getElementById('ord-card-' + reqId);
-    if (body) body.classList.toggle('hidden');
-    // Rotate chevron
-    if (card) {
-        const chevron = card.querySelector('svg.transition-transform');
-        if (chevron) chevron.classList.toggle('rotate-90');
-    }
+    ordRender();
 }
 
 async function ordLoad() {
@@ -195,19 +250,51 @@ async function ordLoad() {
     try {
         const res = await api(`api/requisitions.php?action=day_summary&date=${ordDate}&kitchen_id=${ORD_KITCHEN_ID}`);
         const allReqs = res.requisitions || [];
-        const linesByReq = res.lines_by_req || {};
 
         const validStatuses = ['draft', 'processing', 'submitted', 'fulfilled', 'received', 'closed'];
-        ordRequisitions = allReqs.filter(r => validStatuses.includes(r.status) && (r.status !== 'draft' || parseInt(r.line_count) > 0));
-        ordLinesByReq = linesByReq;
+        ordRequisitions = allReqs.filter(r => validStatuses.includes(r.status));
+
+        // Fetch all active requisition types so we know which meal cards to show
+        try {
+            const typesRes = await api('api/requisition-types.php?action=list');
+            ordTypes = typesRes.types || [];
+        } catch(e) { console.log('Could not fetch requisition types:', e); }
+
+        ordLinesByReq = res.lines_by_req || {};
         ordAdjustments = {};
 
-        // Fetch full lines for editable AND viewable requisitions
-        const regsNeedingLines = ordRequisitions.filter(r => ['draft', 'processing', 'submitted', 'fulfilled', 'received'].includes(r.status));
-        await Promise.all(regsNeedingLines.map(r =>
+        // Fetch full lines for all requisitions
+        const reqsNeedingLines = ordRequisitions.filter(r => ['draft', 'processing', 'submitted', 'fulfilled', 'received'].includes(r.status));
+        await Promise.all(reqsNeedingLines.map(r =>
             api(`api/requisitions.php?action=get&id=${r.id}`).then(data => {
                 ordLinesByReq[r.id] = data.lines || [];
             }).catch(() => { ordLinesByReq[r.id] = []; })
+        ));
+
+        // Fetch dish breakdown for each requisition
+        ordDishBreakdown = {};
+        await Promise.all(ordRequisitions.map(r =>
+            api(`api/requisitions.php?action=get_dishes_with_ingredients&requisition_id=${r.id}`).then(data => {
+                const dishes = data.dishes || [];
+                const ingsByRecipe = data.ingredients_by_recipe || {};
+                const breakdown = {}; // itemId -> [{dish_name, qty, uom}]
+                const seenRecipes = new Set();
+                for (const dish of dishes) {
+                    if (seenRecipes.has(dish.recipe_id)) continue;
+                    seenRecipes.add(dish.recipe_id);
+                    const ings = ingsByRecipe[dish.recipe_id] || [];
+                    const guestCount = parseInt(dish.guest_count) || 20;
+                    const servings = parseInt(dish.recipe_servings) || 4;
+                    const scale = guestCount / servings;
+                    for (const ing of ings) {
+                        const itemId = ing.item_id;
+                        const scaledQty = parseFloat(ing.qty) * scale;
+                        if (!breakdown[itemId]) breakdown[itemId] = [];
+                        breakdown[itemId].push({ dish_name: dish.recipe_name, qty: scaledQty, uom: ing.uom || 'kg' });
+                    }
+                }
+                ordDishBreakdown[r.id] = breakdown;
+            }).catch(() => { ordDishBreakdown[r.id] = {}; })
         ));
 
         ordRender();
@@ -221,66 +308,91 @@ async function ordLoad() {
 }
 
 function ordRender() {
-    if (ordRequisitions.length === 0) {
+    const list = document.getElementById('ordList');
+
+    if (ordActiveTab === 'staple') {
+        list.classList.remove('hidden');
+        document.getElementById('ordEmpty').classList.add('hidden');
+        list.innerHTML = ordRenderStapleTab();
+        return;
+    }
+
+    // Menu tab: show a card for EACH meal type
+    if (ordTypes.length === 0 && ordRequisitions.length === 0) {
         document.getElementById('ordEmpty').classList.remove('hidden');
         document.getElementById('ordList').classList.add('hidden');
         return;
     }
 
-    const list = document.getElementById('ordList');
     list.classList.remove('hidden');
     document.getElementById('ordEmpty').classList.add('hidden');
 
-    if (ordActiveTab === 'staple') {
-        // Staple tab: flat list of all staple items across all requisitions — no meal cards
-        list.innerHTML = ordRenderStapleTab();
-    } else {
-        // Menu tab: render per-meal order cards
-        let cardsHtml = ordRequisitions.map(req => ordRenderCard(req)).join('');
+    let html = '';
+    const shownMeals = new Set();
 
-        // Always show Breakfast card even if no breakfast order exists
-        const hasBreakfast = ordRequisitions.some(r => r.meals === 'breakfast');
-        if (!hasBreakfast) {
-            cardsHtml = ordRenderEmptyMealCard('breakfast') + cardsHtml;
+    // For each known meal type, find matching requisition or show empty card
+    ordTypes.forEach(t => {
+        const code = (t.code || '').toLowerCase();
+        const name = t.name || t.code || 'Order';
+        shownMeals.add(code);
+        const req = ordRequisitions.find(r => (r.meals || '').toLowerCase() === code);
+        if (req) {
+            html += ordRenderCard(req);
+        } else {
+            html += ordRenderEmptyMealCard(code, name);
         }
+    });
 
-        list.innerHTML = cardsHtml;
+    // Also show any requisitions whose meal type is NOT in ordTypes (edge case)
+    ordRequisitions.forEach(req => {
+        const code = (req.meals || '').toLowerCase();
+        if (!shownMeals.has(code)) {
+            html += ordRenderCard(req);
+        }
+    });
+
+    // Fallback: if ordTypes is empty but we have requisitions, show them all
+    if (ordTypes.length === 0) {
+        ordRequisitions.forEach(req => { html += ordRenderCard(req); });
     }
+
+    list.innerHTML = html;
 }
 
-function ordRenderEmptyMealCard(meal) {
-    const color = ordGetColor(meal);
-    const mealLabel = meal.charAt(0).toUpperCase() + meal.slice(1);
+// ── Empty meal card (no requisition yet for this meal type) ──
+function ordRenderEmptyMealCard(mealCode, mealName) {
+    const color = ordGetColor(mealCode);
     return `<div class="bg-white rounded-xl border ${color.border} overflow-hidden shadow-sm">
         <div class="flex items-center justify-between px-4 py-3 ${color.header} border-b">
-            <div class="flex items-center gap-2">
-                <span class="text-sm font-bold ${color.text}">${mealLabel} Order</span>
-            </div>
-            <button onclick="ordCreateAndAddItem('${meal}')" class="w-8 h-8 rounded-lg bg-white/80 border border-green-300 text-green-600 flex items-center justify-center hover:bg-green-50 active:bg-green-100 transition" title="Add item">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            <span class="text-sm font-bold ${color.text}">${escHtml(mealName)} Order</span>
+            <button onclick="ordCreateAndAddItem('${mealCode}')"
+                class="px-3 py-1.5 rounded-lg bg-orange-500 text-white text-xs font-semibold hover:bg-orange-600 active:bg-orange-700 transition flex items-center gap-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add item
             </button>
         </div>
-        <div class="px-4 py-3 text-center text-xs text-gray-400">No items yet — tap + to add</div>
+        <div class="px-4 py-4 text-center">
+            <p class="text-sm text-gray-400">No items yet — tap + to add</p>
+        </div>
     </div>`;
 }
 
 async function ordCreateAndAddItem(meal) {
-    // Auto-create requisitions for all meals (page_init), then open add item modal for the target meal
     try {
         showToast('Creating ' + meal + ' order...', 'info');
         const res = await api('api/requisitions.php?action=page_init', {
             method: 'POST',
             body: { req_date: ordDate, kitchen_id: ORD_KITCHEN_ID, guest_count: 20 }
         });
-        // Find the newly created req for this meal from the response
         const allReqs = res.requisitions || [];
-        const newReq = allReqs.find(r => r.meals === meal);
+        const newReq = allReqs.find(r => (r.meals || '').toLowerCase() === meal.toLowerCase());
         if (newReq) {
-            // Add to our local state so the modal can reference it
             if (!ordRequisitions.find(r => r.id == newReq.id)) {
                 ordRequisitions.push(newReq);
                 ordLinesByReq[newReq.id] = [];
             }
+            ordAddTargetReqId = newReq.id;
+            ordRender();
             ordShowAddItem(newReq.id);
         } else {
             showToast('Could not create ' + meal + ' order', 'error');
@@ -290,116 +402,10 @@ async function ordCreateAndAddItem(meal) {
     }
 }
 
-function ordRenderStapleTab() {
-    // Collect all staple items across all requisitions into one flat list
-    const allStapleLines = [];
-    const anyEditableReq = ordRequisitions.find(r => ['draft', 'processing', 'submitted'].includes(r.status));
-
-    ordRequisitions.forEach(req => {
-        const lines = ordLinesByReq[req.id] || [];
-        lines.forEach(l => {
-            if (parseInt(l.is_staple) === 1) {
-                allStapleLines.push({ ...l, reqId: req.id, reqStatus: req.status });
-            }
-        });
-    });
-
-    let html = '';
-
-    if (allStapleLines.length > 0) {
-        const isEditable = allStapleLines.some(l => ['draft', 'processing', 'submitted'].includes(l.reqStatus));
-        html += `<div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-            <div class="flex items-center justify-between px-4 py-3 bg-purple-50 border-b border-purple-100">
-                <div class="flex items-center gap-2">
-                    <span class="text-sm font-bold text-purple-700">Staple Items</span>
-                    <span class="text-[10px] bg-purple-100 rounded-full px-2 py-0.5 text-purple-600 font-medium">${allStapleLines.length}</span>
-                </div>
-                ${anyEditableReq ? `<button onclick="ordShowAddItem(${anyEditableReq.id})" class="w-8 h-8 rounded-lg bg-white/80 border border-green-300 text-green-600 flex items-center justify-center hover:bg-green-50 active:bg-green-100 transition" title="Add staple item">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                </button>` : ''}
-            </div>
-            <div class="px-4 py-3 space-y-2">`;
-
-        allStapleLines.forEach(line => {
-            const qty = parseFloat(line.order_qty) || 0;
-            if (ordAdjustments[line.id] === undefined) ordAdjustments[line.id] = qty;
-            const currentQty = ordAdjustments[line.id];
-            const canEdit = ['draft', 'processing', 'submitted'].includes(line.reqStatus);
-
-            if (canEdit) {
-                html += `<div class="bg-gray-50 rounded-xl px-3 py-3 cursor-pointer active:bg-gray-100 transition" onclick="ordShowEditLine(${line.id}, ${line.reqId})">
-                    <div class="flex items-center justify-between">
-                        <div class="min-w-0 flex-1">
-                            <p class="font-semibold text-sm text-gray-800 truncate">${escHtml(line.item_name)}</p>
-                            <p class="text-[10px] text-gray-400">${escHtml(line.uom || 'kg')}</p>
-                        </div>
-                        <div class="bg-green-50 border border-green-300 rounded-lg px-3 py-1 text-center min-w-[50px]">
-                            <span class="text-[9px] text-green-500 block">Order</span>
-                            <span class="text-sm font-bold text-green-700">${currentQty}</span>
-                        </div>
-                    </div>
-                </div>`;
-            } else {
-                const fq = parseFloat(line.fulfilled_qty) || 0;
-                const rq = parseFloat(line.received_qty) || 0;
-                html += `<div class="bg-gray-50 rounded-xl px-3 py-2">
-                    <div class="flex items-center justify-between">
-                        <div class="min-w-0 flex-1">
-                            <p class="text-sm text-gray-700">${escHtml(line.item_name)} <span class="text-gray-300 text-[10px]">${line.uom || ''}</span></p>
-                        </div>
-                        <div class="flex gap-2 text-[10px]">
-                            <span class="text-blue-600 font-medium">Req: ${qty}</span>
-                            ${fq > 0 ? `<span class="text-green-600 font-medium">Sent: ${fq}</span>` : ''}
-                            ${rq > 0 ? `<span class="text-orange-600 font-medium">Recv: ${rq}</span>` : ''}
-                        </div>
-                    </div>
-                </div>`;
-            }
-        });
-
-        html += `</div></div>`;
-
-        // Submit to Store button — for draft OR processing requisitions that have staples
-        const submittableReqIds = [...new Set(allStapleLines
-            .filter(l => ['draft', 'processing'].includes(l.reqStatus))
-            .map(l => l.reqId))];
-
-        if (submittableReqIds.length > 0) {
-            html += `<button onclick="ordSubmitStapleOrders(${JSON.stringify(submittableReqIds).replace(/"/g, '&quot;')})"
-                class="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2 mt-3 shadow-sm">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
-                Submit to Store
-            </button>`;
-        }
-    }
-
-    // Always show "+ Add Staple Item" button
-    if (anyEditableReq) {
-        html += `<button onclick="ordShowAddItem(${anyEditableReq.id})"
-            class="w-full border-2 border-dashed border-gray-200 hover:border-green-300 rounded-xl py-3 text-xs font-medium text-gray-400 hover:text-green-600 transition flex items-center justify-center gap-1.5 mt-3">
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-            Add Staple Item
-        </button>`;
-    }
-
-    if (!html) {
-        html = `<div class="text-center py-12">
-            <p class="text-gray-400 text-sm mb-3">No staple items added yet</p>
-            ${anyEditableReq ? `<button onclick="ordShowAddItem(${anyEditableReq.id})"
-                class="px-6 py-2.5 bg-purple-500 text-white rounded-xl text-sm font-semibold hover:bg-purple-600 transition inline-flex items-center gap-1.5">
-                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                Add Staple Item
-            </button>` : ''}
-        </div>`;
-    }
-
-    return html;
-}
-
 function ordRenderCard(req) {
     const color = ordGetColor(req.meals);
-    const mealLabel = typeof reqLabel === 'function' ? reqLabel(req) : (req.meals || 'Order');
-    const isProcessing = req.status === 'processing';
+    const typeInfo = ordTypes.find(t => (t.code || '').toLowerCase() === (req.meals || '').toLowerCase());
+    const mealLabel = typeInfo ? typeInfo.name : (typeof reqLabel === 'function' ? reqLabel(req) : (req.meals || 'Order'));
     const allLines = ordLinesByReq[req.id] || [];
 
     // Filter lines by tab
@@ -411,7 +417,6 @@ function ordRenderCard(req) {
     const canAddItems = ['draft', 'processing', 'submitted'].includes(req.status);
 
     if (lines.length === 0 && allLines.length > 0) {
-        // Has lines but not in this tab — show minimal indicator with add button
         const otherCount = allLines.filter(l => {
             const s = parseInt(l.is_staple) || 0;
             return ordActiveTab === 'staple' ? s === 0 : s === 1;
@@ -433,132 +438,147 @@ function ordRenderCard(req) {
     }
 
     if (lines.length === 0) {
-        // No lines at all — still show card with add button if applicable
-        if (!canAddItems) return '';
-        return `<div class="bg-white rounded-xl border ${color.border} overflow-hidden shadow-sm">
+        // Draft with no lines
+        const gc = parseInt(req.guest_count) || 20;
+        return `<div class="bg-white rounded-xl border ${color.border} overflow-hidden shadow-sm" id="ord-card-${req.id}">
             <div class="flex items-center justify-between px-4 py-3 ${color.header} border-b">
                 <div class="flex items-center gap-2">
                     <span class="text-sm font-bold ${color.text}">${escHtml(mealLabel)} Order</span>
                     <span class="text-[10px] text-gray-400">#${req.id}</span>
                 </div>
-                <button onclick="ordShowAddItem(${req.id})" class="w-8 h-8 rounded-lg bg-white/80 border border-green-300 text-green-600 flex items-center justify-center hover:bg-green-50 active:bg-green-100 transition" title="Add item">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                </button>
+                ${canAddItems ? `<button onclick="ordShowAddItem(${req.id})"
+                    class="px-3 py-1.5 rounded-lg bg-orange-500 text-white text-xs font-semibold hover:bg-orange-600 active:bg-orange-700 transition flex items-center gap-1">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                    Add item
+                </button>` : ordStatusBadge(req.status)}
             </div>
-            <div class="px-4 py-3 text-center text-xs text-gray-400">No items yet — tap + to add</div>
+            ${canAddItems ? `<div class="px-4 py-2 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Guests</div>
+                <div class="flex items-center gap-1.5">
+                    <button onclick="event.stopPropagation(); ordStepGuests(${req.id}, -5)"
+                        class="w-7 h-7 rounded-lg bg-gray-100 text-gray-500 font-bold flex items-center justify-center text-xs active:bg-gray-200">-5</button>
+                    <input type="number" id="ordGuestInput_${req.id}" value="${gc}" min="1"
+                        onchange="ordUpdateGuestCount(${req.id}, this.value)"
+                        class="w-14 text-center text-sm font-bold text-gray-800 border border-gray-200 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-orange-200">
+                    <button onclick="event.stopPropagation(); ordStepGuests(${req.id}, 5)"
+                        class="w-7 h-7 rounded-lg bg-orange-100 text-orange-600 font-bold flex items-center justify-center text-xs active:bg-orange-200">+5</button>
+                </div>
+            </div>` : ''}
+            <div class="px-4 py-4 text-center">
+                <p class="text-sm text-gray-400">No items yet — tap + to add</p>
+            </div>
         </div>`;
     }
 
-    const isCollapsed = ordCollapsed[req.id] || false;
+    const isCollapsed = !!ordCollapsed[req.id];
+    const chevronSvg = isCollapsed
+        ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>'
+        : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg>';
 
     let html = `<div class="bg-white rounded-xl border ${color.border} overflow-hidden shadow-sm" id="ord-card-${req.id}">`;
-    // Header with collapse toggle + add button
     html += `<div class="flex items-center justify-between px-4 py-3 ${color.header} border-b cursor-pointer select-none" onclick="ordToggleCollapse(${req.id})">
-        <div class="flex items-center gap-2 flex-1 min-w-0">
-            <svg class="w-4 h-4 text-gray-400 transition-transform shrink-0 ${isCollapsed ? '' : 'rotate-90'}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></svg>
-            <span class="text-sm font-bold ${color.text} truncate">${escHtml(mealLabel)} Order</span>
+        <div class="flex items-center gap-2">
+            <span class="text-sm font-bold ${color.text}">${escHtml(mealLabel)} Order</span>
             <span class="text-[10px] text-gray-400">#${req.id}</span>
-            <span class="text-[10px] bg-white/60 rounded-full px-2 py-0.5 text-gray-500 font-medium">${lines.length}</span>
+            <span class="text-[10px] text-gray-500 font-medium">${lines.length} item${lines.length !== 1 ? 's' : ''}</span>
         </div>
-        <div class="flex items-center gap-2 shrink-0">
+        <div class="flex items-center gap-2">
             ${ordStatusBadge(req.status)}
-            ${canAddItems ? `<button onclick="event.stopPropagation();ordShowAddItem(${req.id})" class="w-8 h-8 rounded-lg bg-white/80 border border-green-300 text-green-600 flex items-center justify-center hover:bg-green-50 active:bg-green-100 transition" title="Add item">
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-            </button>` : ''}
+            <span class="text-gray-400">${chevronSvg}</span>
         </div>
     </div>`;
 
-    // Guest count row (editable for processing/submitted)
-    const canEditGuests = ['processing', 'submitted'].includes(req.status);
-    const guestCount = parseInt(req.guest_count) || 20;
-    if (canEditGuests) {
-        html += `<div class="flex items-center justify-between px-4 py-2 bg-blue-50/50 border-b border-blue-100">
-            <span class="text-[10px] text-blue-600 font-semibold uppercase tracking-wider">Guest Count</span>
-            <div class="flex items-center gap-1.5">
-                <button onclick="event.stopPropagation();ordAdjustGuestsLocal(${req.id}, -1)" class="w-8 h-8 rounded-lg bg-white border border-blue-200 text-blue-600 text-sm font-bold flex items-center justify-center active:bg-blue-50">-</button>
-                <input type="number" id="ord-gc-${req.id}" value="${guestCount}" min="1" step="1"
-                    onclick="event.stopPropagation();this.select()"
-                    class="w-14 text-center text-sm font-bold text-blue-700 border border-blue-300 rounded-lg py-1.5 bg-white focus:outline-none focus:ring-2 focus:ring-blue-200">
-                <button onclick="event.stopPropagation();ordAdjustGuestsLocal(${req.id}, 1)" class="w-8 h-8 rounded-lg bg-blue-500 text-white text-sm font-bold flex items-center justify-center active:bg-blue-600">+</button>
-                <button onclick="event.stopPropagation();ordSaveGuests(${req.id})" id="ord-gc-save-${req.id}"
-                    class="ml-1 px-3 h-8 rounded-lg bg-green-600 text-white text-xs font-bold flex items-center justify-center gap-1 active:bg-green-700 transition">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 6 9 17l-5-5"/></svg>
-                    Save
-                </button>
-            </div>
-        </div>`;
-    } else if (guestCount) {
-        html += `<div class="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-100">
-            <span class="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Guest Count</span>
-            <span class="text-xs font-bold text-gray-500">${guestCount} pax</span>
-        </div>`;
+    if (!isCollapsed) {
+        const isEditable = ['draft', 'processing', 'submitted'].includes(req.status);
+        const gc = parseInt(req.guest_count) || 20;
+
+        if (isEditable) {
+            html += `<div class="px-4 py-2 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+                <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Guests</div>
+                <div class="flex items-center gap-1.5">
+                    <button onclick="event.stopPropagation(); ordStepGuests(${req.id}, -5)"
+                        class="w-7 h-7 rounded-lg bg-gray-100 text-gray-500 font-bold flex items-center justify-center text-xs active:bg-gray-200">-5</button>
+                    <input type="number" id="ordGuestInput_${req.id}" value="${gc}" min="1"
+                        onchange="ordUpdateGuestCount(${req.id}, this.value)"
+                        class="w-14 text-center text-sm font-bold text-gray-800 border border-gray-200 rounded-lg py-1 focus:outline-none focus:ring-2 focus:ring-orange-200">
+                    <button onclick="event.stopPropagation(); ordStepGuests(${req.id}, 5)"
+                        class="w-7 h-7 rounded-lg bg-orange-100 text-orange-600 font-bold flex items-center justify-center text-xs active:bg-orange-200">+5</button>
+                </div>
+            </div>`;
+        } else if (gc) {
+            html += `<div class="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-100">
+                <span class="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Guest Count</span>
+                <span class="text-xs font-bold text-gray-500">${gc} pax</span>
+            </div>`;
+        }
+
+        if (isEditable) {
+            html += ordRenderEditableLines(req, lines);
+        } else {
+            html += ordRenderReadOnlyLines(req, lines);
+        }
     }
 
-    // Collapsible body
-    html += `<div id="ord-body-${req.id}" class="${isCollapsed ? 'hidden' : ''}">`;
-
-    const isEditable = ['processing', 'submitted'].includes(req.status);
-    if (isEditable) {
-        html += ordRenderEditableLines(req, lines);
-    } else {
-        html += ordRenderReadOnlyLines(req, lines);
-    }
-
-    html += '</div>'; // close collapsible body
-    html += '</div>'; // close card
+    html += '</div>';
     return html;
 }
 
-// ── Editable lines (processing) — tap to edit ──
+// ── Editable lines — table with Calc / Order columns + dish breakdown ──
 function ordRenderEditableLines(req, lines) {
-    let html = `<div class="px-4 py-3">
-        <div class="text-[10px] text-gray-500 uppercase tracking-wider font-semibold mb-2">${lines.length} item${lines.length !== 1 ? 's' : ''}</div>
-        <div class="space-y-2">`;
+    let html = `<div class="px-3 py-3">
+        <div class="overflow-x-auto">
+            <table class="w-full text-[11px]">
+                <thead><tr class="bg-gray-50">
+                    <th class="text-left px-2 py-1.5 text-gray-500 font-semibold">Item</th>
+                    <th class="text-center px-1 py-1.5 text-blue-600 font-semibold w-16">Calc</th>
+                    <th class="text-center px-1 py-1.5 text-green-600 font-semibold w-20">Order</th>
+                    <th class="text-center px-1 py-1.5 w-8"></th>
+                </tr></thead>
+                <tbody>`;
 
     lines.forEach(line => {
-        const qty = parseFloat(line.order_qty) || 0;
-        if (ordAdjustments[line.id] === undefined) ordAdjustments[line.id] = qty;
+        const calcQty = parseFloat(line.calc_qty || line.required_qty || 0);
+        const orderQty = parseFloat(line.order_qty) || 0;
+        if (ordAdjustments[line.id] === undefined) ordAdjustments[line.id] = orderQty;
         const currentQty = ordAdjustments[line.id];
 
-        // Parse source dishes breakdown
-        let sourcesHtml = '';
-        if (line.source_dishes) {
-            try {
-                const sources = JSON.parse(line.source_dishes);
-                if (sources && sources.length > 0) {
-                    sourcesHtml = `<p class="text-[9px] text-gray-400 mt-0.5 truncate">${sources.map(s => s.name + ' (' + s.qty + ')').join(' + ')}</p>`;
-                }
-            } catch(e) {}
-        }
+        // Dish breakdown for this item
+        const dishSources = (ordDishBreakdown[req.id] || {})[line.item_id] || [];
+        const breakdownHtml = dishSources.length > 0
+            ? dishSources.map(s => `<span class="inline-flex items-center gap-0.5"><span class="text-gray-500">${escHtml(s.dish_name)}</span> <span class="text-blue-500 font-medium">${s.qty.toFixed(1)}</span></span>`).join('<span class="text-gray-300 mx-0.5">&middot;</span>')
+            : '';
 
-        html += `<div class="bg-gray-50 rounded-xl px-3 py-3 cursor-pointer active:bg-gray-100 transition" onclick="ordShowEditLine(${line.id}, ${req.id})">
-            <div class="flex items-center justify-between">
-                <div class="min-w-0 flex-1">
-                    <p class="font-semibold text-sm text-gray-800 truncate">${escHtml(line.item_name)}</p>
-                    <p class="text-[10px] text-gray-400">${escHtml(line.uom || 'kg')}</p>
-                    ${sourcesHtml}
-                </div>
-                <div class="flex items-center gap-2 shrink-0">
-                    <div class="bg-orange-50 border border-orange-200 rounded-lg px-2 py-1 text-center">
-                        <span class="text-[9px] text-orange-400 block">Calc</span>
-                        <span class="text-xs font-bold text-orange-700">${qty}</span>
-                    </div>
-                    <div class="bg-green-50 border border-green-300 rounded-lg px-3 py-1 text-center min-w-[50px]">
-                        <span class="text-[9px] text-green-500 block">Order</span>
-                        <span class="text-sm font-bold text-green-700" id="ordQtyLabel_${line.id}">${currentQty}</span>
-                    </div>
-                </div>
-            </div>
-        </div>`;
+        html += `<tr class="border-b border-gray-50">
+            <td class="px-2 py-2">
+                <p class="text-xs font-medium text-gray-800 truncate">${escHtml(line.item_name)}</p>
+                <p class="text-[9px] text-gray-400">${escHtml(line.uom || 'kg')}</p>
+                ${breakdownHtml ? `<div class="text-[9px] text-gray-400 mt-0.5 leading-tight">${breakdownHtml}</div>` : ''}
+            </td>
+            <td class="text-center px-1 py-2 text-blue-700 font-medium text-xs">${calcQty > 0 ? calcQty.toFixed(1) : '—'}</td>
+            <td class="text-center px-1 py-2">
+                <input type="number" value="${currentQty}" step="0.5" min="0"
+                    onchange="ordAdjustments[${line.id}] = parseFloat(this.value)||0"
+                    class="w-16 text-center text-xs font-bold border border-green-300 rounded-lg py-1 bg-green-50 focus:outline-none focus:ring-1 focus:ring-green-300">
+            </td>
+            <td class="text-center px-1 py-2">
+                <button onclick="event.stopPropagation(); ordShowEditLine(${line.id}, ${req.id})" class="w-6 h-6 rounded-md bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200 transition" title="Edit">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+            </td>
+        </tr>`;
     });
 
-    html += `</div>`;
+    html += `</tbody></table></div>`;
 
-    // Submit + Delete buttons
+    // Add item + Submit + Delete buttons
     html += `<div class="flex gap-2 mt-3">
         <button onclick="ordDeleteOrder(${req.id})"
             class="px-4 py-3 rounded-xl border-2 border-red-200 text-red-500 font-semibold text-sm hover:bg-red-50 flex items-center justify-center gap-1.5 transition">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
+        </button>
+        <button onclick="ordShowAddItem(${req.id})"
+            class="px-4 py-3 rounded-xl border-2 border-orange-200 text-orange-500 font-semibold text-sm hover:bg-orange-50 flex items-center justify-center gap-1.5 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
         </button>
         <button onclick="ordSubmitToStore(${req.id})" id="ord-submit-${req.id}"
             class="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
@@ -571,7 +591,7 @@ function ordRenderEditableLines(req, lines) {
     return html;
 }
 
-// ── Read-only lines ──
+// ── Read-only lines — table with dish breakdown ──
 function ordRenderReadOnlyLines(req, lines) {
     let html = `<div class="px-3 py-3">
         <div class="overflow-x-auto">
@@ -588,15 +608,145 @@ function ordRenderReadOnlyLines(req, lines) {
         const oq = parseFloat(line.order_qty) || 0;
         const fq = parseFloat(line.fulfilled_qty) || 0;
         const rq = parseFloat(line.received_qty) || 0;
+        const dishSources = (ordDishBreakdown[req.id] || {})[line.item_id] || [];
+        const breakdownHtml = dishSources.length > 0
+            ? dishSources.map(s => `<span class="text-gray-400">${escHtml(s.dish_name)}</span> <span class="text-blue-400">${s.qty.toFixed(1)}</span>`).join(' · ')
+            : '';
         html += `<tr class="border-b border-gray-50">
-            <td class="px-2 py-2 text-gray-700">${escHtml(line.item_name)} <span class="text-gray-300 text-[9px]">${escHtml(line.uom || '')}</span></td>
-            <td class="text-center px-1 py-2 text-blue-700 font-medium">${oq > 0 ? oq.toFixed(1) : '\u2014'}</td>
-            <td class="text-center px-1 py-2 text-green-700 font-medium">${fq > 0 ? fq.toFixed(1) : '\u2014'}</td>
-            <td class="text-center px-1 py-2 text-orange-700 font-medium">${rq > 0 ? rq.toFixed(1) : '\u2014'}</td>
+            <td class="px-2 py-2">
+                <span class="text-gray-700">${escHtml(line.item_name)}</span> <span class="text-gray-300 text-[9px]">${escHtml(line.uom || '')}</span>
+                ${breakdownHtml ? `<div class="text-[9px] leading-tight mt-0.5">${breakdownHtml}</div>` : ''}
+            </td>
+            <td class="text-center px-1 py-2 text-blue-700 font-medium">${oq > 0 ? oq.toFixed(1) : '—'}</td>
+            <td class="text-center px-1 py-2 text-green-700 font-medium">${fq > 0 ? fq.toFixed(1) : '—'}</td>
+            <td class="text-center px-1 py-2 text-orange-700 font-medium">${rq > 0 ? rq.toFixed(1) : '—'}</td>
         </tr>`;
     });
 
     html += `</tbody></table></div></div>`;
+    return html;
+}
+
+// ── Staple Tab ──
+function ordRenderStapleTab() {
+    let allStapleLines = [];
+    let editableReqId = null;
+    let editableReqIds = [];
+
+    ordRequisitions.forEach(req => {
+        const lines = ordLinesByReq[req.id] || [];
+        const staples = lines.filter(l => parseInt(l.is_staple) === 1);
+        staples.forEach(l => {
+            allStapleLines.push({ ...l, reqId: req.id, reqStatus: req.status });
+        });
+        if (['draft', 'processing', 'submitted'].includes(req.status) && staples.length > 0) {
+            if (!editableReqId) editableReqId = req.id;
+            editableReqIds.push(req.id);
+        }
+    });
+
+    const anyEditableReq = ordRequisitions.find(r => ['draft', 'processing', 'submitted'].includes(r.status));
+
+    if (allStapleLines.length === 0) {
+        let html = `<div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+            <div class="flex items-center justify-between px-4 py-3 bg-purple-50 border-b border-purple-100">
+                <span class="text-sm font-bold text-purple-700">Staple Items</span>
+            </div>
+            <div class="px-4 py-6 text-center">
+                <p class="text-sm text-gray-400 mb-1">No staple items yet</p>
+                <p class="text-xs text-gray-300">Use the + button to add staple items</p>
+            </div>
+        </div>`;
+        if (anyEditableReq) {
+            html += `<button onclick="ordShowAddItem(${anyEditableReq.id})"
+                class="w-full border-2 border-dashed border-gray-200 hover:border-green-300 rounded-xl py-3 text-xs font-medium text-gray-400 hover:text-green-600 transition flex items-center justify-center gap-1.5 mt-3">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                Add Staple Item
+            </button>`;
+        }
+        return html;
+    }
+
+    const isEditable = allStapleLines.some(l => ['draft', 'processing', 'submitted'].includes(l.reqStatus));
+
+    let html = `<div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">`;
+    html += `<div class="flex items-center justify-between px-4 py-3 bg-purple-50 border-b border-purple-100">
+        <div class="flex items-center gap-2">
+            <span class="text-sm font-bold text-purple-700">Staple Items</span>
+            <span class="text-[10px] bg-purple-100 rounded-full px-2 py-0.5 text-purple-600 font-medium">${allStapleLines.length}</span>
+        </div>
+    </div>`;
+
+    html += `<div class="px-3 py-3"><div class="overflow-x-auto">
+        <table class="w-full text-[11px]">
+            <thead><tr class="bg-gray-50">
+                <th class="text-left px-2 py-1.5 text-gray-500 font-semibold">Item</th>
+                <th class="text-center px-1 py-1.5 text-green-600 font-semibold w-20">${isEditable ? 'Qty' : 'Req'}</th>
+                ${isEditable ? '<th class="text-center px-1 py-1.5 w-8"></th>' : '<th class="text-center px-1 py-1.5 text-green-600 font-semibold">Sent</th><th class="text-center px-1 py-1.5 text-orange-600 font-semibold">Recv</th>'}
+            </tr></thead>
+            <tbody>`;
+
+    allStapleLines.forEach(line => {
+        const orderQty = parseFloat(line.order_qty) || 0;
+        if (ordAdjustments[line.id] === undefined) ordAdjustments[line.id] = orderQty;
+        const currentQty = ordAdjustments[line.id];
+        const lineEditable = ['draft', 'processing', 'submitted'].includes(line.reqStatus);
+
+        if (lineEditable) {
+            html += `<tr class="border-b border-gray-50">
+                <td class="px-2 py-2">
+                    <p class="text-xs font-medium text-gray-800 truncate">${escHtml(line.item_name)}</p>
+                    <p class="text-[9px] text-gray-400">${escHtml(line.uom || 'kg')}</p>
+                </td>
+                <td class="text-center px-1 py-2">
+                    <input type="number" value="${currentQty}" step="0.5" min="0"
+                        onchange="ordAdjustments[${line.id}] = parseFloat(this.value)||0"
+                        class="w-16 text-center text-xs font-bold border border-green-300 rounded-lg py-1 bg-green-50 focus:outline-none focus:ring-1 focus:ring-green-300">
+                </td>
+                <td class="text-center px-1 py-2">
+                    <button onclick="event.stopPropagation(); ordRemoveLine(${line.id}, ${line.reqId})" class="w-6 h-6 rounded-md bg-red-50 text-red-400 flex items-center justify-center hover:bg-red-100 transition" title="Remove">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                    </button>
+                </td>
+            </tr>`;
+        } else {
+            const fq = parseFloat(line.fulfilled_qty) || 0;
+            const rq = parseFloat(line.received_qty) || 0;
+            html += `<tr class="border-b border-gray-50">
+                <td class="px-2 py-2 text-gray-700 text-xs">${escHtml(line.item_name)} <span class="text-gray-300 text-[9px]">${escHtml(line.uom || '')}</span></td>
+                <td class="text-center px-1 py-2 text-blue-700 font-medium">${orderQty > 0 ? orderQty.toFixed(1) : '—'}</td>
+                <td class="text-center px-1 py-2 text-green-700 font-medium">${fq > 0 ? fq.toFixed(1) : '—'}</td>
+                <td class="text-center px-1 py-2 text-orange-700 font-medium">${rq > 0 ? rq.toFixed(1) : '—'}</td>
+            </tr>`;
+        }
+    });
+
+    html += `</tbody></table></div>`;
+
+    if (editableReqIds.length > 0) {
+        const idsJson = JSON.stringify(editableReqIds);
+        const btnLabel = editableReqIds.length > 1
+            ? `Submit to Store (${editableReqIds.length} orders)`
+            : 'Submit to Store';
+        html += `<div class="flex gap-2 mt-3 px-1">
+            <button onclick='ordSubmitStapleOrders(${idsJson})' id="ord-submit-staple-bulk"
+                class="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+                ${btnLabel}
+            </button>
+        </div>`;
+    }
+
+    html += `</div></div>`;
+
+    if (anyEditableReq) {
+        html += `<button onclick="ordShowAddItem(${anyEditableReq.id})"
+            class="w-full border-2 border-dashed border-gray-200 hover:border-green-300 rounded-xl py-3 text-xs font-medium text-gray-400 hover:text-green-600 transition flex items-center justify-center gap-1.5 mt-3">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+            Add Staple Item
+        </button>`;
+    }
+
     return html;
 }
 
@@ -680,12 +830,13 @@ async function ordRemoveLine(lineId, reqId) {
 }
 
 // ══════════════════════════════════════════════
-//  Delete/Cancel Order (before store accepts)
+//  Delete/Cancel Order
 // ══════════════════════════════════════════════
 async function ordDeleteOrder(reqId) {
     const req = ordRequisitions.find(r => r.id == reqId);
     if (!req) return;
-    const mealLabel = typeof reqLabel === 'function' ? reqLabel(req) : (req.meals || 'Order');
+    const typeInfo = ordTypes.find(t => (t.code || '').toLowerCase() === (req.meals || '').toLowerCase());
+    const mealLabel = typeInfo ? typeInfo.name : (typeof reqLabel === 'function' ? reqLabel(req) : (req.meals || 'Order'));
 
     if (!await customConfirm('Delete Order', `Cancel and delete the ${mealLabel} order? This will remove all items and reset to draft.`)) return;
 
@@ -702,7 +853,7 @@ async function ordDeleteOrder(reqId) {
 }
 
 // ══════════════════════════════════════════════
-//  Add Staple Item (popup modal, not drawer)
+//  Add Item Modal
 // ══════════════════════════════════════════════
 let ordAddTargetReqId = null;
 
@@ -717,6 +868,10 @@ async function ordShowAddItem(reqId) {
     if (!targetReq) {
         try {
             showToast('Creating order...', 'info');
+            let mealCode = 'breakfast';
+            try {
+                if (ordTypes.length > 0) mealCode = ordTypes[0].code;
+            } catch(e) {}
             const initData = await api('api/requisitions.php?action=page_init', {
                 method: 'POST',
                 body: { req_date: ordDate, kitchen_id: ORD_KITCHEN_ID, guest_count: 20 }
@@ -728,14 +883,15 @@ async function ordShowAddItem(reqId) {
     if (!targetReq) { showToast('Could not create order. Try again.', 'error'); return; }
     ordAddTargetReqId = targetReq.id;
 
-    // Update modal title based on context
+    // Update modal title
     const titleEl = document.getElementById('ordAddModalTitle');
     const subEl = document.getElementById('ordAddModalSub');
     if (ordActiveTab === 'staple') {
         if (titleEl) titleEl.textContent = 'Add Staple Item';
         if (subEl) subEl.textContent = 'Search and tap to add';
     } else {
-        const mealLabel = typeof reqLabel === 'function' ? reqLabel(targetReq) : (targetReq.meals || 'Order');
+        const typeInfo = ordTypes.find(t => (t.code || '').toLowerCase() === (targetReq.meals || '').toLowerCase());
+        const mealLabel = typeInfo ? typeInfo.name : (targetReq.meals || 'Order');
         if (titleEl) titleEl.textContent = 'Add to ' + mealLabel;
         if (subEl) subEl.textContent = 'Item will be added to this order';
     }
@@ -749,15 +905,13 @@ async function ordShowAddItem(reqId) {
     document.getElementById('ordAddSearch').value = '';
     document.getElementById('ordAddResults').innerHTML = '<p class="text-xs text-gray-400 text-center py-3">Type to search or pick a category</p>';
 
-    // Build category chips
     const foodCats = ['Dry', 'Dairy', 'Veg', 'Meat', 'Fruits', 'Juice', 'Bar'];
     const allCats = [...new Set(ordAllItems.map(i => i.category).filter(Boolean))].sort();
     const priorityCats = foodCats.filter(c => allCats.includes(c));
     const otherCats = allCats.filter(c => !foodCats.includes(c));
-    const orderedCats = [...priorityCats, ...otherCats];
     const catContainer = document.getElementById('ordAddCatFilter');
     if (catContainer) {
-        catContainer.innerHTML = orderedCats.map(c =>
+        catContainer.innerHTML = [...priorityCats, ...otherCats].map(c =>
             `<button onclick="ordFilterByCat('${c}')" class="ord-cat-btn px-2.5 py-1 rounded-full text-[10px] font-medium whitespace-nowrap bg-gray-100 text-gray-600 hover:bg-orange-100 hover:text-orange-700 transition">${c}</button>`
         ).join('');
     }
@@ -787,9 +941,7 @@ function ordFilterAddItems() {
     if (!results || !ordAllItems) return;
 
     let filtered = ordAllItems;
-    if (ordSelectedCat) {
-        filtered = filtered.filter(item => item.category === ordSelectedCat);
-    }
+    if (ordSelectedCat) filtered = filtered.filter(item => item.category === ordSelectedCat);
     if (q.length >= 2) {
         filtered = filtered.filter(item =>
             item.name.toLowerCase().includes(q) || (item.code && item.code.toLowerCase().includes(q))
@@ -819,9 +971,8 @@ function ordFilterAddItems() {
     }).join('');
 }
 
-// ── Item detail popup tile (centered modal) ──
 function ordShowItemDetail(itemId, itemName, itemUom) {
-    ordCloseAddModal(); // close search modal
+    ordCloseAddModal();
     const uomOptions = ORD_UOM_OPTIONS.map(u => `<option value="${u}" ${u === itemUom ? 'selected' : ''}>${u}</option>`).join('');
 
     document.getElementById('ordItemDetailContent').innerHTML = `
@@ -888,31 +1039,39 @@ async function ordConfirmAddItem(itemId, itemName) {
     }
 }
 
-// ── Submit order ──
-// Submit multiple requisitions with staple items to store
+// ══════════════════════════════════════════════
+//  Submit Orders
+// ══════════════════════════════════════════════
 async function ordSubmitStapleOrders(reqIds) {
     if (!reqIds || reqIds.length === 0) return;
     const plural = reqIds.length > 1 ? 'orders' : 'order';
     if (!await customConfirm('Submit to Store', `Submit ${reqIds.length} ${plural} with staple items to the store?`)) return;
 
+    const btn = document.getElementById('ord-submit-staple-bulk');
+    if (btn) setLoading(btn, true, 'Submitting...');
+
     try {
+        let submitted = 0;
         for (const reqId of reqIds) {
-            const allLines = ordLinesByReq[reqId] || [];
+            const allLines = (ordLinesByReq[reqId] || []).filter(l => parseInt(l.is_staple) === 1);
             if (allLines.length === 0) continue;
             const lineData = allLines.map(line => ({
                 id: parseInt(line.id),
-                order_qty: ordAdjustments[line.id] !== undefined ? ordAdjustments[line.id] : parseFloat(line.order_qty) || 0,
-                uom: line.uom || 'kg'
+                order_qty: ordAdjustments[line.id] !== undefined ? ordAdjustments[line.id] : (parseFloat(line.order_qty) || 0)
             }));
+            const nonZero = lineData.filter(l => l.order_qty > 0);
+            if (nonZero.length === 0) continue;
             await api('api/requisitions.php?action=submit_order', {
                 method: 'POST',
                 body: { requisition_id: reqId, lines: lineData }
             });
+            submitted++;
         }
-        showToast(`Submitted to store!`, 'success');
+        showToast(`Submitted ${submitted} ${submitted === 1 ? 'order' : 'orders'} to store!`, 'success');
         ordLoad();
     } catch (err) {
-        showToast(err.message, 'error');
+        showToast(err.message || 'Submit failed', 'error');
+        if (btn) setLoading(btn, false);
     }
 }
 
@@ -950,5 +1109,97 @@ async function ordSubmitToStore(reqId) {
     } finally {
         if (btn) setLoading(btn, false);
     }
+}
+
+// ══════════════════════════════════════════════
+//  Print Order Report
+// ══════════════════════════════════════════════
+function ordPrintOrder() {
+    if (ordRequisitions.length === 0) {
+        showToast('No orders to print', 'error');
+        return;
+    }
+
+    const kitchenName = <?= json_encode($user['kitchen_name'] ?? 'Kitchen') ?>;
+    const printDate = formatDate(ordDate);
+    const printView = document.getElementById('ordPrintView');
+
+    let html = '';
+    html += '<div class="print-header">';
+    html += '<h1>' + escHtml(kitchenName) + '</h1>';
+    html += '<p>Order Requisition Report</p>';
+    html += '<p>Date: ' + escHtml(printDate) + '</p>';
+    html += '</div>';
+
+    let totalItems = 0;
+    let totalKg = 0;
+
+    // Group by meal type
+    const mealGroups = {};
+    ordRequisitions.forEach(req => {
+        const mealCode = (req.meals || 'other').toLowerCase();
+        const typeInfo = ordTypes.find(t => (t.code || '').toLowerCase() === mealCode);
+        const mealLabel = typeInfo ? typeInfo.name : (req.meals || 'Order');
+        const allLines = ordLinesByReq[req.id] || [];
+        if (!mealGroups[mealCode]) {
+            mealGroups[mealCode] = { label: mealLabel, status: req.status, lines: [] };
+        }
+        allLines.forEach(l => mealGroups[mealCode].lines.push(l));
+    });
+
+    Object.keys(mealGroups).forEach(code => {
+        const group = mealGroups[code];
+        if (group.lines.length === 0) return;
+
+        html += '<div class="print-section">';
+        html += '<h2>' + escHtml(group.label) + ' (' + escHtml(group.status || '') + ')</h2>';
+        html += '<table><thead><tr>';
+        html += '<th style="width:5%">#</th>';
+        html += '<th style="width:40%">Item Name</th>';
+        html += '<th style="width:12%">UOM</th>';
+        html += '<th style="width:15%">Calc Qty</th>';
+        html += '<th style="width:15%">Order Qty</th>';
+        html += '</tr></thead><tbody>';
+
+        group.lines.forEach((line, idx) => {
+            const calcQty = parseFloat(line.calc_qty || line.required_qty || 0);
+            const orderQty = ordAdjustments[line.id] !== undefined
+                ? ordAdjustments[line.id]
+                : (parseFloat(line.order_qty) || 0);
+            const uom = (line.uom || 'kg').toLowerCase();
+
+            totalItems++;
+            if (uom === 'kg') totalKg += orderQty;
+
+            html += '<tr>';
+            html += '<td class="num">' + (idx + 1) + '</td>';
+            html += '<td>' + escHtml(line.item_name) + '</td>';
+            html += '<td class="num">' + escHtml(line.uom || 'kg') + '</td>';
+            html += '<td class="num">' + (calcQty > 0 ? calcQty.toFixed(1) : '-') + '</td>';
+            html += '<td class="num">' + (orderQty > 0 ? orderQty.toFixed(1) : '-') + '</td>';
+            html += '</tr>';
+        });
+
+        html += '</tbody></table></div>';
+    });
+
+    html += '<div class="print-summary"><strong>Summary:</strong> ';
+    html += totalItems + ' item' + (totalItems !== 1 ? 's' : '') + ' total';
+    if (totalKg > 0) html += ' | ' + totalKg.toFixed(1) + ' kg (weight items only)';
+    html += '</div>';
+
+    html += '<div class="print-signatures"><table class="sig-table">';
+    html += '<tr><td><strong>Prepared by (Chef):</strong> <span class="sig-underline">&nbsp;</span></td><td>Date: <span class="sig-underline">&nbsp;</span></td><td>Signature: <span class="sig-underline">&nbsp;</span></td></tr>';
+    html += '<tr><td><strong>Approved by (Manager):</strong> <span class="sig-underline">&nbsp;</span></td><td>Date: <span class="sig-underline">&nbsp;</span></td><td>Signature: <span class="sig-underline">&nbsp;</span></td></tr>';
+    html += '<tr><td><strong>Received by (Store):</strong> <span class="sig-underline">&nbsp;</span></td><td>Date: <span class="sig-underline">&nbsp;</span></td><td>Signature: <span class="sig-underline">&nbsp;</span></td></tr>';
+    html += '</table></div>';
+
+    printView.innerHTML = html;
+    printView.classList.remove('hidden');
+
+    setTimeout(() => {
+        window.print();
+        setTimeout(() => { printView.classList.add('hidden'); }, 500);
+    }, 200);
 }
 </script>
