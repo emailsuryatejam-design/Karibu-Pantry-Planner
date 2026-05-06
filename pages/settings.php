@@ -53,19 +53,6 @@
                 <div class="w-9 h-5 bg-gray-200 peer-checked:bg-green-500 rounded-full peer-focus:ring-2 peer-focus:ring-green-300 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>
             </label>
         </div>
-        <div class="border-t border-gray-100 pt-3 flex items-center justify-between">
-            <div>
-                <p class="text-sm text-gray-700">Voice Announcements</p>
-                <p class="text-[10px] text-gray-400" id="voiceStatus">Speaks order events aloud</p>
-            </div>
-            <label class="relative inline-flex cursor-pointer">
-                <input type="checkbox" id="voiceToggle" class="sr-only peer" onchange="toggleVoice(this.checked)">
-                <div class="w-9 h-5 bg-gray-200 peer-checked:bg-green-500 rounded-full peer-focus:ring-2 peer-focus:ring-green-300 after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full"></div>
-            </label>
-        </div>
-        <button onclick="testVoice()" class="mt-3 w-full py-2 bg-gray-50 text-gray-600 text-xs font-medium rounded-lg hover:bg-gray-100 transition">
-            Test Voice Announcement
-        </button>
     </div>
 
     <?php if (isAdmin()): ?>
@@ -202,40 +189,6 @@ async function togglePush(enabled) {
 
 initPushToggle();
 
-// ── Voice Announcement Toggle ──
-function initVoiceToggle() {
-    const toggle = document.getElementById('voiceToggle');
-    const status = document.getElementById('voiceStatus');
-
-    if (!('speechSynthesis' in window)) {
-        status.textContent = 'Not supported on this device';
-        toggle.disabled = true;
-        return;
-    }
-
-    toggle.checked = voice.enabled;
-    status.textContent = voice.enabled ? 'Enabled — speaks order events aloud' : 'Disabled';
-}
-
-function toggleVoice(enabled) {
-    voice.toggle(enabled);
-    const status = document.getElementById('voiceStatus');
-    status.textContent = enabled ? 'Enabled — speaks order events aloud' : 'Disabled';
-    if (enabled) {
-        voice.say('Voice announcements are now enabled.');
-    }
-}
-
-function testVoice() {
-    const wasEnabled = voice.enabled;
-    if (!wasEnabled) voice.enabled = true;
-    voice.say('This is a test announcement from Karibu Pantry Planner. Order submitted, requisition 1 for Test Kitchen.', 'high');
-    if (!wasEnabled) {
-        setTimeout(() => { voice.enabled = false; }, 5000);
-    }
-}
-
-initVoiceToggle();
 </script>
 
 <?php if (isAdmin()): ?>

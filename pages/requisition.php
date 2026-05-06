@@ -1143,8 +1143,6 @@ async function rqConfirmReceipt() {
         });
         closeSheet();
         showToast(data.has_dispute ? 'Receipt confirmed with disputes' : 'Receipt confirmed', data.has_dispute ? 'warning' : 'success');
-        voice.orderReceived(rqActiveSession.session_number);
-        if (data.has_dispute) voice.say('Note: There are quantity disputes on this order.');
         rqLoadSession(rqActiveSession.id);
     } catch (e) {
         showToast(e.message || 'Failed to confirm', 'error');
@@ -1209,14 +1207,12 @@ async function rqSaveAndSubmit() {
         const skipped = result.staples_skipped || 0;
         const skipMsg = skipped > 0 ? ` (${skipped} pantry staple${skipped > 1 ? 's' : ''} auto-skipped)` : '';
         showToast(`${submitLabel} requisition submitted!${skipMsg}`, 'success');
-        voice.orderSubmitted(rqActiveSession.session_number, '<?= addslashes($kitchenName) ?>');
         rqLoadSessions();
 
     } catch (e) {
         const msg = e.message || 'Failed to submit';
         const hint = msg.includes('not in draft') ? ' Refresh to see latest status.' : '';
         showToast(msg + hint, 'error');
-        voice.error('Failed to submit order');
     } finally {
         setLoading(btn, false);
     }
