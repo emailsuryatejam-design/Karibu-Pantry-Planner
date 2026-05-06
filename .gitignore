@@ -19,3 +19,4 @@ vapid-keys.php
 *.swo
 Thumbs.db
 # Wed Mar 25 21:58:04 EAT 2026
+deploy.sh
