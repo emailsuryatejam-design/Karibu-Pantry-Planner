@@ -534,7 +534,7 @@ foreach ($lowCostItems as $itemName) {
 ?>
 <!DOCTYPE html>
 <html><head><title>Menu Seed Results</title>
-<script src="https://cdn.tailwindcss.com"></script></head>
+<link rel="stylesheet" href="/assets/tailwind.min.css"></head>
 <body class="bg-gray-50 p-8 font-sans">
 <div class="max-w-lg mx-auto bg-white rounded-xl shadow p-6 space-y-4">
     <h2 class="text-xl font-bold text-gray-800">Menu Seed Complete</h2>
