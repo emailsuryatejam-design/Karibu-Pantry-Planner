@@ -35,7 +35,7 @@ define('VAPID_PRIVATE_KEY', $_ENV['VAPID_PRIVATE_KEY'] ?? 'REDACTED');
 define('VAPID_SUBJECT', $_ENV['VAPID_SUBJECT'] ?? 'mailto:admin@karibupantry.com');
 
 // ── Database — from .env (hardcoded fallback for Hostinger until .env uploaded) ──
-define('DB_HOST', $_ENV['DB_HOST'] ?? 'auth-db960.hstgr.io');
+define('DB_HOST', $_ENV['DB_HOST'] ?? 'auth-db1899.hstgr.io');
 define('DB_NAME', $_ENV['DB_NAME'] ?? 'u929828006_Pantryplanner');
 define('DB_USER', $_ENV['DB_USER'] ?? 'u929828006_Pantryplanner');
 define('DB_PASS', $_ENV['DB_PASS'] ?? 'REDACTED');
