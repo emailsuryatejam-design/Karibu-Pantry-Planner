@@ -179,6 +179,7 @@ function rRenderList() {
                         <span class="text-[10px] text-orange-600 bg-orange-50 px-1.5 py-0.5 rounded-full">${catLabels[r.category] || r.category}</span>
                         ${r.cuisine ? `<span class="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">${r.cuisine}</span>` : ''}
                         <span class="text-[10px] text-gray-400">${r.ingredient_count || 0} ing</span>
+                        ${parseInt(r.is_packed) === 1 ? `<span class="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">📦 Packed</span>` : ''}
                         ${r.chef_name ? `<span class="text-[10px] text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full">${r.chef_name}</span>` : ''}
                     </div>
                 </div>
@@ -285,6 +286,22 @@ async function rLoadDetail(id) {
             html += `</div>`;
         }
 
+        // Packed flag row
+        const isPacked = parseInt(r.is_packed) === 1;
+        html += `<div class="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-amber-50/40" id="rPackedRow_${id}">
+            <div class="flex items-center gap-2">
+                <span class="text-sm">📦</span>
+                <div>
+                    <p class="text-xs font-semibold text-gray-700">Out of Box / Packed</p>
+                    <p class="text-[10px] text-gray-400">Chef can add this dish to orders without a recipe</p>
+                </div>
+            </div>
+            <button id="rPackedToggle_${id}" onclick="rTogglePacked(${id})"
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${isPacked ? 'bg-amber-500' : 'bg-gray-200'}">
+                <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isPacked ? 'translate-x-6' : 'translate-x-1'}"></span>
+            </button>
+        </div>`;
+
         // Actions
         html += `<div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 bg-gray-50/50">
             <button onclick="rShowAddToOrder(${id}, '${escHtml(r.name).replace(/'/g, "\\'")}')" class="flex-1 text-xs text-blue-700 font-semibold bg-blue-50 py-2 rounded-lg compact-btn flex items-center justify-center gap-1">
@@ -382,6 +399,28 @@ async function rDeleteRecipe(id, name) {
         rExpandedId = null;
         rLoadRecipes();
     } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function rTogglePacked(id) {
+    const btn = document.getElementById(`rPackedToggle_${id}`);
+    if (btn) btn.disabled = true;
+    try {
+        const data = await api('api/recipes.php', { method: 'POST', body: { action: 'toggle_packed', id } });
+        const isPacked = data.is_packed === 1;
+        // Update toggle button appearance in-place
+        if (btn) {
+            btn.disabled = false;
+            btn.className = `relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${isPacked ? 'bg-amber-500' : 'bg-gray-200'}`;
+            btn.querySelector('span').className = `inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isPacked ? 'translate-x-6' : 'translate-x-1'}`;
+        }
+        // Update the cached recipe list so the badge in the card header updates on next render
+        const rec = rRecipes.find(r => r.id == id);
+        if (rec) rec.is_packed = data.is_packed;
+        showToast(isPacked ? '📦 Marked as packed dish' : 'Marked as regular recipe');
+    } catch (err) {
+        if (btn) btn.disabled = false;
+        showToast(err.message, 'error');
+    }
 }
 
 // ── Ingredient Management ──

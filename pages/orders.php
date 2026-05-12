@@ -890,68 +890,87 @@ async function ordDeleteOrder(reqId) {
 //  Packed Dish (no recipe) — breakfast
 // ══════════════════════════════════════════════
 
-function ordShowAddPackedDish(reqId) {
-    const req = ordRequisitions.find(r => r.id == reqId);
-    if (!req) return;
+let ordPackedCatalogue = null; // cached list of is_packed=1 recipes
 
-    // Inline prompt using a tiny bottom sheet-style div injected into the card
-    const existing = document.getElementById('ordPackedDishInput');
-    if (existing) existing.remove();
+async function ordShowAddPackedDish(reqId) {
+    document.getElementById('ordPackedDishInput')?.remove();
 
-    const cardEl = document.getElementById(`ord-card-${reqId}`);
-    const insertTarget = cardEl
-        ? cardEl.querySelector('[data-packed-section]') || cardEl
-        : document.getElementById('ordList');
+    // Load packed dish catalogue (cached)
+    if (!ordPackedCatalogue) {
+        try {
+            const res = await api('api/recipes.php?action=list&is_packed=1');
+            ordPackedCatalogue = res.recipes || [];
+        } catch(e) { ordPackedCatalogue = []; }
+    }
+
+    const already = ordPackedDishes[reqId] || [];
+
+    const listHtml = ordPackedCatalogue.length > 0
+        ? ordPackedCatalogue.map(r => {
+            const taken = already.includes(r.name);
+            return `<button ${taken ? 'disabled' : `onclick="ordPickPackedDish(${reqId}, '${r.name.replace(/'/g,"\\'")}')"` }
+                class="w-full flex items-center gap-3 px-3 py-3 ${taken ? 'opacity-40 cursor-default' : 'hover:bg-amber-50 active:bg-amber-100'} border-b border-gray-100 last:border-0 text-left transition">
+                <span class="text-lg">📦</span>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-800 truncate">${escHtml(r.name)}</p>
+                    <p class="text-[10px] text-gray-400">${escHtml(r.category || 'Ready-made')}${taken ? ' · <span class="text-green-500">Already added</span>' : ''}</p>
+                </div>
+                ${taken ? '' : '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>'}
+            </button>`;
+          }).join('')
+        : `<p class="text-center text-xs text-gray-400 py-4">No packed dishes in catalogue yet.<br>
+           Admin can mark recipes as "Out of Box" to add them here.</p>`;
 
     const div = document.createElement('div');
     div.id = 'ordPackedDishInput';
     div.className = 'fixed inset-0 z-[220] bg-black/50 flex items-end justify-center';
     div.innerHTML = `
-        <div class="bg-white w-full max-w-md rounded-t-2xl p-5 space-y-3 shadow-xl">
-            <div class="flex items-center justify-between">
-                <h3 class="text-sm font-bold text-gray-900">📦 Add Packed / Box Dish</h3>
-                <button onclick="document.getElementById('ordPackedDishInput').remove()" class="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+        <div class="bg-white w-full max-w-md rounded-t-2xl shadow-xl" style="max-height:80vh;display:flex;flex-direction:column">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100 shrink-0">
+                <h3 class="text-sm font-bold text-gray-900">📦 Add Out-of-Box Dish</h3>
+                <button onclick="document.getElementById('ordPackedDishInput').remove()" class="text-gray-400 hover:text-gray-600 text-xl leading-none">&times;</button>
             </div>
-            <p class="text-[11px] text-gray-500">Enter the dish name (e.g. Cornflakes, Toast &amp; Butter, Fruit Salad)</p>
-            <input type="text" id="ordPackedDishName"
-                placeholder="Dish name…"
-                maxlength="150"
-                class="w-full border-2 border-amber-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200 bg-amber-50/30">
-            <div class="flex gap-3">
-                <button onclick="document.getElementById('ordPackedDishInput').remove()"
-                    class="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold">Cancel</button>
-                <button id="ordPackedDishConfirm" onclick="ordConfirmAddPackedDish(${reqId})"
-                    class="flex-1 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold transition">Add Dish</button>
+            <div class="overflow-y-auto flex-1 px-2 py-2">
+                ${listHtml}
+            </div>
+            <div class="px-5 py-3 border-t border-gray-100 shrink-0">
+                <p class="text-[10px] text-gray-400 text-center">Can't find it? Type a custom name:</p>
+                <div class="flex gap-2 mt-1.5">
+                    <input type="text" id="ordPackedDishCustom" placeholder="Custom dish name…" maxlength="150"
+                        class="flex-1 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200">
+                    <button onclick="ordConfirmAddPackedDish(${reqId})"
+                        class="px-4 py-2 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 transition">Add</button>
+                </div>
             </div>
         </div>`;
     document.body.appendChild(div);
-    setTimeout(() => document.getElementById('ordPackedDishName')?.focus(), 80);
-
-    // Allow enter to submit
-    document.getElementById('ordPackedDishName').addEventListener('keydown', e => {
+    document.getElementById('ordPackedDishCustom').addEventListener('keydown', e => {
         if (e.key === 'Enter') ordConfirmAddPackedDish(reqId);
     });
 }
 
-async function ordConfirmAddPackedDish(reqId) {
-    const name = (document.getElementById('ordPackedDishName')?.value || '').trim();
-    if (!name) { showToast('Enter a dish name', 'error'); return; }
-
-    const btn = document.getElementById('ordPackedDishConfirm');
-    if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
-
+async function ordPickPackedDish(reqId, dishName) {
+    document.getElementById('ordPackedDishInput')?.remove();
     try {
         await api('api/requisitions.php?action=add_packed_dish', {
-            method: 'POST',
-            body: { requisition_id: reqId, dish_name: name }
+            method: 'POST', body: { requisition_id: reqId, dish_name: dishName }
         });
-        document.getElementById('ordPackedDishInput')?.remove();
-        showToast(`"${name}" added to breakfast`, 'success');
+        showToast(`"${dishName}" added`, 'success');
         ordLoad();
-    } catch (err) {
-        showToast(err.message, 'error');
-        if (btn) { btn.disabled = false; btn.textContent = 'Add Dish'; }
-    }
+    } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function ordConfirmAddPackedDish(reqId) {
+    const name = (document.getElementById('ordPackedDishCustom')?.value || '').trim();
+    if (!name) { showToast('Enter a dish name', 'error'); return; }
+    document.getElementById('ordPackedDishInput')?.remove();
+    try {
+        await api('api/requisitions.php?action=add_packed_dish', {
+            method: 'POST', body: { requisition_id: reqId, dish_name: name }
+        });
+        showToast(`"${name}" added`, 'success');
+        ordLoad();
+    } catch (err) { showToast(err.message, 'error'); }
 }
 
 async function ordRemovePackedDish(reqId, dishName) {

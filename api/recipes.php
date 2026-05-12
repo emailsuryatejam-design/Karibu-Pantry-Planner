@@ -13,8 +13,14 @@ switch ($action) {
         $q = $_GET['q'] ?? '';
         $category = $_GET['category'] ?? '';
 
-        $sql = 'SELECT r.*, u.name AS chef_name, (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = r.id) as ingredient_count FROM recipes r LEFT JOIN users u ON u.id = r.created_by WHERE 1=1';
+        $sql = 'SELECT r.id, r.name, r.category, r.cuisine, r.difficulty, r.prep_time, r.cook_time, r.servings, r.is_active, COALESCE(r.is_packed,0) AS is_packed, r.created_by, r.created_at, u.name AS chef_name, (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = r.id) as ingredient_count FROM recipes r LEFT JOIN users u ON u.id = r.created_by WHERE 1=1';
         $params = [];
+
+        // Optional filter: packed only or regular only
+        if (isset($_GET['is_packed'])) {
+            $sql .= ' AND COALESCE(r.is_packed, 0) = ?';
+            $params[] = (int)$_GET['is_packed'];
+        }
 
         // Chefs see only their own recipes; admin/storekeeper see all (with optional chef filter)
         if ($user['role'] === 'chef') {
@@ -76,6 +82,8 @@ switch ($action) {
 
         if (!$name) jsonError('Recipe name required');
 
+        $isPacked = isset($input['is_packed']) ? ($input['is_packed'] ? 1 : 0) : null;
+
         if ($id) {
             // Ownership check: chefs can only edit their own recipes
             if ($user['role'] === 'chef') {
@@ -84,8 +92,12 @@ switch ($action) {
                 $owner = $own->fetchColumn();
                 if ($owner && (int)$owner !== (int)$user['id']) jsonError('You can only edit your own recipes', 403);
             }
-            $stmt = $db->prepare('UPDATE recipes SET name = ?, category = ?, cuisine = ?, difficulty = ?, prep_time = ?, cook_time = ?, servings = ?, instructions = ?, notes = ? WHERE id = ?');
-            $stmt->execute([$name, $category, $cuisine, $difficulty, $prepTime, $cookTime, $servings, $instructions, $notes, $id]);
+            $packedSql = $isPacked !== null ? ', is_packed = ?' : '';
+            $stmt = $db->prepare("UPDATE recipes SET name = ?, category = ?, cuisine = ?, difficulty = ?, prep_time = ?, cook_time = ?, servings = ?, instructions = ?, notes = ?{$packedSql} WHERE id = ?");
+            $execParams = [$name, $category, $cuisine, $difficulty, $prepTime, $cookTime, $servings, $instructions, $notes];
+            if ($isPacked !== null) $execParams[] = $isPacked;
+            $execParams[] = $id;
+            $stmt->execute($execParams);
             auditLog('update_recipe', 'recipes', $id, null, ['name' => $name]);
         } else {
             $stmt = $db->prepare('INSERT INTO recipes (name, category, cuisine, difficulty, prep_time, cook_time, servings, instructions, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
@@ -114,6 +126,29 @@ switch ($action) {
         $db->prepare('DELETE FROM recipes WHERE id = ?')->execute([$id]);
         auditLog('delete_recipe', 'recipes', $id);
         jsonResponse(['deleted' => true]);
+        break;
+
+    // ── Toggle packed flag ──
+    case 'toggle_packed':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $id = (int)($input['id'] ?? 0);
+        if (!$id) jsonError('Recipe ID required');
+
+        // Chefs: own recipes only
+        if ($user['role'] === 'chef') {
+            $own = $db->prepare('SELECT created_by FROM recipes WHERE id = ?');
+            $own->execute([$id]);
+            if ((int)$own->fetchColumn() !== (int)$user['id']) jsonError('Access denied', 403);
+        }
+
+        $db->prepare('UPDATE recipes SET is_packed = NOT COALESCE(is_packed, 0) WHERE id = ?')->execute([$id]);
+        $newVal = (int)$db->prepare('SELECT is_packed FROM recipes WHERE id = ?')->execute([$id]) && true;
+        $row = $db->prepare('SELECT is_packed FROM recipes WHERE id = ?');
+        $row->execute([$id]);
+        $newVal = (int)$row->fetchColumn();
+        auditLog('recipe_toggle_packed', 'recipes', $id, null, ['is_packed' => $newVal]);
+        jsonResponse(['is_packed' => $newVal]);
         break;
 
     // ── Add ingredient to recipe ──

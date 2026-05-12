@@ -1557,8 +1557,9 @@ switch ($action) {
             }
 
             foreach ($dishes as $dish) {
-                $recipeId = (int)($dish['recipe_id'] ?? 0);
-                $recipeName = $dish['recipe_name'] ?? '';
+                $recipeId    = (int)($dish['recipe_id'] ?? 0);
+                $isPacked    = !empty($dish['is_packed']) || $recipeId === 0;
+                $recipeName  = $dish['recipe_name'] ?? '';
                 $recipeServings = (int)($dish['recipe_servings'] ?? 4);
                 if ($recipeServings < 1) $recipeServings = 4;
 
@@ -1569,10 +1570,13 @@ switch ($action) {
                 $scaleFactor = $dishPortions / $recipeServings;
 
                 // Insert dish record
-                $dStmt = $db->prepare("INSERT INTO requisition_dishes (requisition_id, recipe_id, recipe_name, recipe_servings, scale_factor, guest_count)
-                    VALUES (?, ?, ?, ?, ?, ?)");
-                $dStmt->execute([$reqId, $recipeId, $recipeName, $recipeServings, round($scaleFactor, 3), $dishPortions]);
+                $dStmt = $db->prepare("INSERT INTO requisition_dishes (requisition_id, recipe_id, is_packed, recipe_name, recipe_servings, scale_factor, guest_count)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)");
+                $dStmt->execute([$reqId, $isPacked ? null : ($recipeId ?: null), $isPacked ? 1 : 0, $recipeName, $recipeServings, round($scaleFactor, 3), $dishPortions]);
                 $dishId = $db->lastInsertId();
+
+                // Packed/out-of-box dishes: no ingredients to generate — skip
+                if ($isPacked) continue;
 
                 // Use pre-loaded ingredients (no per-dish query)
                 $ingredients = $allIngredients[$recipeId] ?? [];
