@@ -10,17 +10,19 @@ switch ($action) {
 
     // ── List all users ──
     case 'list':
-        $stmt = $db->query('SELECT u.id, u.name, u.username, u.role, u.camp_name, u.kitchen_id, u.is_active, u.created_at, k.name AS kitchen_name FROM users u LEFT JOIN kitchens k ON k.id = u.kitchen_id ORDER BY u.is_active DESC, u.name');
+        $stmt = $db->query('SELECT u.id, u.name, u.username, u.role, u.camp_name, u.kitchen_id, u.is_active, u.created_at, u.email, u.phone, k.name AS kitchen_name FROM users u LEFT JOIN kitchens k ON k.id = u.kitchen_id ORDER BY u.is_active DESC, u.name');
         jsonResponse(['users' => $stmt->fetchAll()]);
         break;
 
     // ── Create user ──
     case 'create':
         requireMethod('POST');
-        $name = trim($input['name'] ?? '');
+        $name     = trim($input['name']     ?? '');
         $username = trim($input['username'] ?? '');
-        $pin = trim($input['pin'] ?? '');
-        $role = $input['role'] ?? 'chef';
+        $pin      = trim($input['pin']      ?? '');
+        $role     = $input['role'] ?? 'chef';
+        $email    = trim($input['email']    ?? '');
+        $password = trim($input['password'] ?? '');
 
         if (!$name || !$username || !$pin) {
             jsonError('Name, username and PIN are required');
@@ -31,6 +33,9 @@ switch ($action) {
         if (!in_array($role, ['chef', 'storekeeper', 'admin'])) {
             jsonError('Invalid role');
         }
+        if ($email && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            jsonError('Invalid email address');
+        }
 
         // Check duplicate username
         $check = $db->prepare('SELECT id FROM users WHERE username = ?');
@@ -38,12 +43,19 @@ switch ($action) {
         if ($check->fetch()) {
             jsonError('Username already exists');
         }
+        // Check duplicate email
+        if ($email) {
+            $checkEmail = $db->prepare('SELECT id FROM users WHERE email = ?');
+            $checkEmail->execute([$email]);
+            if ($checkEmail->fetch()) jsonError('Email already registered to another user');
+        }
 
-        $kitchenId = isset($input['kitchen_id']) ? (int)$input['kitchen_id'] : null;
+        $kitchenId    = isset($input['kitchen_id']) ? (int)$input['kitchen_id'] : null;
+        $pinHash      = password_hash($pin, PASSWORD_DEFAULT);
+        $passwordHash = $password ? password_hash($password, PASSWORD_DEFAULT) : null;
 
-        $pinHash = password_hash($pin, PASSWORD_DEFAULT);
-        $stmt = $db->prepare('INSERT INTO users (name, username, pin, pin_hash, role, kitchen_id) VALUES (?, ?, ?, ?, ?, ?)');
-        $stmt->execute([$name, $username, $pin, $pinHash, $role, $kitchenId]);
+        $stmt = $db->prepare('INSERT INTO users (name, username, pin, pin_hash, role, kitchen_id, email, password_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        $stmt->execute([$name, $username, $pin, $pinHash, $role, $kitchenId, $email ?: null, $passwordHash]);
         $newUserId = $db->lastInsertId();
 
         // Auto-copy recipes for new chefs — always use Vinaya (id 22) as the master template
@@ -113,6 +125,23 @@ switch ($action) {
         if (array_key_exists('kitchen_id', $input)) {
             $fields[] = 'kitchen_id = ?';
             $params[] = $input['kitchen_id'] ? (int)$input['kitchen_id'] : null;
+        }
+        if (array_key_exists('email', $input)) {
+            $emailVal = trim($input['email'] ?? '');
+            if ($emailVal && !filter_var($emailVal, FILTER_VALIDATE_EMAIL)) jsonError('Invalid email address');
+            // Check duplicate (exclude self)
+            if ($emailVal) {
+                $checkEmail = $db->prepare('SELECT id FROM users WHERE email = ? AND id != ?');
+                $checkEmail->execute([$emailVal, $id]);
+                if ($checkEmail->fetch()) jsonError('Email already registered to another user');
+            }
+            $fields[] = 'email = ?';
+            $params[] = $emailVal ?: null;
+        }
+        if (!empty($input['password'])) {
+            if (strlen(trim($input['password'])) < 8) jsonError('Password must be at least 8 characters');
+            $fields[] = 'password_hash = ?';
+            $params[] = password_hash(trim($input['password']), PASSWORD_DEFAULT);
         }
 
         if (empty($fields)) jsonError('Nothing to update');

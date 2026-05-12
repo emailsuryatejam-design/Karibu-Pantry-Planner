@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../lib/push-sender.php';
+require_once __DIR__ . '/../mailer.php';
 
 $user = requireAuth();
 $action = $_GET['action'] ?? 'list';
@@ -584,6 +585,62 @@ switch ($action) {
             error_log('Notification error on submit: ' . $e->getMessage());
         }
 
+        // ── Email alert: notify storekeepers in this kitchen + all admins ──
+        try {
+            if (!isset($kitchenName)) {
+                $kStmt = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
+                $kStmt->execute([$req['kitchen_id']]);
+                $kRow = $kStmt->fetch();
+                $kitchenName = $kRow ? $kRow['name'] : 'Camp';
+            }
+            if (!isset($mealLabel)) {
+                $mealLabel = ucfirst($req['meals'] ?? 'order');
+                $suppNum = (int)($req['supplement_number'] ?? 0);
+                if ($suppNum > 0) $mealLabel .= ' (' . ($suppNum + 1) . ')';
+            }
+            $reqDate    = date('D, d M Y', strtotime($req['req_date']));
+            $guestCount = (int)($req['guest_count'] ?? 0);
+            $appUrl     = APP_URL;
+
+            $emailSubject = "New Order: {$mealLabel} — {$kitchenName} ({$reqDate})";
+            $emailBody = "
+              <p>A new requisition has been submitted and requires your attention.</p>
+              <table style='border-collapse:collapse;width:100%;font-size:13px;margin:16px 0'>
+                <tr style='background:#f9fafb'>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;color:#6b7280;width:130px'>Camp</td>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb'>{$kitchenName}</td>
+                </tr>
+                <tr>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;color:#6b7280'>Date</td>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb'>{$reqDate}</td>
+                </tr>
+                <tr style='background:#f9fafb'>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;color:#6b7280'>Meal</td>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb'>{$mealLabel}</td>
+                </tr>
+                <tr>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;color:#6b7280'>Guests</td>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb'>{$guestCount}</td>
+                </tr>
+                <tr style='background:#f9fafb'>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;color:#6b7280'>Submitted by</td>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb'>{$user['name']}</td>
+                </tr>
+              </table>
+              <p style='color:#6b7280;font-size:13px'>Please log in to review and fulfill the order.</p>";
+
+            $html = mailTemplate(
+                "New Requisition Submitted",
+                $emailBody,
+                "View Store Dashboard",
+                "{$appUrl}/app.php?page=store-dashboard"
+            );
+            notifyStorekeepers((int)$req['kitchen_id'], $emailSubject, $html);
+            notifyAdmins($emailSubject, $html);
+        } catch (Exception $e) {
+            error_log('[Karibu Email] submit alert failed: ' . $e->getMessage());
+        }
+
         jsonResponse(['submitted' => true]);
 
     // ── Fulfill requisition (storekeeper) ──
@@ -635,6 +692,61 @@ switch ($action) {
             storeNotification((int)$req['kitchen_id'], (int)$req['created_by'], $pushPayload['title'], $pushPayload['body'], 'requisition_fulfilled', $reqId);
         } catch (Exception $e) {
             error_log('Notification error on fulfill: ' . $e->getMessage());
+        }
+
+        // ── Email alert: notify the chef who submitted + all chefs in this kitchen ──
+        try {
+            if (!isset($kitchenName) || !$kitchenName) {
+                $kStmt2 = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
+                $kStmt2->execute([$req['kitchen_id']]);
+                $kRow2 = $kStmt2->fetch();
+                $kitchenName = $kRow2 ? $kRow2['name'] : 'Camp';
+            }
+            if (!isset($mealLabel)) {
+                $mealLabel = ucfirst($req['meals'] ?? 'order');
+                $suppNum = (int)($req['supplement_number'] ?? 0);
+                if ($suppNum > 0) $mealLabel .= ' (' . ($suppNum + 1) . ')';
+            }
+            $reqDate = date('D, d M Y', strtotime($req['req_date']));
+            $appUrl  = APP_URL;
+
+            $emailSubject = "Order Ready: {$mealLabel} — {$kitchenName} ({$reqDate})";
+            $emailBody = "
+              <p>Great news! Your order has been fulfilled by the store and is ready for collection.</p>
+              <table style='border-collapse:collapse;width:100%;font-size:13px;margin:16px 0'>
+                <tr style='background:#f9fafb'>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;color:#6b7280;width:130px'>Camp</td>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb'>{$kitchenName}</td>
+                </tr>
+                <tr>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;color:#6b7280'>Date</td>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb'>{$reqDate}</td>
+                </tr>
+                <tr style='background:#f9fafb'>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;color:#6b7280'>Meal</td>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb'>{$mealLabel}</td>
+                </tr>
+                <tr>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;color:#6b7280'>Fulfilled by</td>
+                  <td style='padding:8px 12px;border:1px solid #e5e7eb'>{$user['name']}</td>
+                </tr>
+              </table>
+              <p style='color:#6b7280;font-size:13px'>Please confirm receipt once you have collected the items.</p>";
+
+            $html = mailTemplate(
+                "Your Order Has Been Fulfilled",
+                $emailBody,
+                "Confirm Receipt",
+                "{$appUrl}/app.php?page=day-close"
+            );
+            // Notify the chef who submitted specifically
+            if (!empty($req['created_by'])) {
+                notifyUser((int)$req['created_by'], $emailSubject, $html);
+            }
+            // Also notify all chefs in the kitchen (in case another chef needs to collect)
+            notifyChefs((int)$req['kitchen_id'], $emailSubject, $html);
+        } catch (Exception $e) {
+            error_log('[Karibu Email] fulfill alert failed: ' . $e->getMessage());
         }
 
         jsonResponse(['fulfilled' => true]);
