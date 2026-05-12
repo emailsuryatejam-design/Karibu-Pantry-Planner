@@ -1180,6 +1180,48 @@ switch ($action) {
 
         jsonResponse(['added' => true, 'recipe_name' => $recipe['name']]);
 
+    // ── Add a packed / no-recipe dish to a breakfast order ──
+    case 'add_packed_dish':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+
+        $reqId    = (int)($data['requisition_id'] ?? 0);
+        $dishName = trim($data['dish_name'] ?? '');
+        if (!$reqId || !$dishName) jsonError('Requisition ID and dish name are required');
+        if (mb_strlen($dishName) > 150) jsonError('Dish name too long (max 150 chars)');
+
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'draft'");
+        $stmt->execute([$reqId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Requisition not found or not in draft status');
+
+        // Prevent duplicate packed dish names on same requisition
+        $dup = $db->prepare("SELECT id FROM requisition_dishes WHERE requisition_id = ? AND recipe_id IS NULL AND recipe_name = ?");
+        $dup->execute([$reqId, $dishName]);
+        if ($dup->fetch()) jsonError('This packed dish is already in the order');
+
+        $guestCount = (int)($req['guest_count'] ?? 20);
+        $db->prepare("INSERT INTO requisition_dishes (requisition_id, recipe_id, is_packed, recipe_name, recipe_servings, scale_factor, guest_count)
+            VALUES (?, NULL, 1, ?, ?, 1, ?)")
+           ->execute([$reqId, $dishName, $guestCount, $guestCount]);
+
+        auditLog('requisition_add_packed_dish', 'requisition', $reqId, null, ['dish_name' => $dishName]);
+        jsonResponse(['added' => true, 'dish_name' => $dishName]);
+
+    // ── Remove a packed dish from a requisition ──
+    case 'remove_packed_dish':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $reqId    = (int)($data['requisition_id'] ?? 0);
+        $dishName = trim($data['dish_name'] ?? '');
+        if (!$reqId || !$dishName) jsonError('Requisition ID and dish name required');
+
+        $db->prepare("DELETE FROM requisition_dishes WHERE requisition_id = ? AND recipe_id IS NULL AND recipe_name = ?")
+           ->execute([$reqId, $dishName]);
+        jsonResponse(['removed' => true]);
+
     // ── Lock menu: save dishes + generate items, set status to 'processing' ──
     case 'lock_menu':
         requireMethod('POST');
@@ -1683,33 +1725,46 @@ switch ($action) {
         $reqId = (int)($_GET['requisition_id'] ?? 0);
         if (!$reqId) jsonError('Requisition ID required');
 
-        // Get dishes
-        $dStmt = $db->prepare("SELECT rd.recipe_id, rd.recipe_name, rd.recipe_servings, rd.scale_factor, rd.guest_count
-            FROM requisition_dishes rd WHERE rd.requisition_id = ? ORDER BY rd.created_at");
+        // Get dishes (recipe-based AND packed)
+        $dStmt = $db->prepare("SELECT rd.id, rd.recipe_id, COALESCE(rd.is_packed, 0) AS is_packed,
+            rd.recipe_name, rd.recipe_servings, rd.scale_factor, rd.guest_count
+            FROM requisition_dishes rd WHERE rd.requisition_id = ? ORDER BY rd.is_packed ASC, rd.created_at");
         $dStmt->execute([$reqId]);
         $dishes = $dStmt->fetchAll();
 
         if (empty($dishes)) {
-            jsonResponse(['dishes' => [], 'ingredients_by_recipe' => new \stdClass()]);
+            jsonResponse(['dishes' => [], 'packed_dishes' => [], 'ingredients_by_recipe' => new \stdClass()]);
         }
 
-        // Batch-load all recipe ingredients in ONE query
-        $recipeIds = array_unique(array_column($dishes, 'recipe_id'));
-        $ph = implode(',', array_fill(0, count($recipeIds), '?'));
-        $iStmt = $db->prepare("SELECT ri.recipe_id, ri.item_id, ri.qty, ri.uom, ri.is_primary,
-            i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
-            FROM recipe_ingredients ri
-            LEFT JOIN items i ON i.id = ri.item_id
-            WHERE ri.recipe_id IN ($ph)
-            ORDER BY ri.recipe_id, ri.is_primary DESC, i.name");
-        $iStmt->execute(array_values($recipeIds));
+        // Separate packed dishes (no recipe) from recipe-based dishes
+        $packedDishes  = array_values(array_filter($dishes, fn($d) => !empty($d['is_packed']) || $d['recipe_id'] === null));
+        $recipeDishes  = array_values(array_filter($dishes, fn($d) => empty($d['is_packed']) && $d['recipe_id'] !== null));
 
+        // Batch-load ingredients only for recipe-based dishes
         $ingredientsByRecipe = [];
-        foreach ($iStmt->fetchAll() as $ing) {
-            $ingredientsByRecipe[$ing['recipe_id']][] = $ing;
+        if (!empty($recipeDishes)) {
+            $recipeIds = array_unique(array_column($recipeDishes, 'recipe_id'));
+            $recipeIds = array_filter($recipeIds, fn($id) => $id !== null);
+            if (!empty($recipeIds)) {
+                $ph = implode(',', array_fill(0, count($recipeIds), '?'));
+                $iStmt = $db->prepare("SELECT ri.recipe_id, ri.item_id, ri.qty, ri.uom, ri.is_primary,
+                    i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
+                    FROM recipe_ingredients ri
+                    LEFT JOIN items i ON i.id = ri.item_id
+                    WHERE ri.recipe_id IN ($ph)
+                    ORDER BY ri.recipe_id, ri.is_primary DESC, i.name");
+                $iStmt->execute(array_values($recipeIds));
+                foreach ($iStmt->fetchAll() as $ing) {
+                    $ingredientsByRecipe[$ing['recipe_id']][] = $ing;
+                }
+            }
         }
 
-        jsonResponse(['dishes' => $dishes, 'ingredients_by_recipe' => $ingredientsByRecipe ?: new \stdClass()]);
+        jsonResponse([
+            'dishes'               => $dishes,
+            'packed_dishes'        => $packedDishes,
+            'ingredients_by_recipe'=> $ingredientsByRecipe ?: new \stdClass(),
+        ]);
 
     // ── Admin: reset all orders for a clean start ──
     case 'reset_all_orders':

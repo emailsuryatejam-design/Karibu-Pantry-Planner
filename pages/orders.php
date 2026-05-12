@@ -163,6 +163,7 @@ let ordAdjustments = {};
 let ordAllItems = null; // cached for add-item
 let ordCollapsed = {}; // reqId -> true/false
 let ordDishBreakdown = {}; // reqId -> { itemId: [{dish_name, qty, uom}] }
+let ordPackedDishes  = {}; // reqId -> [dish_name, ...]
 let ordTypes = []; // all active requisition types (meal codes)
 
 // Meal colors
@@ -271,8 +272,9 @@ async function ordLoad() {
             }).catch(() => { ordLinesByReq[r.id] = []; })
         ));
 
-        // Fetch dish breakdown for each requisition
-        ordDishBreakdown = {};
+        // Fetch dish breakdown for each requisition (includes packed dishes)
+        ordDishBreakdown  = {};
+        ordPackedDishes   = {}; // reqId -> [{recipe_name}]
         await Promise.all(ordRequisitions.map(r =>
             api(`api/requisitions.php?action=get_dishes_with_ingredients&requisition_id=${r.id}`).then(data => {
                 const dishes = data.dishes || [];
@@ -280,6 +282,7 @@ async function ordLoad() {
                 const breakdown = {}; // itemId -> [{dish_name, qty, uom}]
                 const seenRecipes = new Set();
                 for (const dish of dishes) {
+                    if (dish.is_packed) continue; // packed dishes have no ingredients
                     if (seenRecipes.has(dish.recipe_id)) continue;
                     seenRecipes.add(dish.recipe_id);
                     const ings = ingsByRecipe[dish.recipe_id] || [];
@@ -294,7 +297,8 @@ async function ordLoad() {
                     }
                 }
                 ordDishBreakdown[r.id] = breakdown;
-            }).catch(() => { ordDishBreakdown[r.id] = {}; })
+                ordPackedDishes[r.id]  = (data.packed_dishes || []).map(d => d.recipe_name);
+            }).catch(() => { ordDishBreakdown[r.id] = {}; ordPackedDishes[r.id] = []; })
         ));
 
         ordRender();
@@ -509,6 +513,35 @@ function ordRenderCard(req) {
             html += `<div class="flex items-center justify-between px-4 py-2 bg-gray-50 border-b border-gray-100">
                 <span class="text-[10px] text-gray-400 font-semibold uppercase tracking-wider">Guest Count</span>
                 <span class="text-xs font-bold text-gray-500">${gc} pax</span>
+            </div>`;
+        }
+
+        // ── Packed Dishes (breakfast / no-recipe items) ──
+        const packedList = ordPackedDishes[req.id] || [];
+        const isBreakfast = (req.meals || '').toLowerCase() === 'breakfast';
+        if (packedList.length > 0 || (isBreakfast && isEditable)) {
+            const packedChips = packedList.map(name =>
+                `<span class="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-800 text-[10px] font-medium rounded-full px-2.5 py-0.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/></svg>
+                    ${escHtml(name)}
+                    ${isEditable ? `<button onclick="ordRemovePackedDish(${req.id}, '${name.replace(/'/g, "\\'")}')" class="ml-0.5 text-amber-400 hover:text-red-500 transition leading-none">×</button>` : ''}
+                </span>`
+            ).join('');
+            html += `<div class="px-4 py-2.5 border-b border-amber-100 bg-amber-50/40">
+                <div class="flex items-center justify-between mb-1.5">
+                    <span class="text-[10px] font-semibold text-amber-700 uppercase tracking-wider flex items-center gap-1">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="16" height="13" x="4" y="5" rx="2"/><path d="M16 2v4M8 2v4M4 9h16"/></svg>
+                        Packed Dishes
+                    </span>
+                    ${isEditable ? `<button onclick="ordShowAddPackedDish(${req.id})"
+                        class="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-700 text-[10px] font-semibold transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+                        Add
+                    </button>` : ''}
+                </div>
+                <div class="flex flex-wrap gap-1.5">
+                    ${packedChips || `<span class="text-[10px] text-amber-500 italic">No packed dishes yet — tap Add to list breakfast items</span>`}
+                </div>
             </div>`;
         }
 
@@ -853,6 +886,87 @@ async function ordDeleteOrder(reqId) {
 }
 
 // ══════════════════════════════════════════════
+// ══════════════════════════════════════════════
+//  Packed Dish (no recipe) — breakfast
+// ══════════════════════════════════════════════
+
+function ordShowAddPackedDish(reqId) {
+    const req = ordRequisitions.find(r => r.id == reqId);
+    if (!req) return;
+
+    // Inline prompt using a tiny bottom sheet-style div injected into the card
+    const existing = document.getElementById('ordPackedDishInput');
+    if (existing) existing.remove();
+
+    const cardEl = document.getElementById(`ord-card-${reqId}`);
+    const insertTarget = cardEl
+        ? cardEl.querySelector('[data-packed-section]') || cardEl
+        : document.getElementById('ordList');
+
+    const div = document.createElement('div');
+    div.id = 'ordPackedDishInput';
+    div.className = 'fixed inset-0 z-[220] bg-black/50 flex items-end justify-center';
+    div.innerHTML = `
+        <div class="bg-white w-full max-w-md rounded-t-2xl p-5 space-y-3 shadow-xl">
+            <div class="flex items-center justify-between">
+                <h3 class="text-sm font-bold text-gray-900">📦 Add Packed / Box Dish</h3>
+                <button onclick="document.getElementById('ordPackedDishInput').remove()" class="text-gray-400 hover:text-gray-600 text-lg leading-none">&times;</button>
+            </div>
+            <p class="text-[11px] text-gray-500">Enter the dish name (e.g. Cornflakes, Toast &amp; Butter, Fruit Salad)</p>
+            <input type="text" id="ordPackedDishName"
+                placeholder="Dish name…"
+                maxlength="150"
+                class="w-full border-2 border-amber-300 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-200 bg-amber-50/30">
+            <div class="flex gap-3">
+                <button onclick="document.getElementById('ordPackedDishInput').remove()"
+                    class="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 text-sm font-semibold">Cancel</button>
+                <button id="ordPackedDishConfirm" onclick="ordConfirmAddPackedDish(${reqId})"
+                    class="flex-1 py-3 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-sm font-bold transition">Add Dish</button>
+            </div>
+        </div>`;
+    document.body.appendChild(div);
+    setTimeout(() => document.getElementById('ordPackedDishName')?.focus(), 80);
+
+    // Allow enter to submit
+    document.getElementById('ordPackedDishName').addEventListener('keydown', e => {
+        if (e.key === 'Enter') ordConfirmAddPackedDish(reqId);
+    });
+}
+
+async function ordConfirmAddPackedDish(reqId) {
+    const name = (document.getElementById('ordPackedDishName')?.value || '').trim();
+    if (!name) { showToast('Enter a dish name', 'error'); return; }
+
+    const btn = document.getElementById('ordPackedDishConfirm');
+    if (btn) { btn.disabled = true; btn.textContent = 'Adding…'; }
+
+    try {
+        await api('api/requisitions.php?action=add_packed_dish', {
+            method: 'POST',
+            body: { requisition_id: reqId, dish_name: name }
+        });
+        document.getElementById('ordPackedDishInput')?.remove();
+        showToast(`"${name}" added to breakfast`, 'success');
+        ordLoad();
+    } catch (err) {
+        showToast(err.message, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = 'Add Dish'; }
+    }
+}
+
+async function ordRemovePackedDish(reqId, dishName) {
+    try {
+        await api('api/requisitions.php?action=remove_packed_dish', {
+            method: 'POST',
+            body: { requisition_id: reqId, dish_name: dishName }
+        });
+        showToast('Dish removed', 'success');
+        ordLoad();
+    } catch (err) {
+        showToast(err.message, 'error');
+    }
+}
+
 //  Add Item Modal
 // ══════════════════════════════════════════════
 let ordAddTargetReqId = null;
