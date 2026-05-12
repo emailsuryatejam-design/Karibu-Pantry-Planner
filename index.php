@@ -90,8 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Please enter email and password';
             $showAdminLogin = true;
         }
-    }
-
+    } else {
     // ── Kitchen staff: camp → name → PIN ──
     $username = trim($_POST['username'] ?? '');
     $pin = trim($_POST['pin'] ?? '');
@@ -158,6 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $error = 'Please enter username and PIN';
     }
+    } // end else (kitchen staff)
 }
 
 // Users are loaded via AJAX after camp selection — no longer exposed in page source
