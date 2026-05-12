@@ -1,4 +1,5 @@
 node_modules/
+vendor/
 android/
 .DS_Store
 *.log
