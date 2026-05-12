@@ -5,11 +5,11 @@
  * Sends branded HTML emails via Gmail SMTP (jambo@karibucamps.com).
  * Uses PHPMailer — install with: composer install
  *
- * SMTP credentials are read from .env:
+ * SMTP credentials are read from .env (see .env.example — never commit real values):
  *   MAIL_SMTP_USER=jambo@karibucamps.com
- *   MAIL_SMTP_PASS=REDACTED
+ *   MAIL_SMTP_PASS=<gmail-app-password>
  *   MAIL_FROM_NAME=Karibu Pantry Planner
- *   APP_URL=https://...
+ *   APP_URL=https://your-domain.com
  */
 
 $_mailerAutoload = __DIR__ . '/vendor/autoload.php';

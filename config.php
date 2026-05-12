@@ -29,16 +29,16 @@ session_set_cookie_params([
 ]);
 session_start();
 
-// ── VAPID Keys (Push Notifications) — from .env ──
-define('VAPID_PUBLIC_KEY', $_ENV['VAPID_PUBLIC_KEY'] ?? 'BPp5G-UF9ehoRSuEkjJ2gG-8Fy7FwN5z0_SNfNn40N9uS8YFqpPbK8BkXGR4l5x72nxxfUOGEa7848wIQZF1oiA');
-define('VAPID_PRIVATE_KEY', $_ENV['VAPID_PRIVATE_KEY'] ?? 'REDACTED');
-define('VAPID_SUBJECT', $_ENV['VAPID_SUBJECT'] ?? 'mailto:admin@karibupantry.com');
+// ── VAPID Keys (Push Notifications) — must be set in .env ──
+define('VAPID_PUBLIC_KEY', $_ENV['VAPID_PUBLIC_KEY'] ?? '');
+define('VAPID_PRIVATE_KEY', $_ENV['VAPID_PRIVATE_KEY'] ?? '');
+define('VAPID_SUBJECT', $_ENV['VAPID_SUBJECT'] ?? 'mailto:admin@karibucamps.com');
 
-// ── Database — from .env (hardcoded fallback for Hostinger until .env uploaded) ──
-define('DB_HOST', $_ENV['DB_HOST'] ?? 'auth-db1899.hstgr.io');
-define('DB_NAME', $_ENV['DB_NAME'] ?? 'u929828006_Pantryplanner');
-define('DB_USER', $_ENV['DB_USER'] ?? 'u929828006_Pantryplanner');
-define('DB_PASS', $_ENV['DB_PASS'] ?? 'REDACTED');
+// ── Database — all values must come from .env on the server ──
+define('DB_HOST', $_ENV['DB_HOST'] ?? '');
+define('DB_NAME', $_ENV['DB_NAME'] ?? '');
+define('DB_USER', $_ENV['DB_USER'] ?? '');
+define('DB_PASS', $_ENV['DB_PASS'] ?? '');
 
 function getDB() {
     static $pdo = null;
