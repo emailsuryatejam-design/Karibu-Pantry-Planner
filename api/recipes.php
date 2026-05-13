@@ -13,7 +13,7 @@ switch ($action) {
         $q = $_GET['q'] ?? '';
         $category = $_GET['category'] ?? '';
 
-        $sql = 'SELECT r.id, r.name, r.category, r.cuisine, r.difficulty, r.prep_time, r.cook_time, r.servings, r.is_active, COALESCE(r.is_packed,0) AS is_packed, r.created_by, r.created_at, u.name AS chef_name, (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = r.id) as ingredient_count FROM recipes r LEFT JOIN users u ON u.id = r.created_by WHERE 1=1';
+        $sql = 'SELECT r.id, r.name, r.category, r.cuisine, r.difficulty, r.prep_time, r.cook_time, r.servings, r.is_active, COALESCE(r.is_packed,0) AS is_packed, COALESCE(r.is_default,0) AS is_default, r.created_by, r.created_at, u.name AS chef_name, (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = r.id) as ingredient_count FROM recipes r LEFT JOIN users u ON u.id = r.created_by WHERE 1=1';
         $params = [];
 
         // Optional filter: packed only or regular only
@@ -149,6 +149,51 @@ switch ($action) {
         $newVal = (int)$row->fetchColumn();
         auditLog('recipe_toggle_packed', 'recipes', $id, null, ['is_packed' => $newVal]);
         jsonResponse(['is_packed' => $newVal]);
+        break;
+
+    case 'toggle_default':
+        requireMethod('POST');
+        requireRole(['admin']);
+        $id = (int)($input['id'] ?? 0);
+        if (!$id) jsonError('Recipe ID required');
+        $db->prepare('UPDATE recipes SET is_default = NOT COALESCE(is_default, 0) WHERE id = ?')->execute([$id]);
+        $row = $db->prepare('SELECT is_default FROM recipes WHERE id = ?');
+        $row->execute([$id]);
+        $newVal = (int)$row->fetchColumn();
+        auditLog('recipe_toggle_default', 'recipes', $id, null, ['is_default' => $newVal]);
+        jsonResponse(['is_default' => $newVal]);
+        break;
+
+    case 'apply_defaults':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        // Get all default recipes
+        $defaults = $db->query('SELECT * FROM recipes WHERE COALESCE(is_default,0) = 1')->fetchAll();
+        if (empty($defaults)) jsonError('No default recipes configured yet');
+
+        // Get chef's existing recipe names (lowercase) to avoid dupes
+        $existingStmt = $db->prepare('SELECT LOWER(name) FROM recipes WHERE created_by = ?');
+        $existingStmt->execute([$user['id']]);
+        $existing = array_flip($existingStmt->fetchAll(PDO::FETCH_COLUMN));
+
+        $insRecipe = $db->prepare('INSERT INTO recipes (name, category, cuisine, difficulty, prep_time, cook_time, servings, instructions, notes, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $insIng    = $db->prepare('INSERT INTO recipe_ingredients (recipe_id, item_id, item_name, qty, uom, is_primary) VALUES (?, ?, ?, ?, ?, ?)');
+        $getIngs   = $db->prepare('SELECT * FROM recipe_ingredients WHERE recipe_id = ?');
+
+        $added = 0;
+        $skipped = 0;
+        foreach ($defaults as $r) {
+            if (isset($existing[strtolower($r['name'])])) { $skipped++; continue; }
+            $insRecipe->execute([$r['name'], $r['category'], $r['cuisine'], $r['difficulty'], $r['prep_time'], $r['cook_time'], $r['servings'], $r['instructions'], $r['notes'], $user['id']]);
+            $newId = $db->lastInsertId();
+            $getIngs->execute([$r['id']]);
+            foreach ($getIngs->fetchAll() as $ing) {
+                $insIng->execute([$newId, $ing['item_id'], $ing['item_name'], $ing['qty'], $ing['uom'], $ing['is_primary']]);
+            }
+            $added++;
+        }
+        auditLog('apply_defaults', 'recipes', null, null, ['added' => $added, 'skipped' => $skipped]);
+        jsonResponse(['added' => $added, 'skipped' => $skipped]);
         break;
 
     // ── Add ingredient to recipe ──

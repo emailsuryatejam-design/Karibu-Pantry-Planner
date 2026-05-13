@@ -22,6 +22,20 @@
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
     </div>
 
+    <!-- Default Recipes banner (chef only) -->
+    <?php if (($user['role'] ?? '') === 'chef'): ?>
+    <div class="mb-3 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+        <div>
+            <p class="text-xs font-semibold text-indigo-800">⭐ Default Recipes</p>
+            <p class="text-[10px] text-indigo-500 mt-0.5">Load the kitchen's standard recipe list with one tap</p>
+        </div>
+        <button id="rApplyDefaultsBtn" onclick="rApplyDefaults()"
+            class="shrink-0 bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-semibold px-4 py-2 rounded-lg transition compact-btn">
+            Load Defaults
+        </button>
+    </div>
+    <?php endif; ?>
+
     <!-- Chef Filter (admin only) -->
     <?php if (($user['role'] ?? '') === 'admin'): ?>
     <div class="mb-3" id="rChefFilterWrap">
@@ -180,6 +194,7 @@ function rRenderList() {
                         ${r.cuisine ? `<span class="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded-full">${r.cuisine}</span>` : ''}
                         <span class="text-[10px] text-gray-400">${r.ingredient_count || 0} ing</span>
                         ${parseInt(r.is_packed) === 1 ? `<span class="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-full">📦 Packed</span>` : ''}
+                        ${parseInt(r.is_default) === 1 ? `<span class="text-[10px] text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded-full">⭐ Default</span>` : ''}
                         ${r.chef_name ? `<span class="text-[10px] text-purple-600 bg-purple-50 px-1.5 py-0.5 rounded-full">${r.chef_name}</span>` : ''}
                     </div>
                 </div>
@@ -302,6 +317,24 @@ async function rLoadDetail(id) {
             </button>
         </div>`;
 
+        // Default flag row (admin only)
+        <?php if (($user['role'] ?? '') === 'admin'): ?>
+        const isDefault = parseInt(r.is_default) === 1;
+        html += `<div class="flex items-center justify-between px-4 py-2.5 border-t border-gray-100 bg-indigo-50/40" id="rDefaultRow_${id}">
+            <div class="flex items-center gap-2">
+                <span class="text-sm">⭐</span>
+                <div>
+                    <p class="text-xs font-semibold text-gray-700">Default Recipe</p>
+                    <p class="text-[10px] text-gray-400">Chefs can load this into their recipe list with one tap</p>
+                </div>
+            </div>
+            <button id="rDefaultToggle_${id}" onclick="rToggleDefault(${id})"
+                class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${isDefault ? 'bg-indigo-500' : 'bg-gray-200'}">
+                <span class="inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isDefault ? 'translate-x-6' : 'translate-x-1'}"></span>
+            </button>
+        </div>`;
+        <?php endif; ?>
+
         // Actions
         html += `<div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 bg-gray-50/50">
             <button onclick="rShowAddToOrder(${id}, '${escHtml(r.name).replace(/'/g, "\\'")}')" class="flex-1 text-xs text-blue-700 font-semibold bg-blue-50 py-2 rounded-lg compact-btn flex items-center justify-center gap-1">
@@ -386,8 +419,26 @@ async function rSaveRecipe(editId) {
         }});
         closeSheet();
         showToast('Recipe saved!');
-        rExpandedId = null;
-        rLoadRecipes();
+        if (editId) {
+            // Edit: update local array + re-render in place (no scroll jump)
+            const idx = rRecipes.findIndex(r => r.id == editId);
+            if (idx >= 0) {
+                rRecipes[idx] = { ...rRecipes[idx],
+                    name: document.getElementById('rFormName')?.value?.trim() || rRecipes[idx].name,
+                    category: document.getElementById('rFormCategory')?.value || rRecipes[idx].category,
+                    difficulty: document.getElementById('rFormDifficulty')?.value || rRecipes[idx].difficulty,
+                    cuisine: document.getElementById('rFormCuisine')?.value || rRecipes[idx].cuisine,
+                    servings: parseInt(document.getElementById('rFormServings')?.value) || rRecipes[idx].servings,
+                };
+            }
+            rRenderList();
+            rLoadDetail(editId);
+        } else {
+            // New recipe: need to fetch with real ID, save scroll position
+            const savedY = window.scrollY;
+            await rLoadRecipes();
+            requestAnimationFrame(() => window.scrollTo(0, savedY));
+        }
     } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -420,6 +471,43 @@ async function rTogglePacked(id) {
     } catch (err) {
         if (btn) btn.disabled = false;
         showToast(err.message, 'error');
+    }
+}
+
+async function rToggleDefault(id) {
+    const btn = document.getElementById(`rDefaultToggle_${id}`);
+    if (btn) btn.disabled = true;
+    try {
+        const data = await api('api/recipes.php', { method: 'POST', body: { action: 'toggle_default', id } });
+        const isDefault = data.is_default === 1;
+        if (btn) {
+            btn.disabled = false;
+            btn.className = `relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${isDefault ? 'bg-indigo-500' : 'bg-gray-200'}`;
+            btn.querySelector('span').className = `inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${isDefault ? 'translate-x-6' : 'translate-x-1'}`;
+        }
+        const rec = rRecipes.find(r => r.id == id);
+        if (rec) rec.is_default = data.is_default;
+        showToast(isDefault ? '⭐ Set as default recipe' : 'Removed from defaults');
+    } catch (err) {
+        if (btn) btn.disabled = false;
+        showToast(err.message, 'error');
+    }
+}
+
+async function rApplyDefaults() {
+    const btn = document.getElementById('rApplyDefaultsBtn');
+    if (btn) setLoading(btn, true, 'Applying...');
+    try {
+        const data = await api('api/recipes.php', { method: 'POST', body: { action: 'apply_defaults' } });
+        const msg = data.added > 0
+            ? `✅ ${data.added} default recipe${data.added !== 1 ? 's' : ''} added${data.skipped > 0 ? ` (${data.skipped} already existed)` : ''}!`
+            : `All ${data.skipped} default recipes already in your list`;
+        showToast(msg, data.added > 0 ? 'success' : 'info');
+        if (data.added > 0) rLoadRecipes();
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        if (btn) setLoading(btn, false);
     }
 }
 

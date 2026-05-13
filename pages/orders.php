@@ -311,6 +311,43 @@ async function ordLoad() {
     }
 }
 
+async function ordRefreshCard(reqId) {
+    const req = ordRequisitions.find(r => r.id == reqId);
+    if (!req) { ordLoad(); return; }
+    try {
+        const [linesData, dishData] = await Promise.all([
+            api(`api/requisitions.php?action=get&id=${reqId}`),
+            api(`api/requisitions.php?action=get_dishes_with_ingredients&requisition_id=${reqId}`)
+        ]);
+        ordLinesByReq[reqId] = linesData.lines || [];
+        const dishes = dishData.dishes || [];
+        const ingsByRecipe = dishData.ingredients_by_recipe || {};
+        const breakdown = {};
+        const seenRecipes = new Set();
+        for (const dish of dishes) {
+            if (dish.is_packed) continue;
+            if (seenRecipes.has(dish.recipe_id)) continue;
+            seenRecipes.add(dish.recipe_id);
+            const ings = ingsByRecipe[dish.recipe_id] || [];
+            const guestCount = parseInt(dish.guest_count) || 20;
+            const servings = parseInt(dish.recipe_servings) || 4;
+            const scale = guestCount / servings;
+            for (const ing of ings) {
+                if (!breakdown[ing.item_id]) breakdown[ing.item_id] = [];
+                breakdown[ing.item_id].push({ dish_name: dish.recipe_name, qty: parseFloat(ing.qty) * scale, uom: ing.uom || 'kg' });
+            }
+        }
+        ordDishBreakdown[reqId] = breakdown;
+        ordPackedDishes[reqId]  = (dishData.packed_dishes || []).map(d => d.recipe_name);
+        const cardEl = document.getElementById(`ord-card-${reqId}`);
+        if (cardEl) {
+            cardEl.outerHTML = ordRenderCard(req);
+        } else {
+            ordRender();
+        }
+    } catch(err) { showToast(err.message, 'error'); }
+}
+
 function ordRender() {
     const list = document.getElementById('ordList');
 
@@ -841,7 +878,7 @@ async function ordSaveLine(lineId, reqId) {
         ordAdjustments[lineId] = qty;
         ordCloseItemDetail();
         showToast('Item updated');
-        ordLoad();
+        ordRefreshCard(reqId);
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -856,7 +893,7 @@ async function ordRemoveLine(lineId, reqId) {
         });
         ordCloseItemDetail();
         showToast('Item removed');
-        ordLoad();
+        ordRefreshCard(reqId);
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -956,7 +993,7 @@ async function ordPickPackedDish(reqId, dishName) {
             method: 'POST', body: { requisition_id: reqId, dish_name: dishName }
         });
         showToast(`"${dishName}" added`, 'success');
-        ordLoad();
+        ordRefreshCard(reqId);
     } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -969,7 +1006,7 @@ async function ordConfirmAddPackedDish(reqId) {
             method: 'POST', body: { requisition_id: reqId, dish_name: name }
         });
         showToast(`"${name}" added`, 'success');
-        ordLoad();
+        ordRefreshCard(reqId);
     } catch (err) { showToast(err.message, 'error'); }
 }
 
@@ -980,7 +1017,7 @@ async function ordRemovePackedDish(reqId, dishName) {
             body: { requisition_id: reqId, dish_name: dishName }
         });
         showToast('Dish removed', 'success');
-        ordLoad();
+        ordRefreshCard(reqId);
     } catch (err) {
         showToast(err.message, 'error');
     }
@@ -1165,7 +1202,7 @@ async function ordConfirmAddItem(itemId, itemName) {
         });
         showToast(`${itemName} added!`, 'success');
         ordCloseItemDetail();
-        ordLoad();
+        ordRefreshCard(ordAddTargetReqId);
     } catch (err) {
         showToast(err.message, 'error');
         if (btn) { btn.disabled = false; btn.textContent = 'Add'; }
