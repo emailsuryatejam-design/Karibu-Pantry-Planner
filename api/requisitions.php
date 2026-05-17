@@ -7,6 +7,7 @@
 require_once __DIR__ . '/../auth.php';
 require_once __DIR__ . '/../lib/push-sender.php';
 require_once __DIR__ . '/../mailer.php';
+require_once __DIR__ . '/../pdf.php';
 
 $user = requireAuth();
 $action = $_GET['action'] ?? 'list';
@@ -585,7 +586,7 @@ switch ($action) {
             error_log('Notification error on submit: ' . $e->getMessage());
         }
 
-        // ── Email alert: notify storekeepers in this kitchen + all admins ──
+        // ── Email alert with PDF attachment ──
         try {
             if (!isset($kitchenName)) {
                 $kStmt = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
@@ -601,6 +602,18 @@ switch ($action) {
             $reqDate    = date('D, d M Y', strtotime($req['req_date']));
             $guestCount = (int)($req['guest_count'] ?? 0);
             $appUrl     = APP_URL;
+
+            // Fetch lines for PDF
+            $lineStmt = $db->prepare("SELECT rl.order_qty, rl.uom, i.name AS item_name FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? ORDER BY i.name");
+            $lineStmt->execute([$reqId]);
+            $pdfLines = $lineStmt->fetchAll();
+
+            // Build submitter name
+            $req['submitter_name'] = $user['name'] ?? 'Chef';
+
+            // Generate PDF
+            $pdfBytes    = generateOrderPDF($req, $kitchenName, $mealLabel, $pdfLines);
+            $pdfFilename = 'Order-' . preg_replace('/[^a-z0-9]/i', '-', $kitchenName) . '-' . str_replace(' ', '-', $mealLabel) . '-' . date('Y-m-d', strtotime($req['req_date'])) . '.pdf';
 
             $emailSubject = "New Order: {$mealLabel} — {$kitchenName} ({$reqDate})";
             $emailBody = "
@@ -627,16 +640,11 @@ switch ($action) {
                   <td style='padding:8px 12px;border:1px solid #e5e7eb'>{$user['name']}</td>
                 </tr>
               </table>
-              <p style='color:#6b7280;font-size:13px'>Please log in to review and fulfill the order.</p>";
+              <p style='color:#6b7280;font-size:13px'>The order sheet PDF is attached. Please log in to review and fulfill.</p>";
 
-            $html = mailTemplate(
-                "New Requisition Submitted",
-                $emailBody,
-                "View Store Dashboard",
-                "{$appUrl}/app.php?page=store-dashboard"
-            );
-            notifyStorekeepers((int)$req['kitchen_id'], $emailSubject, $html);
-            notifyAdmins($emailSubject, $html);
+            $html = mailTemplate("New Requisition Submitted", $emailBody, "View Store Dashboard", "{$appUrl}/app.php?page=store-dashboard");
+            notifyStorekeepersWithPDF((int)$req['kitchen_id'], $emailSubject, $html, $pdfBytes, $pdfFilename);
+            notifyAdminsWithPDF($emailSubject, $html, $pdfBytes, $pdfFilename);
         } catch (Exception $e) {
             error_log('[Karibu Email] submit alert failed: ' . $e->getMessage());
         }

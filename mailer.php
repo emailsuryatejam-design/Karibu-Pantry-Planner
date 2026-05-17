@@ -170,3 +170,64 @@ function notifyUser(int $userId, string $subject, string $html): void {
         if ($r) sendMail(trim($r['email']), $subject, $html);
     } catch (Exception $e) { error_log('[Karibu Mailer] notifyUser: ' . $e->getMessage()); }
 }
+
+/**
+ * Send email with an optional PDF attachment.
+ * Falls back to sendMail() if no PDF or PHPMailer not available.
+ */
+function sendMailWithPDF(string $to, string $subject, string $html, ?string $pdfBytes, string $pdfFilename = 'order.pdf'): bool {
+    if (!$pdfBytes || !class_exists('PHPMailer\PHPMailer\PHPMailer')) {
+        return sendMail($to, $subject, $html);
+    }
+    if (!filter_var($to, FILTER_VALIDATE_EMAIL)) return false;
+    try {
+        $mail = new PHPMailer(true);
+        $mail->isSMTP();
+        $mail->Host        = MAIL_SMTP_HOST;
+        $mail->SMTPAuth    = true;
+        $mail->Username    = MAIL_SMTP_USER;
+        $mail->Password    = MAIL_SMTP_PASS;
+        $mail->SMTPSecure  = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port        = MAIL_SMTP_PORT;
+        $mail->CharSet     = 'UTF-8';
+        $mail->SMTPOptions = ['ssl' => ['verify_peer' => false, 'verify_peer_name' => false]];
+
+        $mail->setFrom(MAIL_FROM, MAIL_FROM_NAME);
+        $mail->addAddress($to);
+        $mail->isHTML(true);
+        $mail->Subject = $subject;
+        $mail->Body    = $html;
+        $mail->AltBody = strip_tags(preg_replace('/<br\s*\/?>/i', "\n", $html));
+
+        $mail->addStringAttachment($pdfBytes, $pdfFilename, PHPMailer::ENCODING_BASE64, 'application/pdf');
+
+        $mail->send();
+        return true;
+    } catch (PHPMailerException $e) {
+        error_log('[Karibu Mailer] PDF mail error to ' . $to . ': ' . $e->getMessage());
+        return false;
+    }
+}
+
+function notifyStorekeepersWithPDF(int $kitchenId, string $subject, string $html, ?string $pdfBytes, string $pdfFilename): void {
+    try {
+        $db = getDB();
+        // Users in this kitchen
+        $st = $db->prepare("SELECT email FROM users WHERE is_active=1 AND kitchen_id=? AND role='storekeeper' AND email IS NOT NULL AND TRIM(email)!=''");
+        $st->execute([$kitchenId]);
+        foreach ($st->fetchAll() as $r) sendMailWithPDF(trim($r['email']), $subject, $html, $pdfBytes, $pdfFilename);
+
+        // External notification emails for this kitchen (submit / both)
+        $ne = $db->prepare("SELECT email FROM notification_emails WHERE is_active=1 AND notify_on IN ('submit','both') AND (kitchen_id IS NULL OR kitchen_id=?)");
+        $ne->execute([$kitchenId]);
+        foreach ($ne->fetchAll() as $r) sendMailWithPDF(trim($r['email']), $subject, $html, $pdfBytes, $pdfFilename);
+    } catch (Exception $e) { error_log('[Karibu Mailer] notifyStorekeepersWithPDF: ' . $e->getMessage()); }
+}
+
+function notifyAdminsWithPDF(string $subject, string $html, ?string $pdfBytes, string $pdfFilename): void {
+    try {
+        $db = getDB();
+        $rows = $db->query("SELECT email FROM users WHERE is_active=1 AND role='admin' AND email IS NOT NULL AND TRIM(email)!=''")->fetchAll();
+        foreach ($rows as $r) sendMailWithPDF(trim($r['email']), $subject, $html, $pdfBytes, $pdfFilename);
+    } catch (Exception $e) { error_log('[Karibu Mailer] notifyAdminsWithPDF: ' . $e->getMessage()); }
+}

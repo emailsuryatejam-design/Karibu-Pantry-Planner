@@ -19,7 +19,7 @@ $page = $_GET['page'] ?? $defaultPage;
 // Valid pages per role
 $chefPages = ['dashboard', 'orders', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'recipes', 'kitchen-inventory', 'reports', 'settings'];
 $storePages = ['store-dashboard', 'store-orders', 'store-inventory', 'store-history', 'reports', 'settings'];
-$adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus']));
+$adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus', 'admin-emails']));
 
 $allowedPages = isAdmin() ? $adminPages : (isChef() ? $chefPages : $storePages);
 if (!in_array($page, $allowedPages)) {
@@ -46,6 +46,7 @@ $pageTitles = [
     'admin-kitchens' => 'Kitchens',
     'admin-req-types' => 'Req Types',
     'admin-set-menus' => 'Set Menus',
+    'admin-emails' => 'Emails',
     'settings' => 'Settings',
 ];
 $pageTitle = $pageTitles[$page] ?? 'Pantry Planner';
@@ -188,7 +189,7 @@ $isAdminRole = isAdmin();
                 </a>
                 <!-- Admin: Admin menu -->
                 <a href="#" onclick="showAdminMenu();return false"
-                   class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= in_array($page, ['admin-items','admin-kitchens','admin-req-types','admin-set-menus']) ? 'text-orange-600' : 'text-gray-400' ?>">
+                   class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= in_array($page, ['admin-items','admin-kitchens','admin-req-types','admin-set-menus','admin-emails']) ? 'text-orange-600' : 'text-gray-400' ?>">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
                     <span class="text-[9px] font-medium">Admin</span>
                 </a>
@@ -285,6 +286,15 @@ $isAdminRole = isAdmin();
                     </div>
                     <div><div class="text-sm font-semibold text-gray-800">Weekly Set Menu</div><div class="text-[10px] text-gray-400">Rotational dishes for each day</div></div>
                 </a>
+                <a href="app.php?page=admin-emails" class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-orange-50 transition">
+                    <div class="w-9 h-9 bg-orange-100 rounded-lg flex items-center justify-center">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-orange-600"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+                    </div>
+                    <div>
+                        <p class="text-sm font-semibold text-gray-800">Email Notifications</p>
+                        <p class="text-xs text-gray-400">Manage alert recipients</p>
+                    </div>
+                </a>
                 <a href="app.php?page=settings" class="flex items-center gap-3 p-3 bg-gray-50 rounded-xl hover:bg-orange-50 transition">
                     <div class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
@@ -307,7 +317,7 @@ $isAdminRole = isAdmin();
         'dashboard': 'Dashboard', 'requisition': 'Order', 'recipes': 'Recipes', 'kitchen-inventory': 'Kitchen Stock',
         'store-dashboard': 'Store', 'store-orders': 'Orders', 'store-inventory': 'Inventory', 'store-history': 'History',
         'settings': 'Settings', 'admin-items': 'Items', 'admin-kitchens': 'Kitchens', 'admin-req-types': 'Req Types',
-        'admin-set-menus': 'Set Menus', 'review-supply': 'Supply', 'day-close': 'Close', 'reports': 'Reports',
+        'admin-set-menus': 'Set Menus', 'admin-emails': 'Emails', 'review-supply': 'Supply', 'day-close': 'Close', 'reports': 'Reports',
         'menu-plan': 'Plan'
     };
 
