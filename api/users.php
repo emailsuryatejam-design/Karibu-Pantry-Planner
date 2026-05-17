@@ -153,6 +153,17 @@ switch ($action) {
         jsonResponse(['updated' => true]);
         break;
 
+    // ── Toggle active ──
+    case 'toggle_active':
+        requireMethod('POST');
+        $id = (int)($input['id'] ?? 0);
+        if (!$id) jsonError('User ID required');
+        $db->prepare('UPDATE users SET is_active = NOT is_active WHERE id = ?')->execute([$id]);
+        $row = $db->prepare('SELECT is_active FROM users WHERE id = ?');
+        $row->execute([$id]);
+        jsonResponse(['is_active' => (int)$row->fetchColumn()]);
+        break;
+
     // ── Delete user ──
     case 'delete':
         requireMethod('POST');

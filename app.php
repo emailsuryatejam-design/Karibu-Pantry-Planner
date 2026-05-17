@@ -19,7 +19,7 @@ $page = $_GET['page'] ?? $defaultPage;
 // Valid pages per role
 $chefPages = ['dashboard', 'orders', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'recipes', 'kitchen-inventory', 'reports', 'settings'];
 $storePages = ['store-dashboard', 'store-orders', 'store-inventory', 'store-history', 'reports', 'settings'];
-$adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus', 'admin-emails']));
+$adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-home', 'admin-users', 'admin-camps', 'admin-meal-types', 'admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus', 'admin-emails']));
 
 $allowedPages = isAdmin() ? $adminPages : (isChef() ? $chefPages : $storePages);
 if (!in_array($page, $allowedPages)) {
@@ -42,6 +42,10 @@ $pageTitles = [
     'store-orders' => 'Store Orders',
     'store-inventory' => 'Inventory',
     'store-history' => 'History',
+    'admin-home' => 'Overview',
+    'admin-users' => 'Users',
+    'admin-camps' => 'Camps',
+    'admin-meal-types' => 'Meal Types',
     'admin-items' => 'Items',
     'admin-kitchens' => 'Kitchens',
     'admin-req-types' => 'Req Types',
@@ -105,6 +109,29 @@ $isAdminRole = isAdmin();
 
     <!-- Content -->
     <main class="pb-20 max-w-2xl lg:max-w-5xl mx-auto px-4 py-4 page-enter">
+        <?php if ($isAdminRole && in_array($page, ['admin-home','admin-users','admin-camps','admin-items','admin-meal-types','admin-emails'])): ?>
+        <div class="flex gap-1.5 overflow-x-auto pb-1 mb-4 -mx-1 px-1 scrollbar-hide">
+            <?php
+            $adminTabs = [
+                'admin-home'       => ['icon' => '📊', 'label' => 'Overview'],
+                'admin-users'      => ['icon' => '👥', 'label' => 'Users'],
+                'admin-camps'      => ['icon' => '🏕️', 'label' => 'Camps'],
+                'admin-items'      => ['icon' => '📦', 'label' => 'Items'],
+                'admin-meal-types' => ['icon' => '🍽️', 'label' => 'Meal Types'],
+                'admin-emails'     => ['icon' => '📧', 'label' => 'Emails'],
+            ];
+            foreach ($adminTabs as $tabPage => $tab):
+                $isActive = $page === $tabPage;
+            ?>
+            <a href="app.php?page=<?= $tabPage ?>"
+                class="shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition whitespace-nowrap
+                    <?= $isActive ? 'bg-slate-800 text-white shadow-sm' : 'bg-white text-gray-500 border border-gray-200 hover:bg-gray-50' ?>">
+                <span><?= $tab['icon'] ?></span>
+                <span><?= $tab['label'] ?></span>
+            </a>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
         <?php
         $pageFile = __DIR__ . '/pages/' . $page . '.php';
         if (file_exists($pageFile)) {
@@ -188,8 +215,8 @@ $isAdminRole = isAdmin();
                     <span class="text-[9px] font-medium">Store</span>
                 </a>
                 <!-- Admin: Admin menu -->
-                <a href="#" onclick="showAdminMenu();return false"
-                   class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= in_array($page, ['admin-items','admin-kitchens','admin-req-types','admin-set-menus','admin-emails']) ? 'text-orange-600' : 'text-gray-400' ?>">
+                <a href="app.php?page=admin-home"
+                   class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= in_array($page, ['admin-home','admin-users','admin-camps','admin-items','admin-meal-types','admin-kitchens','admin-req-types','admin-set-menus','admin-emails']) ? 'text-orange-600' : 'text-gray-400' ?>">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
                     <span class="text-[9px] font-medium">Admin</span>
                 </a>
@@ -316,7 +343,8 @@ $isAdminRole = isAdmin();
     const pageNames = {
         'dashboard': 'Dashboard', 'requisition': 'Order', 'recipes': 'Recipes', 'kitchen-inventory': 'Kitchen Stock',
         'store-dashboard': 'Store', 'store-orders': 'Orders', 'store-inventory': 'Inventory', 'store-history': 'History',
-        'settings': 'Settings', 'admin-items': 'Items', 'admin-kitchens': 'Kitchens', 'admin-req-types': 'Req Types',
+        'settings': 'Settings', 'admin-home': 'Overview', 'admin-users': 'Users', 'admin-camps': 'Camps',
+        'admin-meal-types': 'Meal Types', 'admin-items': 'Items', 'admin-kitchens': 'Kitchens', 'admin-req-types': 'Req Types',
         'admin-set-menus': 'Set Menus', 'admin-emails': 'Emails', 'review-supply': 'Supply', 'day-close': 'Close', 'reports': 'Reports',
         'menu-plan': 'Plan'
     };
