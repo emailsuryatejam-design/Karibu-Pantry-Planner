@@ -13,7 +13,6 @@ if (isLoggedIn()) {
 }
 
 $error = '';
-$showAdminLogin = false;
 
 // Kitchen-specific login: ?kitchen=SWC or /SWC/
 $kitchenCode = strtoupper(trim($_GET['kitchen'] ?? ''));
@@ -42,56 +41,8 @@ if ($kitchenCode) {
 // Handle login
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
-    // ── Admin / Manager: email + password login ──
-    if (!empty($_POST['login_method']) && $_POST['login_method'] === 'email') {
-        $emailInput    = trim($_POST['email_addr'] ?? '');
-        $passwordInput = trim($_POST['password']   ?? '');
-
-        if ($emailInput && $passwordInput) {
-            checkLoginRateLimit($emailInput);
-            $db = getDB();
-            $stmt = $db->prepare('SELECT * FROM users WHERE email = ? AND is_active = 1');
-            $stmt->execute([$emailInput]);
-            $user = $stmt->fetch();
-
-            $valid = $user && !empty($user['password_hash'])
-                  && password_verify($passwordInput, $user['password_hash']);
-
-            if ($valid) {
-                clearLoginAttempts($emailInput);
-                session_regenerate_id(true);
-                $kitchenName = '';
-                $userKitchenCode = null;
-                if ($user['kitchen_id']) {
-                    $kStmt = $db->prepare('SELECT name, code FROM kitchens WHERE id = ?');
-                    $kStmt->execute([$user['kitchen_id']]);
-                    $kitchen = $kStmt->fetch();
-                    if ($kitchen) { $kitchenName = $kitchen['name']; $userKitchenCode = $kitchen['code']; }
-                }
-                $_SESSION['user'] = [
-                    'id'           => $user['id'],
-                    'name'         => $user['name'],
-                    'username'     => $user['username'],
-                    'role'         => $user['role'],
-                    'camp_id'      => $user['camp_id'] ?? null,
-                    'camp_name'    => $user['camp_name'] ?? null,
-                    'kitchen_id'   => $user['kitchen_id'],
-                    'kitchen_name' => $kitchenName,
-                    'kitchen_code' => $userKitchenCode,
-                ];
-                header('Location: /app.php');
-                exit;
-            } else {
-                recordLoginAttempt($emailInput);
-                $error = 'Invalid email or password';
-                $showAdminLogin = true;
-            }
-        } else {
-            $error = 'Please enter email and password';
-            $showAdminLogin = true;
-        }
-    } else {
     // ── Kitchen staff: camp → name → PIN ──
+    {
     $username = trim($_POST['username'] ?? '');
     $pin = trim($_POST['pin'] ?? '');
 
@@ -157,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } else {
         $error = 'Please enter username and PIN';
     }
-    } // end else (kitchen staff)
+    }
 }
 
 // Users are loaded via AJAX after camp selection — no longer exposed in page source
@@ -279,51 +230,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             Install App
         </button>
 
-        <!-- Admin / Manager Email Login -->
-        <div class="mt-6">
-            <button onclick="toggleAdminLogin()" id="adminToggleBtn"
-                class="w-full text-xs text-gray-400 hover:text-orange-500 transition py-1 flex items-center justify-center gap-1">
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 1 0 4.93 19.07"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.22 4.22 1.42 1.42"/><path d="m18.36 18.36 1.42 1.42"/></svg>
+        <!-- Admin link -->
+        <div class="mt-5 text-center">
+            <a href="/admin-login.php"
+                class="text-xs text-gray-400 hover:text-orange-500 transition inline-flex items-center gap-1">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
                 Admin / Manager Login
-            </button>
-
-            <div id="adminLoginPanel" class="<?= $showAdminLogin ? '' : 'hidden' ?> mt-3 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                <form method="POST" id="adminLoginForm" class="px-5 py-5 space-y-4">
-                    <input type="hidden" name="login_method" value="email">
-                    <div>
-                        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">Email</label>
-                        <input type="email" name="email_addr" required autocomplete="email"
-                            value="<?= htmlspecialchars($_POST['email_addr'] ?? '') ?>"
-                            placeholder="your@email.com"
-                            class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
-                    </div>
-                    <div>
-                        <label class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1 block">Password</label>
-                        <div class="relative">
-                            <input type="password" name="password" id="adminPassword" required autocomplete="current-password"
-                                placeholder="••••••••"
-                                class="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 pr-10 text-sm text-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-400">
-                            <button type="button" onclick="togglePwdVis()" tabindex="-1"
-                                class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
-                                <svg id="eyeIcon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>
-                            </button>
-                        </div>
-                    </div>
-                    <?php if ($showAdminLogin && $error): ?>
-                        <div class="bg-red-50 border border-red-200 rounded-xl px-4 py-2 text-sm text-red-700 flex items-center gap-2">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
-                            <?= htmlspecialchars($error) ?>
-                        </div>
-                    <?php endif; ?>
-                    <button type="submit"
-                        class="w-full bg-orange-500 hover:bg-orange-600 active:bg-orange-700 text-white py-3 rounded-xl text-sm font-semibold transition shadow-sm">
-                        Sign In as Admin
-                    </button>
-                </form>
-            </div>
+            </a>
         </div>
 
-        <p class="text-center text-xs text-gray-400 mt-4">Karibu Camps &mdash; Pantry Planner</p>
+        <p class="text-center text-xs text-gray-400 mt-3">Karibu Camps &mdash; Pantry Planner</p>
     </div>
 
     <script>
@@ -426,37 +342,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             updateDots();
         }
 
-        // ── Admin Login Panel ──────────────────────────────────────────
-        function toggleAdminLogin() {
-            const panel  = document.getElementById('adminLoginPanel');
-            const btn    = document.getElementById('adminToggleBtn');
-            const hidden = panel.classList.toggle('hidden');
-            btn.classList.toggle('text-orange-500', !hidden);
-            btn.classList.toggle('text-gray-400',    hidden);
-            if (!hidden) {
-                const emailField = panel.querySelector('input[name="email_addr"]');
-                if (emailField) emailField.focus();
-            }
-        }
 
-        function togglePwdVis() {
-            const inp  = document.getElementById('adminPassword');
-            const icon = document.getElementById('eyeIcon');
-            if (inp.type === 'password') {
-                inp.type = 'text';
-                icon.innerHTML = '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>';
-            } else {
-                inp.type = 'password';
-                icon.innerHTML = '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>';
-            }
-        }
-
-        <?php if ($showAdminLogin): ?>
-        // Auto-open admin panel on error
-        document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('adminLoginPanel').classList.remove('hidden');
-        });
-        <?php endif; ?>
     </script>
 </body>
 </html>
