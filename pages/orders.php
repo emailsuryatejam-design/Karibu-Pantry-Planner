@@ -830,14 +830,14 @@ function ordShowEditLine(lineId, reqId) {
 
     const qty = ordAdjustments[lineId] !== undefined ? ordAdjustments[lineId] : (parseFloat(line.order_qty) || 0);
     const uom = line.uom || 'kg';
-    const uomOptions = ORD_UOM_OPTIONS.map(u => `<option value="${u}" ${u === uom ? 'selected' : ''}>${u}</option>`).join('');
 
     document.getElementById('ordItemDetailContent').innerHTML = `
         <h3 class="text-base font-bold text-gray-900 mb-1">${escHtml(line.item_name)}</h3>
-        <p class="text-xs text-gray-400 mb-4">Edit quantity, UOM, or remove</p>
+        <p class="text-xs text-gray-400 mb-4">Edit quantity or remove</p>
         <div class="space-y-4">
             <div>
-                <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1 block">Quantity</label>
+                <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1 block">Quantity <span class="normal-case font-normal text-gray-400 ml-1">(${escHtml(uom)})</span></label>
+                <input type="hidden" id="ordEditUom" value="${escHtml(uom)}">
                 <div class="flex items-center gap-2">
                     <button onclick="document.getElementById('ordEditQty').value = Math.max(0, parseFloat(document.getElementById('ordEditQty').value||0) - 1)"
                         class="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 font-bold text-lg flex items-center justify-center active:bg-gray-200">-</button>
@@ -846,10 +846,6 @@ function ordShowEditLine(lineId, reqId) {
                     <button onclick="document.getElementById('ordEditQty').value = parseFloat(document.getElementById('ordEditQty').value||0) + 1"
                         class="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 font-bold text-lg flex items-center justify-center active:bg-gray-200">+</button>
                 </div>
-            </div>
-            <div>
-                <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1 block">Unit of Measure</label>
-                <select id="ordEditUom" class="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 bg-white">${uomOptions}</select>
             </div>
             <div class="flex gap-3 pt-1">
                 <button onclick="ordRemoveLine(${lineId}, ${reqId})"

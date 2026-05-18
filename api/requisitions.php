@@ -1370,7 +1370,7 @@ switch ($action) {
                 $iStmt = $db->prepare('SELECT name, uom FROM items WHERE id = ?');
                 $iStmt->execute([$itemId]);
                 $iRow = $iStmt->fetch();
-                if ($iRow) { $itemName = $iRow['name']; if (!$uom || $uom === 'kg') $uom = $iRow['uom']; }
+                if ($iRow) { $itemName = $iRow['name']; if (!$uom) $uom = $iRow['uom']; }
             }
 
             $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft','processing','submitted')");
@@ -1396,23 +1396,31 @@ switch ($action) {
         }
         break;
 
-    // ── Update a single line item (qty/uom) ──
+    // ── Update a single line item (qty only — UOM is immutable once set) ──
     case 'update_line':
         requireMethod('POST');
         requireRole(['chef', 'admin']);
         $data = getJsonInput();
         $lineId = (int)($data['line_id'] ?? 0);
         $orderQty = isset($data['order_qty']) ? (float)$data['order_qty'] : -1;
-        $uom = trim($data['uom'] ?? '');
         if (!$lineId) jsonError('Line ID required');
+        if ($orderQty < 0) jsonError('Nothing to update');
 
-        $sets = []; $params = [];
-        if ($orderQty >= 0) { $sets[] = 'order_qty = ?'; $params[] = $orderQty; }
-        if ($uom) { $sets[] = 'uom = ?'; $params[] = $uom; }
-        if (empty($sets)) jsonError('Nothing to update');
+        // Verify the line's requisition is still editable (draft or processing only)
+        $lineCheck = $db->prepare(
+            "SELECT rl.id, r.status FROM requisition_lines rl
+             JOIN requisitions r ON r.id = rl.requisition_id
+             WHERE rl.id = ?"
+        );
+        $lineCheck->execute([$lineId]);
+        $lineRow = $lineCheck->fetch();
+        if (!$lineRow) jsonError('Line not found');
+        if (!in_array($lineRow['status'], ['draft', 'processing'])) {
+            jsonError('Cannot edit lines on a ' . $lineRow['status'] . ' order');
+        }
 
-        $params[] = $lineId;
-        $db->prepare("UPDATE requisition_lines SET " . implode(', ', $sets) . " WHERE id = ?")->execute($params);
+        // Only update qty — UOM is snapshotted at creation and never changed
+        $db->prepare("UPDATE requisition_lines SET order_qty = ? WHERE id = ?")->execute([$orderQty, $lineId]);
         jsonResponse(['updated' => true]);
         break;
 
