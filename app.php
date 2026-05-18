@@ -185,18 +185,23 @@ body.admin-portal {
     position: relative;
 }
 .admin-dropdown {
-    position: absolute; top: calc(100% + 6px); left: 0;
+    position: absolute; top: 100%; left: 0;
+    padding-top: 8px;          /* visual gap via padding — keeps hover area solid */
+    background: transparent;   /* outer wrapper is transparent */
+    min-width: 210px;
+    opacity: 0; visibility: hidden;
+    transform: translateY(-6px) scale(0.98);
+    transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s;
+    z-index: 300;
+    pointer-events: none;
+}
+/* Inner card carries the visual styling */
+.admin-dropdown-inner {
     background: #fff;
     border: 1px solid #e2e8f0;
     border-radius: 12px;
     box-shadow: 0 20px 60px rgba(0,0,0,0.18), 0 4px 12px rgba(0,0,0,0.08);
-    min-width: 210px;
     padding: 6px;
-    opacity: 0; visibility: hidden;
-    transform: translateY(-8px) scale(0.98);
-    transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s;
-    z-index: 300;
-    pointer-events: none;
 }
 .admin-nav-group:hover .admin-dropdown,
 .admin-nav-group.open .admin-dropdown {
@@ -364,6 +369,7 @@ body.admin-portal {
                         <svg class="admin-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
                     </button>
                     <div class="admin-dropdown" role="menu">
+                      <div class="admin-dropdown-inner">
                         <a href="app.php?page=admin-orders" class="<?= $page === 'admin-orders' ? 'active' : '' ?>" role="menuitem">
                             <span class="dd-icon">📋</span>
                             <div><div style="font-weight:600">All Orders</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Cross-kitchen order view</div></div>
@@ -372,6 +378,7 @@ body.admin-portal {
                             <span class="dd-icon">📈</span>
                             <div><div style="font-weight:600">Reports & Analytics</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Usage, waste, summaries</div></div>
                         </a>
+                      </div>
                     </div>
                 </div>
 
@@ -384,6 +391,7 @@ body.admin-portal {
                         <svg class="admin-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
                     </button>
                     <div class="admin-dropdown" role="menu">
+                      <div class="admin-dropdown-inner">
                         <a href="app.php?page=admin-recipes" class="<?= $page === 'admin-recipes' ? 'active' : '' ?>" role="menuitem">
                             <span class="dd-icon">📖</span>
                             <div><div style="font-weight:600">Recipe Library</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">All chefs · manage defaults</div></div>
@@ -392,6 +400,7 @@ body.admin-portal {
                             <span class="dd-icon">🏪</span>
                             <div><div style="font-weight:600">Stock Control</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Live inventory · inline edit</div></div>
                         </a>
+                      </div>
                     </div>
                 </div>
 
@@ -404,6 +413,7 @@ body.admin-portal {
                         <svg class="admin-chevron" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
                     </button>
                     <div class="admin-dropdown" role="menu">
+                      <div class="admin-dropdown-inner">
                         <div class="admin-dd-label">People</div>
                         <a href="app.php?page=admin-users" class="<?= $page === 'admin-users' ? 'active' : '' ?>" role="menuitem">
                             <span class="dd-icon">👥</span>
@@ -429,6 +439,7 @@ body.admin-portal {
                             <span class="dd-icon">📧</span>
                             <div><div style="font-weight:600">Email Alerts</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">External notification recipients</div></div>
                         </a>
+                      </div>
                     </div>
                 </div>
 
