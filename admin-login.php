@@ -84,7 +84,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <img src="/assets/karibu-logo.png" alt="Karibu Camps &amp; Lodges"
                  style="height:90px;width:auto;mix-blend-mode:screen;filter:brightness(1.15);"
                  class="mx-auto mb-3">
-            <p class="text-sm text-slate-400">Pantry Planner — Admin Portal</p>
+            <p class="text-sm text-slate-400">Admin Portal</p>
         </div>
 
         <!-- Login Card -->
