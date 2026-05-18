@@ -341,7 +341,6 @@ body.admin-portal {
             <a href="app.php?page=admin-home" class="admin-logo" title="Karibu Admin Portal">
                 <img src="/assets/karibu-logo.png" alt="Karibu Camps &amp; Lodges"
                      style="height:38px;width:auto;mix-blend-mode:screen;filter:brightness(1.1);">
-                <div class="admin-logo-sub" style="color:#8b7355;font-size:9px;letter-spacing:0.08em;text-transform:uppercase;margin-top:2px;">Pantry Planner</div>
             </a>
 
             <!-- ── Navigation ── -->
