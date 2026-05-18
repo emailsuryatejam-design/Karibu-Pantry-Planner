@@ -42,6 +42,10 @@ define('DB_PASS', $_ENV['DB_PASS'] ?? '');
 
 function getDB() {
     static $pdo = null;
+    // Re-check connection health on each call (persistent connections go stale on shared hosting)
+    if ($pdo !== null) {
+        try { $pdo->query('SELECT 1'); } catch (PDOException $e) { $pdo = null; }
+    }
     if ($pdo === null) {
         try {
             $pdo = new PDO(
@@ -52,12 +56,14 @@ function getDB() {
                     PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
                     PDO::ATTR_DEFAULT_FETCH_MODE  => PDO::FETCH_ASSOC,
                     PDO::ATTR_EMULATE_PREPARES    => false,
-                    PDO::ATTR_PERSISTENT          => true,
+                    PDO::ATTR_PERSISTENT          => false,   // disabled — stale on shared hosting
+                    PDO::ATTR_TIMEOUT             => 10,
                 ]
             );
         } catch (PDOException $e) {
+            error_log('[Karibu DB] ' . $e->getMessage());
             http_response_code(500);
-            die(json_encode(['error' => 'Database connection failed']));
+            die(json_encode(['error' => 'Database connection failed. Please try again.']));
         }
     }
     return $pdo;
