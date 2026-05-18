@@ -26,6 +26,7 @@ if (!isAdmin()) { echo '<p class="text-center text-red-500 py-8">Admin access re
 let aeEmails   = [];
 let aeKitchens = [];
 
+let aeLoaded = false;
 (async () => {
     try {
         const [ed, kd] = await Promise.all([
@@ -34,8 +35,13 @@ let aeKitchens = [];
         ]);
         aeEmails   = ed.emails   || [];
         aeKitchens = kd.kitchens || [];
+        aeLoaded = true;
         aeRender();
-    } catch(e) { showToast('Failed to load', 'error'); }
+    } catch(e) {
+        console.error('Email load error:', e);
+        const el = document.getElementById('aeList');
+        if (el) el.innerHTML = '<div class="text-center py-10 text-red-400 text-sm">Failed to load — ' + (e.message||'unknown error') + '</div>';
+    }
 })();
 
 const notifyLabels = { submit: '📤 On Submit', fulfill: '✅ On Fulfill', both: '📧 Both' };
