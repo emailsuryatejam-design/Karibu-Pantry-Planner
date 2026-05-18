@@ -6,7 +6,7 @@ header('Pragma: no-cache');
 
 // Already logged in? Go to app
 if (isLoggedIn()) {
-    header('Location: /app.php');
+    header('Location: /app.php?page=admin-home');
     exit;
 }
 
@@ -53,7 +53,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'kitchen_name' => $kitchenName,
                 'kitchen_code' => $userKitchenCode,
             ];
-            header('Location: /app.php');
+            header('Location: /app.php?page=admin-home');
             exit;
         } else {
             recordLoginAttempt($emailInput);
@@ -134,7 +134,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <button type="submit"
-                    class="w-full bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-white py-3 rounded-xl text-sm font-semibold transition shadow-sm mt-2">
+                    style="width:100%;background:#1e293b;color:#fff;padding:12px 0;border-radius:12px;font-size:14px;font-weight:600;border:none;cursor:pointer;margin-top:8px;box-shadow:0 1px 2px rgba(0,0,0,.1);transition:background .15s;"
+                    onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#1e293b'">
                     Sign In
                 </button>
             </form>
