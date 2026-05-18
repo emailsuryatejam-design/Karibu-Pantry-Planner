@@ -323,6 +323,34 @@ switch ($action) {
         jsonResponse(['updated' => $stmt->rowCount()]);
         break;
 
+    // ── Admin: list all recipes cross-kitchen ──
+    case 'admin_list':
+        requireRole(['admin']);
+        $filterChef     = (int)($_GET['chef_id']  ?? 0);
+        $filterCategory = $_GET['category'] ?? '';
+        $filterDefault  = $_GET['is_default'] ?? '';
+
+        $sql = "SELECT r.id, r.name, r.category, r.cuisine, r.difficulty, r.servings,
+                       r.is_packed, r.is_default, r.created_at,
+                       u.id AS chef_id, u.name AS chef_name,
+                       k.name AS kitchen_name,
+                       (SELECT COUNT(*) FROM recipe_ingredients WHERE recipe_id = r.id) AS ingredient_count
+                FROM recipes r
+                LEFT JOIN users u ON u.id = r.created_by
+                LEFT JOIN kitchens k ON k.id = u.kitchen_id
+                WHERE 1=1";
+        $params = [];
+
+        if ($filterChef)     { $sql .= " AND r.created_by = ?";  $params[] = $filterChef; }
+        if ($filterCategory) { $sql .= " AND r.category = ?";    $params[] = $filterCategory; }
+        if ($filterDefault !== '') { $sql .= " AND r.is_default = ?"; $params[] = (int)$filterDefault; }
+
+        $sql .= " ORDER BY u.name, r.category, r.name";
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        jsonResponse(['recipes' => $stmt->fetchAll()]);
+        break;
+
     default:
         jsonError('Unknown action');
 }

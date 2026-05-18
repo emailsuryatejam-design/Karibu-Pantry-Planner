@@ -227,6 +227,24 @@ switch ($action) {
         }
         break;
 
+    // ── Admin/Storekeeper: update stock quantity ──
+    case 'update_stock':
+        requireMethod('POST');
+        requireRole(['admin', 'storekeeper']);
+        $data   = getJsonInput();
+        $itemId = (int)($data['item_id'] ?? 0);
+        $newQty = isset($data['stock_qty']) ? (float)$data['stock_qty'] : null;
+        if (!$itemId || $newQty === null || $newQty < 0) jsonError('Invalid item or quantity');
+
+        $old = $db->prepare("SELECT stock_qty FROM items WHERE id = ?");
+        $old->execute([$itemId]);
+        $oldRow = $old->fetch();
+        if (!$oldRow) jsonError('Item not found');
+
+        $db->prepare("UPDATE items SET stock_qty = ? WHERE id = ?")->execute([$newQty, $itemId]);
+        auditLog('item_stock_update', 'items', $itemId, ['stock_qty' => $oldRow['stock_qty']], ['stock_qty' => $newQty]);
+        jsonResponse(['updated' => true, 'stock_qty' => $newQty]);
+
     default:
         jsonError('Unknown action');
 }

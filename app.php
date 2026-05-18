@@ -19,7 +19,7 @@ $page = $_GET['page'] ?? $defaultPage;
 // Valid pages per role
 $chefPages = ['dashboard', 'orders', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'recipes', 'kitchen-inventory', 'reports', 'settings'];
 $storePages = ['store-dashboard', 'store-orders', 'store-inventory', 'store-history', 'reports', 'settings'];
-$adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-home', 'admin-users', 'admin-camps', 'admin-meal-types', 'admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus', 'admin-emails']));
+$adminPages = array_unique(array_merge($chefPages, $storePages, ['admin-home', 'admin-users', 'admin-camps', 'admin-meal-types', 'admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus', 'admin-emails', 'admin-orders', 'admin-stock', 'admin-recipes', 'admin-reports', 'admin-audit']));
 
 $allowedPages = isAdmin() ? $adminPages : (isChef() ? $chefPages : $storePages);
 if (!in_array($page, $allowedPages)) {
@@ -42,15 +42,20 @@ $pageTitles = [
     'store-orders' => 'Store Orders',
     'store-inventory' => 'Inventory',
     'store-history' => 'History',
-    'admin-home' => 'Overview',
-    'admin-users' => 'Users',
-    'admin-camps' => 'Camps',
+    'admin-home'       => 'Overview',
+    'admin-orders'     => 'All Orders',
+    'admin-recipes'    => 'Recipes',
+    'admin-stock'      => 'Stock',
+    'admin-reports'    => 'Reports',
+    'admin-users'      => 'Users',
+    'admin-camps'      => 'Camps',
     'admin-meal-types' => 'Meal Types',
-    'admin-items' => 'Items',
-    'admin-kitchens' => 'Kitchens',
-    'admin-req-types' => 'Req Types',
-    'admin-set-menus' => 'Set Menus',
-    'admin-emails' => 'Emails',
+    'admin-items'      => 'Items',
+    'admin-kitchens'   => 'Kitchens',
+    'admin-req-types'  => 'Req Types',
+    'admin-set-menus'  => 'Set Menus',
+    'admin-emails'     => 'Emails',
+    'admin-audit'      => 'Audit Log',
     'settings' => 'Settings',
 ];
 $pageTitle = $pageTitles[$page] ?? 'Pantry Planner';
@@ -109,16 +114,23 @@ $isAdminRole = isAdmin();
 
     <!-- Content -->
     <main class="pb-20 max-w-2xl lg:max-w-5xl mx-auto px-4 py-4 page-enter">
-        <?php if ($isAdminRole && in_array($page, ['admin-home','admin-users','admin-camps','admin-items','admin-meal-types','admin-emails'])): ?>
+        <?php
+        $allAdminTabPages = ['admin-home','admin-orders','admin-recipes','admin-stock','admin-reports','admin-users','admin-camps','admin-items','admin-meal-types','admin-emails','admin-audit'];
+        if ($isAdminRole && in_array($page, $allAdminTabPages)): ?>
         <div class="flex gap-1.5 overflow-x-auto pb-1 mb-4 -mx-1 px-1 scrollbar-hide">
             <?php
             $adminTabs = [
                 'admin-home'       => ['icon' => '📊', 'label' => 'Overview'],
+                'admin-orders'     => ['icon' => '📋', 'label' => 'Orders'],
+                'admin-recipes'    => ['icon' => '📖', 'label' => 'Recipes'],
+                'admin-stock'      => ['icon' => '🏪', 'label' => 'Stock'],
+                'admin-reports'    => ['icon' => '📈', 'label' => 'Reports'],
                 'admin-users'      => ['icon' => '👥', 'label' => 'Users'],
                 'admin-camps'      => ['icon' => '🏕️', 'label' => 'Camps'],
                 'admin-items'      => ['icon' => '📦', 'label' => 'Items'],
                 'admin-meal-types' => ['icon' => '🍽️', 'label' => 'Meal Types'],
                 'admin-emails'     => ['icon' => '📧', 'label' => 'Emails'],
+                'admin-audit'      => ['icon' => '🔍', 'label' => 'Audit'],
             ];
             foreach ($adminTabs as $tabPage => $tab):
                 $isActive = $page === $tabPage;

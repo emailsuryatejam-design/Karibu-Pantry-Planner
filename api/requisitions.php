@@ -1778,6 +1778,62 @@ switch ($action) {
             'ingredients_by_recipe'=> $ingredientsByRecipe ?: new \stdClass(),
         ]);
 
+    // ── Admin: list all requisitions cross-kitchen ──
+    case 'admin_list':
+        requireRole(['admin']);
+        $dateFrom  = $_GET['date_from']  ?? date('Y-m-d', strtotime('-7 days'));
+        $dateTo    = $_GET['date_to']    ?? date('Y-m-d');
+        $filterKid = (int)($_GET['kitchen_id'] ?? 0);
+        $filterSt  = $_GET['status'] ?? '';
+
+        $sql = "SELECT r.id, r.req_date, r.meals, r.session_number, r.supplement_number,
+                       r.guest_count, r.status, r.created_at, r.updated_at,
+                       k.name AS kitchen_name,
+                       u.name AS chef_name,
+                       (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
+                FROM requisitions r
+                LEFT JOIN kitchens k ON k.id = r.kitchen_id
+                LEFT JOIN users u ON u.id = r.created_by
+                WHERE r.req_date BETWEEN ? AND ?";
+        $params = [$dateFrom, $dateTo];
+
+        if ($filterKid) { $sql .= " AND r.kitchen_id = ?"; $params[] = $filterKid; }
+        if ($filterSt)  { $sql .= " AND r.status = ?";     $params[] = $filterSt; }
+
+        $sql .= " ORDER BY r.req_date DESC, r.kitchen_id, r.session_number, r.supplement_number";
+
+        $stmt = $db->prepare($sql);
+        $stmt->execute($params);
+        jsonResponse(['requisitions' => $stmt->fetchAll()]);
+
+    // ── Admin: force-close any order ──
+    case 'admin_close':
+        requireMethod('POST');
+        requireRole(['admin']);
+        $data  = getJsonInput();
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        if (!$reqId) jsonError('Requisition ID required');
+
+        // Auto-fill received_qty from fulfilled_qty if missing
+        $db->prepare("UPDATE requisition_lines SET received_qty = fulfilled_qty
+                      WHERE requisition_id = ? AND (received_qty IS NULL OR received_qty = 0)")->execute([$reqId]);
+        $db->prepare("UPDATE requisitions SET status = 'closed', updated_at = NOW() WHERE id = ?")->execute([$reqId]);
+
+        auditLog('admin_force_close', 'requisition', $reqId);
+        jsonResponse(['closed' => true]);
+
+    // ── Admin: reopen a closed/fulfilled order ──
+    case 'admin_reopen':
+        requireMethod('POST');
+        requireRole(['admin']);
+        $data  = getJsonInput();
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        if (!$reqId) jsonError('Requisition ID required');
+
+        $db->prepare("UPDATE requisitions SET status = 'submitted', updated_at = NOW() WHERE id = ?")->execute([$reqId]);
+        auditLog('admin_reopen', 'requisition', $reqId);
+        jsonResponse(['reopened' => true]);
+
     // ── Admin: reset all orders for a clean start ──
     case 'reset_all_orders':
         requireMethod('POST');
