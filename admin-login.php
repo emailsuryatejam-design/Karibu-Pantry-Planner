@@ -81,14 +81,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         <!-- Logo -->
         <div class="text-center mb-8">
-            <div class="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-white/20">
-                <svg xmlns="http://www.w3.org/2000/svg" width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <rect width="18" height="11" x="3" y="11" rx="2" ry="2"/>
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-                </svg>
-            </div>
-            <h1 class="text-xl font-bold text-white">Admin Portal</h1>
-            <p class="text-sm text-slate-400 mt-1">Karibu Pantry Planner</p>
+            <img src="/assets/karibu-logo.png" alt="Karibu Camps &amp; Lodges"
+                 style="height:90px;width:auto;mix-blend-mode:screen;filter:brightness(1.15);"
+                 class="mx-auto mb-3">
+            <p class="text-sm text-slate-400">Pantry Planner — Admin Portal</p>
         </div>
 
         <!-- Login Card -->

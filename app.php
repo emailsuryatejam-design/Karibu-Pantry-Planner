@@ -132,8 +132,9 @@ body.admin-portal {
 
 /* ── Logo ──────────────────────────────────────────────────────── */
 .admin-logo {
-    display: flex; align-items: center; gap: 9px;
+    display: flex; align-items: center; gap: 8px;
     text-decoration: none; flex-shrink: 0; margin-right: 20px;
+    flex-direction: column; align-items: flex-start; justify-content: center;
 }
 .admin-logo-icon {
     width: 32px; height: 32px;
@@ -338,13 +339,9 @@ body.admin-portal {
 
             <!-- Logo -->
             <a href="app.php?page=admin-home" class="admin-logo" title="Karibu Admin Portal">
-                <div class="admin-logo-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21a1 1 0 0 0 1-1v-5.35c0-.457.316-.844.727-1.041a4 4 0 0 0-2.134-7.589 5 5 0 0 0-9.186 0 4 4 0 0 0-2.134 7.588c.411.198.727.585.727 1.041V20a1 1 0 0 0 1 1Z"/><path d="M6 17h12"/></svg>
-                </div>
-                <div>
-                    <div class="admin-logo-title">Karibu Admin</div>
-                    <div class="admin-logo-sub">Pantry Planner</div>
-                </div>
+                <img src="/assets/karibu-logo.png" alt="Karibu Camps &amp; Lodges"
+                     style="height:38px;width:auto;mix-blend-mode:screen;filter:brightness(1.1);">
+                <div class="admin-logo-sub" style="color:#8b7355;font-size:9px;letter-spacing:0.08em;text-transform:uppercase;margin-top:2px;">Pantry Planner</div>
             </a>
 
             <!-- ── Navigation ── -->
