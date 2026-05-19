@@ -1406,7 +1406,7 @@ switch ($action) {
         if (!$lineId) jsonError('Line ID required');
         if ($orderQty < 0) jsonError('Nothing to update');
 
-        // Verify the line's requisition is still editable (draft or processing only)
+        // Block edits only once storekeeper has acted — fulfilled/received/closed are locked
         $lineCheck = $db->prepare(
             "SELECT rl.id, r.status FROM requisition_lines rl
              JOIN requisitions r ON r.id = rl.requisition_id
@@ -1415,8 +1415,8 @@ switch ($action) {
         $lineCheck->execute([$lineId]);
         $lineRow = $lineCheck->fetch();
         if (!$lineRow) jsonError('Line not found');
-        if (!in_array($lineRow['status'], ['draft', 'processing'])) {
-            jsonError('Cannot edit lines on a ' . $lineRow['status'] . ' order');
+        if (in_array($lineRow['status'], ['fulfilled', 'received', 'closed'])) {
+            jsonError('Order already fulfilled — quantities are locked');
         }
 
         // Only update qty — UOM is snapshotted at creation and never changed
