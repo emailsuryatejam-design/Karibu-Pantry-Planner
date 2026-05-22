@@ -23,7 +23,7 @@ $adminPages = array_unique(array_merge($chefPages, $storePages, [
     'admin-home', 'admin-users', 'admin-camps', 'admin-meal-types',
     'admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus',
     'admin-emails', 'admin-orders', 'admin-stock', 'admin-recipes',
-    'admin-reports', 'admin-audit',
+    'admin-reports', 'admin-audit', 'admin-recycle',
 ]));
 
 $allowedPages = isAdmin() ? $adminPages : (isChef() ? $chefPages : $storePages);
@@ -450,6 +450,13 @@ body.admin-portal {
                    class="admin-nav-item <?= $page === 'admin-audit' ? 'active' : '' ?>">
                     <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
                     Audit Log
+                </a>
+
+                <!-- Recycle Bin -->
+                <a href="app.php?page=admin-recycle"
+                   class="admin-nav-item <?= $page === 'admin-recycle' ? 'active' : '' ?>">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                    Recycle Bin
                 </a>
 
             </nav>

@@ -123,7 +123,7 @@ switch ($action) {
             if ($owner && (int)$owner !== (int)$user['id']) jsonError('You can only delete your own recipes', 403);
         }
 
-        $db->prepare('DELETE FROM recipes WHERE id = ?')->execute([$id]);
+        $db->prepare('UPDATE recipes SET deleted_at = NOW(), deleted_by = ? WHERE id = ?')->execute([$user['id'], $id]);
         auditLog('delete_recipe', 'recipes', $id);
         jsonResponse(['deleted' => true]);
         break;
@@ -239,7 +239,7 @@ switch ($action) {
         $id = (int)($input['id'] ?? 0);
         if (!$id) jsonError('Ingredient ID required');
 
-        $db->prepare('DELETE FROM recipe_ingredients WHERE id = ?')->execute([$id]);
+        $db->prepare('UPDATE recipe_ingredients SET deleted_at = NOW(), deleted_by = ? WHERE id = ?')->execute([$user['id'], $id]);
         jsonResponse(['removed' => true]);
         break;
 

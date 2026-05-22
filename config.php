@@ -42,27 +42,35 @@ define('DB_PASS', $_ENV['DB_PASS'] ?? '');
 
 function getDB() {
     static $pdo = null;
-    // Re-check connection health on each call (persistent connections go stale on shared hosting)
+    // Liveness check — persistent connections go stale on shared hosting after idle
     if ($pdo !== null) {
         try { $pdo->query('SELECT 1'); } catch (PDOException $e) { $pdo = null; }
     }
     if ($pdo === null) {
-        try {
-            $pdo = new PDO(
-                'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4',
-                DB_USER,
-                DB_PASS,
-                [
-                    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-                    PDO::ATTR_DEFAULT_FETCH_MODE  => PDO::FETCH_ASSOC,
-                    PDO::ATTR_EMULATE_PREPARES    => false,
-                    PDO::ATTR_PERSISTENT          => false,   // disabled — stale on shared hosting
-                    PDO::ATTR_TIMEOUT             => 10,
-                ]
-            );
-        } catch (PDOException $e) {
-            error_log('[Karibu DB] ' . $e->getMessage());
+        $dsn  = 'mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=utf8mb4';
+        $opts = [
+            PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+            PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+            PDO::ATTR_EMULATE_PREPARES   => false,
+            PDO::ATTR_PERSISTENT         => true,   // reuse per-process connections — reduces peak concurrency
+            PDO::ATTR_TIMEOUT            => 10,
+        ];
+        // Two attempts with a short pause — handles transient "too many connections" spikes
+        $lastError = null;
+        for ($attempt = 1; $attempt <= 2; $attempt++) {
+            try {
+                $pdo = new PDO($dsn, DB_USER, DB_PASS, $opts);
+                break; // success
+            } catch (PDOException $e) {
+                $lastError = $e;
+                $pdo = null;
+                if ($attempt < 2) usleep(300000); // 300 ms before retry
+            }
+        }
+        if ($pdo === null) {
+            error_log('[Karibu DB] ' . $lastError->getMessage());
             http_response_code(500);
+            header('Content-Type: application/json');
             die(json_encode(['error' => 'Database connection failed. Please try again.']));
         }
     }

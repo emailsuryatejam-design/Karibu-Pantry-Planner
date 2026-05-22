@@ -476,8 +476,8 @@ switch ($action) {
         $req = $stmt->fetch();
         if (!$req) jsonError('Requisition not found or not in draft status');
 
-        // Delete existing lines and re-insert
-        $db->prepare("DELETE FROM requisition_lines WHERE requisition_id = ?")->execute([$reqId]);
+        // Soft-delete existing lines before re-inserting
+        $db->prepare("UPDATE requisition_lines SET deleted_at = NOW(), deleted_by = ? WHERE requisition_id = ? AND deleted_at IS NULL")->execute([$user['id'], $reqId]);
 
         // Batch-load all referenced items in one query to avoid N+1
         $itemIds = array_filter(array_map(fn($l) => (int)($l['item_id'] ?? 0), $lines));
@@ -603,18 +603,43 @@ switch ($action) {
             $guestCount = (int)($req['guest_count'] ?? 0);
             $appUrl     = APP_URL;
 
-            // Fetch lines for PDF
-            $lineStmt = $db->prepare("SELECT rl.order_qty, rl.uom, i.name AS item_name FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? ORDER BY i.name");
+            // Fetch lines for PDF — same fields as the printOrder() sheet storekeepers print
+            $lineStmt = $db->prepare("
+                SELECT rl.order_qty, rl.uom, rl.fulfilled_qty, rl.received_qty, rl.unused_qty,
+                       i.name AS item_name, i.code AS item_code
+                FROM requisition_lines rl
+                LEFT JOIN items i ON i.id = rl.item_id
+                WHERE rl.requisition_id = ? AND rl.deleted_at IS NULL
+                ORDER BY i.name
+            ");
             $lineStmt->execute([$reqId]);
             $pdfLines = $lineStmt->fetchAll();
 
-            // Build submitter name
+            // Fetch dishes for PDF
+            $dishStmt = $db->prepare("
+                SELECT rd.recipe_name, rd.guest_count
+                FROM requisition_dishes rd
+                WHERE rd.requisition_id = ? AND rd.deleted_at IS NULL
+                ORDER BY rd.id
+            ");
+            $dishStmt->execute([$reqId]);
+            $pdfDishes = $dishStmt->fetchAll();
+
+            // Build submitter / chef name
             $req['submitter_name'] = $user['name'] ?? 'Chef';
+            $req['chef_name']      = $user['name'] ?? 'Chef';
 
-            // Generate PDF
-            $pdfBytes    = generateOrderPDF($req, $kitchenName, $mealLabel, $pdfLines);
+            // Generate PDF — isolated try/catch so a PDF failure never blocks the email
+            $pdfBytes    = null;
             $pdfFilename = 'Order-' . preg_replace('/[^a-z0-9]/i', '-', $kitchenName) . '-' . str_replace(' ', '-', $mealLabel) . '-' . date('Y-m-d', strtotime($req['req_date'])) . '.pdf';
+            try {
+                $pdfBytes = generateOrderPDF($req, $kitchenName, $mealLabel, $pdfLines, $pdfDishes);
+            } catch (Exception $pdfEx) {
+                error_log('[Karibu PDF] PDF generation failed for req #' . $reqId . ': ' . $pdfEx->getMessage());
+                // email still sends below, just without attachment
+            }
 
+            $hasPdf = $pdfBytes ? ' (PDF attached)' : '';
             $emailSubject = "New Order: {$mealLabel} — {$kitchenName} ({$reqDate})";
             $emailBody = "
               <p>A new requisition has been submitted and requires your attention.</p>
@@ -640,13 +665,14 @@ switch ($action) {
                   <td style='padding:8px 12px;border:1px solid #e5e7eb'>{$user['name']}</td>
                 </tr>
               </table>
-              <p style='color:#6b7280;font-size:13px'>The order sheet PDF is attached. Please log in to review and fulfill.</p>";
+              <p style='color:#6b7280;font-size:13px'>Please log in to review and fulfill this order{$hasPdf}.</p>";
 
             $html = mailTemplate("New Requisition Submitted", $emailBody, "View Store Dashboard", "{$appUrl}/app.php?page=store-dashboard");
             notifyStorekeepersWithPDF((int)$req['kitchen_id'], $emailSubject, $html, $pdfBytes, $pdfFilename);
             notifyAdminsWithPDF($emailSubject, $html, $pdfBytes, $pdfFilename);
+            error_log('[Karibu Email] submit alert sent for req #' . $reqId . ' (' . ($pdfBytes ? 'with PDF' : 'no PDF') . ')');
         } catch (Exception $e) {
-            error_log('[Karibu Email] submit alert failed: ' . $e->getMessage());
+            error_log('[Karibu Email] submit alert failed for req #' . $reqId . ': ' . $e->getMessage());
         }
 
         jsonResponse(['submitted' => true]);
@@ -1439,7 +1465,7 @@ switch ($action) {
         if (!$row) jsonError('Line not found', 404);
         if (!in_array($row['status'], ['draft', 'processing', 'submitted'])) jsonError('Cannot modify fulfilled orders');
 
-        $db->prepare("DELETE FROM requisition_lines WHERE id = ?")->execute([$lineId]);
+        $db->prepare("UPDATE requisition_lines SET deleted_at = NOW(), deleted_by = ? WHERE id = ?")->execute([$user['id'], $lineId]);
         auditLog('chef_remove_line', 'requisition_lines', $lineId);
         jsonResponse(['removed' => true]);
         break;
@@ -1464,8 +1490,8 @@ switch ($action) {
                 jsonError('Order not found or already being fulfilled by store');
             }
 
-            $db->prepare("DELETE FROM requisition_lines WHERE requisition_id = ?")->execute([$reqId]);
-            $db->prepare("DELETE FROM requisition_dishes WHERE requisition_id = ?")->execute([$reqId]);
+            $db->prepare("UPDATE requisition_lines SET deleted_at = NOW(), deleted_by = ? WHERE requisition_id = ? AND deleted_at IS NULL")->execute([$user['id'], $reqId]);
+            $db->prepare("UPDATE requisition_dishes SET deleted_at = NOW(), deleted_by = ? WHERE requisition_id = ? AND deleted_at IS NULL")->execute([$user['id'], $reqId]);
             $db->prepare("UPDATE requisitions SET status = 'draft', updated_at = NOW() WHERE id = ?")->execute([$reqId]);
             $db->commit();
         } catch (Exception $e) {

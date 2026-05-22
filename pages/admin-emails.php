@@ -7,10 +7,16 @@ if (!isAdmin()) { echo '<p class="text-center text-red-500 py-8">Admin access re
         <h2 class="text-lg font-bold text-gray-800">Email Notifications</h2>
         <p class="text-xs text-gray-400 mt-0.5">Manage who receives order alerts and PDF reports</p>
     </div>
-    <button onclick="aeShowCreate()" class="bg-orange-500 text-white px-3 py-2 rounded-xl text-xs font-semibold hover:bg-orange-600 transition flex items-center gap-1 compact-btn">
-        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
-        Add Email
-    </button>
+    <div class="flex items-center gap-2">
+        <button onclick="aeDiag()" class="border border-gray-200 text-gray-500 px-3 py-2 rounded-xl text-xs font-semibold hover:bg-gray-50 transition flex items-center gap-1 compact-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            Diagnose
+        </button>
+        <button onclick="aeShowCreate()" class="bg-orange-500 text-white px-3 py-2 rounded-xl text-xs font-semibold hover:bg-orange-600 transition flex items-center gap-1 compact-btn">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            Add Email
+        </button>
+    </div>
 </div>
 
 <!-- Info banner -->
@@ -68,6 +74,9 @@ function aeRender() {
                     </div>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
+                    <button onclick="aeSendTest(${e.id})" title="Send test email" class="text-[10px] px-2.5 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 transition compact-btn">
+                        Test
+                    </button>
                     <button onclick="aeToggle(${e.id})" class="text-[10px] px-2.5 py-1.5 rounded-lg ${e.is_active ? 'bg-gray-100 text-gray-500 hover:bg-red-50 hover:text-red-500' : 'bg-green-50 text-green-600 hover:bg-green-100'} transition compact-btn">
                         ${e.is_active ? 'Pause' : 'Enable'}
                     </button>
@@ -163,5 +172,29 @@ async function aeDelete(id) {
         aeEmails = aeEmails.filter(e => e.id !== id);
         aeRender();
     } catch(e) { showToast(e.message || 'Failed', 'error'); }
+}
+
+async function aeSendTest(id) {
+    const em = aeEmails.find(e => e.id === id);
+    if (!em) return;
+    showToast('Sending test to ' + em.email + '…', 'info');
+    try {
+        await api('api/notification-emails.php', { method: 'POST', body: { action: 'test_send', id } });
+        showToast('Test email sent to ' + em.email + ' ✓');
+    } catch(e) { showToast('Failed: ' + (e.message || 'unknown error'), 'error'); }
+}
+
+async function aeDiag() {
+    try {
+        showToast('Running diagnostics…', 'info');
+        const d = await api('api/notification-emails.php?action=diag');
+        const lines = [
+            'PHPMailer: '    + (d.phpmailer_available ? '✅ installed' : '❌ missing (using php mail())'),
+            'SMTP user: '    + (d.smtp_user_set ? '✅ set (' + d.from + ')' : '❌ NOT set'),
+            'SMTP password: '+ (d.smtp_pass_set ? '✅ set' : '❌ NOT set — emails will fail'),
+            'SMTP host: '    + d.smtp_host + ':' + d.smtp_port,
+        ];
+        alert('Email Diagnostics\n\n' + lines.join('\n'));
+    } catch(e) { showToast('Diag failed: ' + (e.message || 'error'), 'error'); }
 }
 </script>

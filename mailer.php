@@ -218,7 +218,7 @@ function notifyStorekeepersWithPDF(int $kitchenId, string $subject, string $html
         foreach ($st->fetchAll() as $r) sendMailWithPDF(trim($r['email']), $subject, $html, $pdfBytes, $pdfFilename);
 
         // External notification emails for this kitchen (submit / both)
-        $ne = $db->prepare("SELECT email FROM notification_emails WHERE is_active=1 AND notify_on IN ('submit','both') AND (kitchen_id IS NULL OR kitchen_id=?)");
+        $ne = $db->prepare("SELECT email FROM notification_emails WHERE is_active=1 AND deleted_at IS NULL AND notify_on IN ('submit','both') AND (kitchen_id IS NULL OR kitchen_id=?)");
         $ne->execute([$kitchenId]);
         foreach ($ne->fetchAll() as $r) sendMailWithPDF(trim($r['email']), $subject, $html, $pdfBytes, $pdfFilename);
     } catch (Exception $e) { error_log('[Karibu Mailer] notifyStorekeepersWithPDF: ' . $e->getMessage()); }
