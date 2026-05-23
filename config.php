@@ -73,6 +73,12 @@ function getDB() {
             header('Content-Type: application/json');
             die(json_encode(['error' => 'Database connection failed. Please try again.']));
         }
+
+        // Self-healing: add requisition_id to audit_log for fast per-requisition log queries
+        try {
+            $pdo->exec("ALTER TABLE audit_log ADD COLUMN requisition_id INT NULL AFTER entity_id");
+            $pdo->exec("ALTER TABLE audit_log ADD INDEX idx_audit_req (requisition_id)");
+        } catch (PDOException $e) { /* column already exists */ }
     }
     return $pdo;
 }
@@ -285,16 +291,17 @@ function todayStr() {
 }
 
 // ── Audit Log ──
-function auditLog($action, $entity = null, $entityId = null, $oldValue = null, $newValue = null) {
+function auditLog($action, $entity = null, $entityId = null, $oldValue = null, $newValue = null, $requisitionId = null) {
     $user = currentUser();
     $db = getDB();
-    $stmt = $db->prepare('INSERT INTO audit_log (user_id, user_name, action, entity, entity_id, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?, ?)');
+    $stmt = $db->prepare('INSERT INTO audit_log (user_id, user_name, action, entity, entity_id, requisition_id, old_value, new_value) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
     $stmt->execute([
         $user['id'] ?? null,
         $user['name'] ?? 'System',
         $action,
         $entity,
         $entityId,
+        $requisitionId,
         $oldValue ? json_encode($oldValue) : null,
         $newValue ? json_encode($newValue) : null,
     ]);

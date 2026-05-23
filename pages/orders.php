@@ -525,6 +525,9 @@ function ordRenderCard(req) {
         </div>
         <div class="flex items-center gap-2">
             ${ordStatusBadge(req.status)}
+            <button onclick="event.stopPropagation(); ordShowChangeLog(${req.id})" class="w-6 h-6 rounded-md text-gray-400 hover:text-orange-500 hover:bg-orange-50 flex items-center justify-center transition" title="Change History">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            </button>
             <span class="text-gray-400">${chevronSvg}</span>
         </div>
     </div>`;
@@ -831,13 +834,19 @@ function ordShowEditLine(lineId, reqId) {
     const qty = ordAdjustments[lineId] !== undefined ? ordAdjustments[lineId] : (parseFloat(line.order_qty) || 0);
     const uom = line.uom || 'kg';
 
+    const uomOptions = ['kg','grams','pcs','ltr','ml','bunch','pkt'];
     document.getElementById('ordItemDetailContent').innerHTML = `
         <h3 class="text-base font-bold text-gray-900 mb-1">${escHtml(line.item_name)}</h3>
         <p class="text-xs text-gray-400 mb-4">Edit quantity or remove</p>
-        <div class="space-y-4">
+        <div class="space-y-3">
             <div>
-                <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1 block">Quantity <span class="normal-case font-normal text-gray-400 ml-1">(${escHtml(uom)})</span></label>
-                <input type="hidden" id="ordEditUom" value="${escHtml(uom)}">
+                <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1 block">Unit of Measure</label>
+                <select id="ordEditUom" class="w-full border-2 border-gray-200 rounded-xl py-2.5 px-3 text-sm font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-orange-200 bg-white">
+                    ${uomOptions.map(u => `<option value="${u}"${u === uom ? ' selected' : ''}>${u}</option>`).join('')}
+                </select>
+            </div>
+            <div>
+                <label class="text-[10px] text-gray-500 font-semibold uppercase tracking-wider mb-1 block">Quantity</label>
                 <div class="flex items-center gap-2">
                     <button onclick="document.getElementById('ordEditQty').value = Math.max(0, parseFloat(document.getElementById('ordEditQty').value||0) - 1)"
                         class="w-10 h-10 rounded-xl bg-gray-100 text-gray-600 font-bold text-lg flex items-center justify-center active:bg-gray-200">-</button>
@@ -872,6 +881,10 @@ async function ordSaveLine(lineId, reqId) {
             body: { line_id: lineId, order_qty: qty, uom: uom }
         });
         ordAdjustments[lineId] = qty;
+        // Update local line data so card re-renders with new UOM immediately
+        const lines = ordLinesByReq[reqId] || [];
+        const line = lines.find(l => parseInt(l.id) === lineId);
+        if (line) { line.order_qty = qty; line.uom = uom; }
         ordCloseItemDetail();
         showToast('Item updated');
         ordRefreshCard(reqId);
@@ -892,6 +905,81 @@ async function ordRemoveLine(lineId, reqId) {
         ordRefreshCard(reqId);
     } catch (err) {
         showToast(err.message, 'error');
+    }
+}
+
+// ══════════════════════════════════════════════
+//  Change History Log
+// ══════════════════════════════════════════════
+async function ordShowChangeLog(reqId) {
+    const actionLabels = {
+        update_line:        'Line updated',
+        add_line_to_order:  'Line added',
+        chef_remove_line:   'Line removed',
+        requisition_submit: 'Order submitted',
+        requisition_create: 'Order created',
+        recalculate_order:  'Guest count changed',
+        requisition_fulfill:'Order fulfilled by store',
+        admin_close:        'Order closed by admin',
+        confirm_receipt:    'Receipt confirmed',
+    };
+
+    function fmtDiff(oldRaw, newRaw) {
+        try {
+            const o = oldRaw ? JSON.parse(oldRaw) : null;
+            const n = newRaw ? JSON.parse(newRaw) : null;
+            if (!o && !n) return '';
+            const parts = [];
+            const keys = new Set([...Object.keys(o || {}), ...Object.keys(n || {})]);
+            keys.forEach(k => {
+                const ov = o?.[k], nv = n?.[k];
+                if (ov !== undefined && nv !== undefined && String(ov) !== String(nv)) {
+                    parts.push(`<span class="text-gray-500">${k}:</span> <span class="line-through text-red-400">${escHtml(String(ov))}</span> → <span class="text-green-600 font-semibold">${escHtml(String(nv))}</span>`);
+                } else if (nv !== undefined && ov === undefined) {
+                    parts.push(`<span class="text-gray-500">${k}:</span> <span class="text-green-600">${escHtml(String(nv))}</span>`);
+                } else if (ov !== undefined && nv === undefined) {
+                    parts.push(`<span class="text-gray-500">${k}:</span> <span class="text-red-400">${escHtml(String(ov))}</span>`);
+                }
+            });
+            return parts.length ? `<div class="text-xs mt-1 space-y-0.5">${parts.join('<br>')}</div>` : '';
+        } catch { return ''; }
+    }
+
+    function relTime(ts) {
+        if (!ts) return '';
+        const d = new Date(ts.replace(' ', 'T') + 'Z');
+        const diff = Math.floor((Date.now() - d.getTime()) / 1000);
+        if (diff < 60) return 'just now';
+        if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+        if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+        return d.toLocaleDateString('en-GB', {day:'numeric', month:'short'});
+    }
+
+    document.getElementById('ordItemDetailContent').innerHTML = `<p class="text-sm text-gray-400 text-center py-4">Loading history…</p>`;
+    document.getElementById('ordItemDetailModal').classList.remove('hidden');
+
+    try {
+        const data = await api(`api/requisitions.php?action=change_log&requisition_id=${reqId}`);
+        const entries = data.log || [];
+        document.getElementById('ordItemDetailContent').innerHTML = `
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="text-base font-bold text-gray-900">Change History</h3>
+                <span class="text-[10px] text-gray-400">#${reqId}</span>
+            </div>
+            ${entries.length === 0
+                ? `<p class="text-sm text-gray-400 text-center py-4">No changes recorded yet</p>`
+                : entries.map(e => `
+                    <div class="border-b border-gray-100 py-2.5 last:border-0">
+                        <div class="flex items-center justify-between">
+                            <span class="text-xs font-semibold text-gray-700">${escHtml(actionLabels[e.action] || e.action)}</span>
+                            <span class="text-[10px] text-gray-400">${relTime(e.created_at)}</span>
+                        </div>
+                        <div class="text-[11px] text-gray-500 mt-0.5">${escHtml(e.user_name || 'System')}</div>
+                        ${fmtDiff(e.old_value, e.new_value)}
+                    </div>`).join('')
+            }`;
+    } catch (err) {
+        document.getElementById('ordItemDetailContent').innerHTML = `<p class="text-sm text-red-400 text-center py-4">${escHtml(err.message)}</p>`;
     }
 }
 

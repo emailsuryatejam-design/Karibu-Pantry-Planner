@@ -1415,26 +1415,29 @@ switch ($action) {
             $ins->execute([$reqId, $itemId ?: null, $itemName, $uom, $orderQty, $isStaple]);
             $lineId = $db->lastInsertId();
 
-            auditLog('add_line_to_order', 'requisition_lines', $lineId, null, ['item' => $itemName, 'qty' => $orderQty]);
+            auditLog('add_line_to_order', 'requisition_lines', $lineId, null, ['item' => $itemName, 'qty' => $orderQty, 'uom' => $uom], $reqId);
             jsonResponse(['line_id' => $lineId, 'added' => true]);
         } catch (Exception $e) {
             jsonError('Failed to add item: ' . $e->getMessage());
         }
         break;
 
-    // ── Update a single line item (qty only — UOM is immutable once set) ──
+    // ── Update a single line item (qty + UOM editable until storekeeper acts) ──
     case 'update_line':
         requireMethod('POST');
         requireRole(['chef', 'admin']);
         $data = getJsonInput();
-        $lineId = (int)($data['line_id'] ?? 0);
+        $lineId   = (int)($data['line_id'] ?? 0);
         $orderQty = isset($data['order_qty']) ? (float)$data['order_qty'] : -1;
-        if (!$lineId) jsonError('Line ID required');
-        if ($orderQty < 0) jsonError('Nothing to update');
+        $newUom   = trim($data['uom'] ?? '');
 
-        // Block edits only once storekeeper has acted — fulfilled/received/closed are locked
+        if (!$lineId) jsonError('Line ID required');
+        if ($orderQty < 0 && !$newUom) jsonError('Nothing to update');
+
+        // Fetch old values + requisition status
         $lineCheck = $db->prepare(
-            "SELECT rl.id, r.status FROM requisition_lines rl
+            "SELECT rl.id, rl.order_qty, rl.uom, rl.requisition_id, r.status
+             FROM requisition_lines rl
              JOIN requisitions r ON r.id = rl.requisition_id
              WHERE rl.id = ? AND rl.deleted_at IS NULL"
         );
@@ -1445,8 +1448,32 @@ switch ($action) {
             jsonError('Order already fulfilled — quantities are locked');
         }
 
-        // Only update qty — UOM is snapshotted at creation and never changed
-        $db->prepare("UPDATE requisition_lines SET order_qty = ? WHERE id = ? AND deleted_at IS NULL")->execute([$orderQty, $lineId]);
+        $oldQty = (float)$lineRow['order_qty'];
+        $oldUom = $lineRow['uom'];
+        $reqId  = (int)$lineRow['requisition_id'];
+
+        // Keep existing value if not being changed
+        if ($orderQty < 0) $orderQty = $oldQty;
+        if (!$newUom)       $newUom   = $oldUom;
+
+        // Validate UOM
+        $allowedUoms = ['kg', 'grams', 'pcs', 'ltr', 'ml', 'bunch', 'pkt'];
+        if (!in_array($newUom, $allowedUoms)) jsonError('Invalid unit of measure');
+
+        $db->prepare("UPDATE requisition_lines SET order_qty = ?, uom = ? WHERE id = ? AND deleted_at IS NULL")
+           ->execute([$orderQty, $newUom, $lineId]);
+
+        // Log only when something actually changed
+        if ($orderQty != $oldQty || $newUom !== $oldUom) {
+            auditLog(
+                'update_line',
+                'requisition_line',
+                $lineId,
+                ['order_qty' => $oldQty, 'uom' => $oldUom],
+                ['order_qty' => $orderQty, 'uom' => $newUom],
+                $reqId
+            );
+        }
         jsonResponse(['updated' => true]);
         break;
 
@@ -1459,14 +1486,14 @@ switch ($action) {
         if (!$lineId) jsonError('Line ID required');
 
         // Verify line belongs to a draft/processing requisition owned by this kitchen
-        $check = $db->prepare("SELECT rl.id, r.status, r.kitchen_id FROM requisition_lines rl JOIN requisitions r ON r.id = rl.requisition_id WHERE rl.id = ?");
+        $check = $db->prepare("SELECT rl.id, rl.item_name, rl.requisition_id, r.status, r.kitchen_id FROM requisition_lines rl JOIN requisitions r ON r.id = rl.requisition_id WHERE rl.id = ?");
         $check->execute([$lineId]);
         $row = $check->fetch();
         if (!$row) jsonError('Line not found', 404);
         if (!in_array($row['status'], ['draft', 'processing', 'submitted'])) jsonError('Cannot modify fulfilled orders');
 
         $db->prepare("UPDATE requisition_lines SET deleted_at = NOW(), deleted_by = ? WHERE id = ?")->execute([$user['id'], $lineId]);
-        auditLog('chef_remove_line', 'requisition_lines', $lineId);
+        auditLog('chef_remove_line', 'requisition_lines', $lineId, ['item_name' => $row['item_name'] ?? null], null, (int)$row['requisition_id']);
         jsonResponse(['removed' => true]);
         break;
 
@@ -1879,6 +1906,24 @@ switch ($action) {
         $db->exec("DELETE FROM notifications");
 
         jsonResponse(['message' => 'All orders, lines, dishes, and notifications cleared']);
+
+    // ── Change log for a requisition (all audit entries for that order) ──
+    case 'change_log':
+        requireMethod('GET');
+        requireRole(['chef', 'admin', 'storekeeper']);
+        $reqId = (int)($_GET['requisition_id'] ?? 0);
+        if (!$reqId) jsonError('Requisition ID required');
+        $stmt = $db->prepare("
+            SELECT action, user_name, old_value, new_value, created_at
+            FROM audit_log
+            WHERE requisition_id = ?
+               OR (entity = 'requisition' AND entity_id = ?)
+            ORDER BY created_at DESC
+            LIMIT 100
+        ");
+        $stmt->execute([$reqId, $reqId]);
+        jsonResponse(['log' => $stmt->fetchAll()]);
+        break;
 
     default:
         jsonError('Unknown action');
