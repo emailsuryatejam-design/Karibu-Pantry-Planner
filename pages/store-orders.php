@@ -373,6 +373,8 @@ function soActiveLineHtml(line, reqQty) {
                 <div class="flex items-center gap-1">
                     <button onclick="soAdjLine(${line.id}, 'qty', -1)" class="w-9 h-9 rounded-lg bg-white border border-gray-200 text-gray-600 font-bold text-lg flex items-center justify-center compact-btn active:bg-gray-100">-</button>
                     <input type="number" value="${reqQty}" step="0.5" min="0" max="${reqQty * 2}" id="send_${line.id}"
+                        data-req="${reqQty}" data-name="${escHtml(line.item_name || '')}"
+                        oninput="soCheckOverFulfill(this)"
                         class="flex-1 text-center text-lg font-bold border-2 border-green-300 rounded-xl px-1 py-2 focus:outline-none focus:ring-2 focus:ring-green-200 compact-btn bg-green-50 min-w-[60px]">
                     <button onclick="soAdjLine(${line.id}, 'qty', 1)" class="w-9 h-9 rounded-lg bg-white border border-gray-200 text-gray-600 font-bold text-lg flex items-center justify-center compact-btn active:bg-gray-100">+</button>
                 </div>
@@ -387,6 +389,20 @@ function soAdjLine(lineId, field, delta) {
     if (input) {
         const step = field === 'qty' ? 1 : 0.5;
         input.value = Math.max(field === 'qty' ? 0 : 0.1, (parseFloat(input.value) || 0) + delta * step);
+        if (field === 'qty') soCheckOverFulfill(input);
+    }
+}
+
+// Highlight input orange if issuing more than was requested
+function soCheckOverFulfill(input) {
+    const req = parseFloat(input.dataset.req) || 0;
+    const val = parseFloat(input.value) || 0;
+    if (req > 0 && val > req) {
+        input.classList.remove('border-green-300', 'bg-green-50', 'focus:ring-green-200');
+        input.classList.add('border-orange-400', 'bg-orange-50', 'focus:ring-orange-200');
+    } else {
+        input.classList.remove('border-orange-400', 'bg-orange-50', 'focus:ring-orange-200');
+        input.classList.add('border-green-300', 'bg-green-50', 'focus:ring-green-200');
     }
 }
 
@@ -578,17 +594,25 @@ async function soAddItemFromRow(btn) {
 async function soMarkSent(orderId) {
     const sendInputs = document.querySelectorAll('[id^="send_"]');
     const lines = [];
+    const overFulfilled = [];
     sendInputs.forEach(input => {
         const id = parseInt(input.id.replace('send_', ''));
         const unitInput = document.getElementById(`unit_${id}`);
-        lines.push({
-            id,
-            fulfilled_qty: parseFloat(input.value) || 0,
-            unit_size: unitInput ? parseFloat(unitInput.value) || null : null
-        });
+        const fulfilledQty = parseFloat(input.value) || 0;
+        const reqQty = parseFloat(input.dataset.req) || 0;
+        const name = input.dataset.name || `Item ${id}`;
+        lines.push({ id, fulfilled_qty: fulfilledQty, unit_size: unitInput ? parseFloat(unitInput.value) || null : null });
+        if (reqQty > 0 && fulfilledQty > reqQty) {
+            overFulfilled.push(`• ${name}: requested ${reqQty}, issuing ${fulfilledQty}`);
+        }
     });
 
-    if (!await customConfirm('Issue Items', `Issue ${lines.length} items to kitchen?`)) return;
+    if (overFulfilled.length > 0) {
+        const overMsg = `You are issuing MORE than requested for ${overFulfilled.length} item${overFulfilled.length > 1 ? 's' : ''}:\n\n${overFulfilled.join('\n')}\n\nContinue?`;
+        if (!await customConfirm('⚠️ Over-issuing Items', overMsg)) return;
+    } else {
+        if (!await customConfirm('Issue Items', `Issue ${lines.length} items to kitchen?`)) return;
+    }
 
     const btn = document.getElementById('soSendBtn');
     if (btn) {

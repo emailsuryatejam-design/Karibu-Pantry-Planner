@@ -167,6 +167,37 @@ switch ($action) {
             ];
         }
 
+        // Fix #8: send push reminder for any fulfilled orders awaiting receipt for >8h
+        try {
+            require_once __DIR__ . '/../lib/push-sender.php';
+            $staleStmt = $db->prepare("
+                SELECT r.id, r.meals, r.req_date FROM requisitions r
+                WHERE r.kitchen_id = ?
+                  AND r.status = 'fulfilled'
+                  AND r.updated_at < DATE_SUB(NOW(), INTERVAL 8 HOUR)
+                  AND NOT EXISTS (
+                      SELECT 1 FROM notifications n
+                      WHERE n.ref_id = r.id
+                        AND n.type = 'receipt_reminder'
+                        AND n.created_at > DATE_SUB(NOW(), INTERVAL 20 HOUR)
+                  )
+                LIMIT 3
+            ");
+            $staleStmt->execute([$kid]);
+            foreach ($staleStmt->fetchAll() as $sr) {
+                $mealLabel = ucfirst($sr['meals']);
+                $dateLabel = date('d M', strtotime($sr['req_date']));
+                $payload = [
+                    'title' => '⏰ Confirm Receipt',
+                    'body'  => "Please confirm receipt for your {$mealLabel} order ({$dateLabel})",
+                    'url'   => '/app.php?page=orders',
+                    'tag'   => 'receipt-reminder-' . $sr['id'],
+                ];
+                sendPushToKitchen((int)$kid, $payload, 'chef', null);
+                storeNotification((int)$kid, null, $payload['title'], $payload['body'], 'receipt_reminder', (int)$sr['id']);
+            }
+        } catch (Exception $e) { /* non-critical */ }
+
         jsonResponse([
             'settings' => $initSettings,
             'types' => $initTypes,
@@ -1283,6 +1314,14 @@ switch ($action) {
             $data = getJsonInput();
             $reqId = (int)($data['requisition_id'] ?? 0);
             if (!$reqId) jsonError('Requisition ID required');
+
+            // Fix #6: explicit check for already-submitted to give a clear error
+            $statusChk = $db->prepare("SELECT status FROM requisitions WHERE id = ?");
+            $statusChk->execute([$reqId]);
+            $statusRow = $statusChk->fetch();
+            if ($statusRow && $statusRow['status'] === 'submitted') {
+                jsonError('This order is already submitted — the store has it. Ask admin to revert if changes are needed.');
+            }
 
             $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft', 'processing')");
             $stmt->execute([$reqId]);

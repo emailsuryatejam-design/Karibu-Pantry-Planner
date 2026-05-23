@@ -1329,7 +1329,12 @@ async function ordSubmitStapleOrders(reqIds) {
     }
 }
 
+const _ordSubmitting = new Set(); // guard against double-tap
+
 async function ordSubmitToStore(reqId) {
+    // Fix #6: block double-submit
+    if (_ordSubmitting.has(reqId)) { showToast('Already submitting…', 'error'); return; }
+
     const allLines = ordLinesByReq[reqId] || [];
     if (allLines.length === 0) { showToast('No items to submit', 'error'); return; }
 
@@ -1341,6 +1346,13 @@ async function ordSubmitToStore(reqId) {
     const nonZero = lineData.filter(l => l.order_qty > 0);
     if (nonZero.length === 0) { showToast('All quantities are zero', 'error'); return; }
 
+    // Fix #7: warn on very low guest count
+    const req = ordRequisitions.find(r => parseInt(r.id) === parseInt(reqId));
+    const gc = req ? parseInt(req.guest_count) : 0;
+    if (gc > 0 && gc < 3) {
+        if (!await customConfirm('Low Guest Count', `This order is for only ${gc} guest${gc !== 1 ? 's' : ''}. Is that correct?`)) return;
+    }
+
     const zeroCount = lineData.length - nonZero.length;
     const msg = zeroCount > 0
         ? `${zeroCount} item${zeroCount > 1 ? 's have' : ' has'} zero qty and will be skipped. Submit ${nonZero.length} item${nonZero.length > 1 ? 's' : ''}?`
@@ -1348,6 +1360,7 @@ async function ordSubmitToStore(reqId) {
 
     if (!await customConfirm('Submit to Store', msg)) return;
 
+    _ordSubmitting.add(reqId);
     const btn = document.getElementById('ord-submit-' + reqId);
     if (btn) setLoading(btn, true, 'Submitting...');
 
@@ -1361,6 +1374,7 @@ async function ordSubmitToStore(reqId) {
     } catch (err) {
         showToast(err.message || 'Failed to submit', 'error');
     } finally {
+        _ordSubmitting.delete(reqId);
         if (btn) setLoading(btn, false);
     }
 }
