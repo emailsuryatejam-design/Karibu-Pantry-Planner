@@ -23,7 +23,7 @@ switch ($action) {
         $kid = (int)($_GET['kitchen_id'] ?? $kitchenId);
 
         $sql = "SELECT r.*, u.name AS chef_name,
-                (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
+                (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL) AS line_count
                 FROM requisitions r
                 LEFT JOIN users u ON u.id = r.created_by
                 WHERE r.req_date = ? AND r.kitchen_id = ?";
@@ -57,13 +57,13 @@ switch ($action) {
         $req = $stmt->fetch();
         if (!$req) jsonError('Requisition not found', 404);
 
-        $lines = $db->prepare("SELECT rl.*, i.stock_qty AS current_stock, i.code AS item_code FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? AND rl.status != 'rejected' ORDER BY rl.item_name");
+        $lines = $db->prepare("SELECT rl.*, i.stock_qty AS current_stock, i.code AS item_code FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? AND rl.deleted_at IS NULL AND rl.status != 'rejected' ORDER BY rl.item_name");
         $lines->execute([$id]);
         $lineData = $lines->fetchAll();
 
         // Include dishes with per-dish portions
         $dStmt = $db->prepare("SELECT rd.recipe_id, rd.recipe_name, rd.recipe_servings, rd.scale_factor, rd.guest_count
-            FROM requisition_dishes rd WHERE rd.requisition_id = ? ORDER BY rd.created_at");
+            FROM requisition_dishes rd WHERE rd.requisition_id = ? AND rd.deleted_at IS NULL ORDER BY rd.created_at");
         $dStmt->execute([$id]);
         $dishData = $dStmt->fetchAll();
 
@@ -121,7 +121,7 @@ switch ($action) {
 
         // 4. Fetch all sessions for this date
         $rStmt = $db->prepare("SELECT r.*, u.name AS chef_name,
-            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
+            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL) AS line_count
             FROM requisitions r LEFT JOIN users u ON u.id = r.created_by
             WHERE r.req_date = ? AND r.kitchen_id = ?
             ORDER BY r.session_number ASC, r.supplement_number ASC");
@@ -135,13 +135,13 @@ switch ($action) {
         if ($firstReq) {
             $fid = (int)$firstReq['id'];
             // Lines
-            $lStmt = $db->prepare("SELECT rl.*, i.stock_qty AS current_stock FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? ORDER BY rl.item_name");
+            $lStmt = $db->prepare("SELECT rl.*, i.stock_qty AS current_stock FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? AND rl.deleted_at IS NULL ORDER BY rl.item_name");
             $lStmt->execute([$fid]);
             $fLines = $lStmt->fetchAll();
 
             // Dishes + ingredients
             $dStmt = $db->prepare("SELECT rd.recipe_id, rd.recipe_name, rd.recipe_servings, rd.scale_factor, rd.guest_count
-                FROM requisition_dishes rd WHERE rd.requisition_id = ? ORDER BY rd.created_at");
+                FROM requisition_dishes rd WHERE rd.requisition_id = ? AND rd.deleted_at IS NULL ORDER BY rd.created_at");
             $dStmt->execute([$fid]);
             $fDishes = $dStmt->fetchAll();
 
@@ -375,7 +375,7 @@ switch ($action) {
 
         // Return all requisitions for this date
         $stmt = $db->prepare("SELECT r.*, u.name AS chef_name,
-            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
+            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL) AS line_count
             FROM requisitions r LEFT JOIN users u ON u.id = r.created_by
             WHERE r.req_date = ? AND r.kitchen_id = ?
             ORDER BY r.session_number ASC, r.supplement_number ASC");
@@ -422,7 +422,7 @@ switch ($action) {
 
         // Return all requisitions for this date so frontend can refresh tabs
         $allStmt = $db->prepare("SELECT r.*, u.name AS chef_name,
-            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
+            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL) AS line_count
             FROM requisitions r LEFT JOIN users u ON u.id = r.created_by
             WHERE r.req_date = ? AND r.kitchen_id = ?
             ORDER BY r.session_number ASC, r.supplement_number ASC");
@@ -554,8 +554,8 @@ switch ($action) {
         $req = $stmt->fetch();
         if (!$req) jsonError('Requisition not found or already submitted');
 
-        // Check has lines
-        $lineCount = $db->prepare("SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = ?");
+        // Check has lines (only count active, non-deleted, non-rejected lines)
+        $lineCount = $db->prepare("SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = ? AND deleted_at IS NULL AND status != 'rejected'");
         $lineCount->execute([$reqId]);
         if ((int)$lineCount->fetchColumn() === 0) jsonError('Cannot submit empty requisition');
 
@@ -691,7 +691,7 @@ switch ($action) {
         $req = $stmt->fetch();
         if (!$req) jsonError('Requisition not found or not in submittable status');
 
-        $updateLine = $db->prepare("UPDATE requisition_lines SET fulfilled_qty = ?, status = 'approved', store_notes = ? WHERE id = ? AND requisition_id = ?");
+        $updateLine = $db->prepare("UPDATE requisition_lines SET fulfilled_qty = ?, status = 'approved', store_notes = ? WHERE id = ? AND requisition_id = ? AND deleted_at IS NULL");
         foreach ($fulfillLines as $fl) {
             $updateLine->execute([
                 (float)($fl['fulfilled_qty'] ?? 0),
@@ -827,11 +827,11 @@ switch ($action) {
         // This ensures no lines are left with NULL received_qty
         if (!empty($lineIds)) {
             $ph2 = implode(',', array_fill(0, count($lineIds), '?'));
-            $db->prepare("UPDATE requisition_lines SET received_qty = COALESCE(fulfilled_qty, 0) WHERE requisition_id = ? AND id NOT IN ($ph2) AND received_qty IS NULL AND status != 'rejected'")
+            $db->prepare("UPDATE requisition_lines SET received_qty = COALESCE(fulfilled_qty, 0) WHERE requisition_id = ? AND id NOT IN ($ph2) AND received_qty IS NULL AND deleted_at IS NULL AND status != 'rejected'")
                ->execute(array_merge([$reqId], $lineIds));
         } else {
             // No lines confirmed at all — default everything to fulfilled
-            $db->prepare("UPDATE requisition_lines SET received_qty = COALESCE(fulfilled_qty, 0) WHERE requisition_id = ? AND received_qty IS NULL AND status != 'rejected'")
+            $db->prepare("UPDATE requisition_lines SET received_qty = COALESCE(fulfilled_qty, 0) WHERE requisition_id = ? AND received_qty IS NULL AND deleted_at IS NULL AND status != 'rejected'")
                ->execute([$reqId]);
         }
 
@@ -997,7 +997,7 @@ switch ($action) {
 
         // Count by status, excluding empty drafts (0 items) from active count
         $stmt = $db->prepare("SELECT r.status, COUNT(*) AS cnt,
-            SUM(CASE WHEN r.status = 'draft' AND (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) = 0 THEN 1 ELSE 0 END) AS empty_drafts
+            SUM(CASE WHEN r.status = 'draft' AND (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL) = 0 THEN 1 ELSE 0 END) AS empty_drafts
             FROM requisitions r WHERE r.req_date = ? AND r.kitchen_id = ? GROUP BY r.status");
         $stmt->execute([$today, $kid]);
         $rows = $stmt->fetchAll();
@@ -1049,8 +1049,8 @@ switch ($action) {
         $kid = (int)($_GET['kitchen_id'] ?? $kitchenId);
 
         $stmt = $db->prepare("SELECT r.*, u.name AS chef_name,
-            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND status != 'rejected') AS line_count,
-            (SELECT COALESCE(SUM(order_qty), 0) FROM requisition_lines WHERE requisition_id = r.id AND status != 'rejected') AS total_kg
+            (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL AND status != 'rejected') AS line_count,
+            (SELECT COALESCE(SUM(order_qty), 0) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL AND status != 'rejected') AS total_kg
             FROM requisitions r
             LEFT JOIN users u ON u.id = r.created_by
             WHERE r.req_date = ? AND r.kitchen_id = ?
@@ -1086,7 +1086,7 @@ switch ($action) {
             $lStmt = $db->prepare("SELECT rl.id, rl.requisition_id, rl.item_id, rl.item_name, rl.uom,
                 rl.order_qty, rl.fulfilled_qty, rl.received_qty, rl.unused_qty,
                 IFNULL(rl.is_staple, 0) AS is_staple
-                FROM requisition_lines rl WHERE rl.requisition_id IN ($ph) AND rl.status != 'rejected' ORDER BY rl.item_name");
+                FROM requisition_lines rl WHERE rl.requisition_id IN ($ph) AND rl.deleted_at IS NULL AND rl.status != 'rejected' ORDER BY rl.item_name");
             $lStmt->execute(array_values($receivedIds));
             foreach ($lStmt->fetchAll() as $line) {
                 $linesByReq[(int)$line['requisition_id']][] = $line;
@@ -1193,8 +1193,8 @@ switch ($action) {
         $recipe = $stmt->fetch();
         if (!$recipe) jsonError('Recipe not found');
 
-        // Check not already added
-        $stmt = $db->prepare("SELECT id FROM requisition_dishes WHERE requisition_id = ? AND recipe_id = ?");
+        // Check not already added (ignore soft-deleted entries so re-adding after removal works)
+        $stmt = $db->prepare("SELECT id FROM requisition_dishes WHERE requisition_id = ? AND recipe_id = ? AND deleted_at IS NULL");
         $stmt->execute([$reqId, $recipeId]);
         if ($stmt->fetch()) jsonError('This dish is already in that order');
 
@@ -1356,12 +1356,12 @@ switch ($action) {
             $db->prepare("UPDATE requisitions SET guest_count = ?, updated_at = NOW() WHERE id = ?")
                ->execute([$newGuestCount, $reqId]);
 
-            // Recalculate all non-staple line quantities proportionally
-            $db->prepare("UPDATE requisition_lines SET order_qty = ROUND(order_qty * ?, 1), portions = ? WHERE requisition_id = ? AND (is_staple = 0 OR is_staple IS NULL)")
+            // Recalculate all non-staple line quantities proportionally (skip soft-deleted lines)
+            $db->prepare("UPDATE requisition_lines SET order_qty = ROUND(order_qty * ?, 1), portions = ? WHERE requisition_id = ? AND deleted_at IS NULL AND (is_staple = 0 OR is_staple IS NULL)")
                ->execute([$ratio, $newGuestCount, $reqId]);
 
-            // Also update requisition_dishes guest_count and scale_factor
-            $db->prepare("UPDATE requisition_dishes SET guest_count = ?, scale_factor = ROUND(scale_factor * ?, 3) WHERE requisition_id = ?")
+            // Also update requisition_dishes guest_count and scale_factor (skip soft-deleted dishes)
+            $db->prepare("UPDATE requisition_dishes SET guest_count = ?, scale_factor = ROUND(scale_factor * ?, 3) WHERE requisition_id = ? AND deleted_at IS NULL")
                ->execute([$newGuestCount, $ratio, $reqId]);
 
             $db->commit();
@@ -1406,7 +1406,7 @@ switch ($action) {
 
             // Check if item already exists (only if item_id is provided)
             if ($itemId) {
-                $existCheck = $db->prepare("SELECT id FROM requisition_lines WHERE requisition_id = ? AND item_id = ? AND status != 'rejected'");
+                $existCheck = $db->prepare("SELECT id FROM requisition_lines WHERE requisition_id = ? AND item_id = ? AND deleted_at IS NULL AND status != 'rejected'");
                 $existCheck->execute([$reqId, $itemId]);
                 if ($existCheck->fetch()) jsonError('Item already in this order');
             }
@@ -1436,7 +1436,7 @@ switch ($action) {
         $lineCheck = $db->prepare(
             "SELECT rl.id, r.status FROM requisition_lines rl
              JOIN requisitions r ON r.id = rl.requisition_id
-             WHERE rl.id = ?"
+             WHERE rl.id = ? AND rl.deleted_at IS NULL"
         );
         $lineCheck->execute([$lineId]);
         $lineRow = $lineCheck->fetch();
@@ -1446,7 +1446,7 @@ switch ($action) {
         }
 
         // Only update qty — UOM is snapshotted at creation and never changed
-        $db->prepare("UPDATE requisition_lines SET order_qty = ? WHERE id = ?")->execute([$orderQty, $lineId]);
+        $db->prepare("UPDATE requisition_lines SET order_qty = ? WHERE id = ? AND deleted_at IS NULL")->execute([$orderQty, $lineId]);
         jsonResponse(['updated' => true]);
         break;
 
@@ -1572,9 +1572,9 @@ switch ($action) {
 
         $db->beginTransaction();
         try {
-            // Clear old dish entries and menu-generated lines (preserve manually-added staple lines)
-            $db->prepare("DELETE FROM requisition_dishes WHERE requisition_id = ?")->execute([$reqId]);
-            $db->prepare("DELETE FROM requisition_lines WHERE requisition_id = ? AND is_staple = 0")->execute([$reqId]);
+            // Clear old dish entries and menu-generated lines (soft-delete to preserve audit trail)
+            $db->prepare("UPDATE requisition_dishes SET deleted_at = NOW(), deleted_by = ? WHERE requisition_id = ? AND deleted_at IS NULL")->execute([$user['id'], $reqId]);
+            $db->prepare("UPDATE requisition_lines SET deleted_at = NOW(), deleted_by = ? WHERE requisition_id = ? AND is_staple = 0 AND deleted_at IS NULL")->execute([$user['id'], $reqId]);
 
             // Aggregated items: itemId => { item_name, total_qty, uom, stock_qty, portion_weight, order_mode, category, sources[] }
             $aggregated = [];
@@ -1774,7 +1774,7 @@ switch ($action) {
         // Get dishes (recipe-based AND packed)
         $dStmt = $db->prepare("SELECT rd.id, rd.recipe_id, COALESCE(rd.is_packed, 0) AS is_packed,
             rd.recipe_name, rd.recipe_servings, rd.scale_factor, rd.guest_count
-            FROM requisition_dishes rd WHERE rd.requisition_id = ? ORDER BY rd.is_packed ASC, rd.created_at");
+            FROM requisition_dishes rd WHERE rd.requisition_id = ? AND rd.deleted_at IS NULL ORDER BY rd.is_packed ASC, rd.created_at");
         $dStmt->execute([$reqId]);
         $dishes = $dStmt->fetchAll();
 
@@ -1824,7 +1824,7 @@ switch ($action) {
                        r.guest_count, r.status, r.created_at, r.updated_at,
                        k.name AS kitchen_name,
                        u.name AS chef_name,
-                       (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id) AS line_count
+                       (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL) AS line_count
                 FROM requisitions r
                 LEFT JOIN kitchens k ON k.id = r.kitchen_id
                 LEFT JOIN users u ON u.id = r.created_by
@@ -1848,9 +1848,9 @@ switch ($action) {
         $reqId = (int)($data['requisition_id'] ?? 0);
         if (!$reqId) jsonError('Requisition ID required');
 
-        // Auto-fill received_qty from fulfilled_qty if missing
+        // Auto-fill received_qty from fulfilled_qty if missing (only active lines)
         $db->prepare("UPDATE requisition_lines SET received_qty = fulfilled_qty
-                      WHERE requisition_id = ? AND (received_qty IS NULL OR received_qty = 0)")->execute([$reqId]);
+                      WHERE requisition_id = ? AND deleted_at IS NULL AND (received_qty IS NULL OR received_qty = 0)")->execute([$reqId]);
         $db->prepare("UPDATE requisitions SET status = 'closed', updated_at = NOW() WHERE id = ?")->execute([$reqId]);
 
         auditLog('admin_force_close', 'requisition', $reqId);

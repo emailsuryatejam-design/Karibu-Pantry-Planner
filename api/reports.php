@@ -30,7 +30,7 @@ switch ($action) {
                    SUM(COALESCE(rl.unused_qty, 0)) AS total_kg_wasted
             FROM requisitions r
             LEFT JOIN kitchens k ON k.id = r.kitchen_id
-            LEFT JOIN requisition_lines rl ON rl.requisition_id = r.id
+            LEFT JOIN requisition_lines rl ON rl.requisition_id = r.id AND rl.deleted_at IS NULL
             WHERE r.req_date BETWEEN ? AND ?
             GROUP BY k.id, r.req_date, r.meals, r.status
             ORDER BY r.req_date DESC, k.name
@@ -59,6 +59,7 @@ switch ($action) {
             FROM requisition_lines rl
             JOIN requisitions r ON r.id = rl.requisition_id
             WHERE r.req_date BETWEEN ? AND ?
+              AND rl.deleted_at IS NULL
               AND rl.status != 'rejected'
             GROUP BY rl.item_name, rl.uom
             ORDER BY total_ordered DESC
@@ -84,7 +85,7 @@ switch ($action) {
                    COUNT(DISTINCT r.id) AS total_orders
             FROM requisitions r
             LEFT JOIN kitchens k ON k.id = r.kitchen_id
-            LEFT JOIN requisition_lines rl ON rl.requisition_id = r.id
+            LEFT JOIN requisition_lines rl ON rl.requisition_id = r.id AND rl.deleted_at IS NULL
             WHERE r.req_date BETWEEN ? AND ?
             GROUP BY k.id, k.name
             ORDER BY total_wasted DESC
