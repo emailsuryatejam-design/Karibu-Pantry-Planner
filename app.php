@@ -107,6 +107,12 @@ $pageFile = __DIR__ . '/pages/' . $page . '.php';
 
 <?php if ($isAdminPage): ?>
 <style>
+/* ── Readability: bump the fixed tiny font sizes app-wide (phones) ── */
+.text-\[8px\]  { font-size: 10px !important; }
+.text-\[9px\]  { font-size: 11px !important; }
+.text-\[10px\] { font-size: 12px !important; }
+.text-\[11px\] { font-size: 13px !important; }
+
 /* ── Admin Portal Shell ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
