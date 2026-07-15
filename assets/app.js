@@ -293,7 +293,35 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 // ── Print Order ──
-async function printOrder(reqId, kitchenNameOverride) {
+// Animated "save paper — print the whole day on one sheet" nudge.
+// Resolves 'whole-day' or 'single'. Injected so it works on any page.
+function dayPrintSuggest(mealsCount, dateLabel) {
+    return new Promise(resolve => {
+        const ov = document.createElement('div');
+        ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(17,24,39,.5);display:flex;align-items:center;justify-content:center;padding:16px;animation:kpFade .2s ease';
+        ov.innerHTML = `<style>
+            @keyframes kpFade{from{opacity:0}to{opacity:1}}
+            @keyframes kpPop{from{opacity:0;transform:scale(.92) translateY(12px)}to{opacity:1;transform:scale(1) translateY(0)}}
+            @keyframes kpSway{0%,100%{transform:rotate(-7deg)}50%{transform:rotate(7deg)}}
+          </style>
+          <div style="background:#fff;border-radius:20px;max-width:340px;width:100%;padding:26px 22px;text-align:center;box-shadow:0 20px 50px rgba(0,0,0,.25);animation:kpPop .28s cubic-bezier(.2,.8,.3,1.25)">
+            <div style="width:58px;height:58px;border-radius:50%;background:#dcfce7;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;animation:kpSway 1.8s ease-in-out infinite">
+              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10Z"/><path d="M2 21c0-3 1.85-5.36 5.08-6"/></svg>
+            </div>
+            <h3 style="margin:0 0 6px;font-size:17px;font-weight:700;color:#111827;font-family:-apple-system,Segoe UI,sans-serif">Save paper?</h3>
+            <p style="margin:0 0 18px;font-size:13px;line-height:1.5;color:#6b7280;font-family:-apple-system,Segoe UI,sans-serif">You have <b style="color:#111827">${mealsCount} orders</b> for ${dateLabel}. Print them together on one day sheet instead of separate pages.</p>
+            <button id="kpAll" style="width:100%;background:#16a34a;color:#fff;border:none;padding:12px;border-radius:12px;font-size:14px;font-weight:700;cursor:pointer;margin-bottom:8px">Print whole day (${mealsCount} orders)</button>
+            <button id="kpOne" style="width:100%;background:#f3f4f6;color:#374151;border:none;padding:11px;border-radius:12px;font-size:13px;font-weight:600;cursor:pointer">Just this one</button>
+          </div>`;
+        document.body.appendChild(ov);
+        const done = (v) => { ov.style.animation = 'kpFade .15s ease reverse'; setTimeout(() => ov.remove(), 140); resolve(v); };
+        ov.querySelector('#kpAll').onclick = () => done('whole-day');
+        ov.querySelector('#kpOne').onclick = () => done('single');
+        ov.onclick = (e) => { if (e.target === ov) done('single'); };
+    });
+}
+
+async function printOrder(reqId, kitchenNameOverride, skipDaySuggest) {
     try {
         const data = await api(`api/requisitions.php?action=get&id=${reqId}`);
         const req = data.requisition;
@@ -313,24 +341,37 @@ async function printOrder(reqId, kitchenNameOverride) {
         const status = (req.status || 'draft').toUpperCase();
         const kitchenName = kitchenNameOverride || '';
 
+        // Save-paper nudge: if there are other orders the same day, offer the one-sheet day print.
+        // Skipped when the caller explicitly asked for a single meal (skipDaySuggest).
+        if (!skipDaySuggest) {
+            try {
+                const dp = await api(`api/requisitions.php?action=day_print&date=${req.req_date}&kitchen_id=${req.kitchen_id}`);
+                const mealsCount = (dp.requisitions || []).length;
+                if (mealsCount >= 2) {
+                    const choice = await dayPrintSuggest(mealsCount, date);
+                    if (choice === 'whole-day') { printWholeDay(req.req_date, req.kitchen_id, kitchenNameOverride); return; }
+                }
+            } catch {}
+        }
+
         // Always show full flow: Requested → Sent → Received → Diff
-        // Build table rows
-        let tableRows = '';
+        // Menu items in the main table; staples printed in their own section below.
         let totalUnusedKg = 0;
-        lines.forEach((l, i) => {
+        lines.forEach(l => totalUnusedKg += parseFloat(l.unused_qty) || 0);
+        const menuLines = lines.filter(l => !parseInt(l.is_staple));
+        const stapleLines = lines.filter(l => parseInt(l.is_staple));
+
+        const buildRow = (l, i) => {
             const orderQty = parseFloat(l.order_qty) || 0;
-            const reqKg = parseFloat(l.required_kg) || 0;
             const fulfilledQty = parseFloat(l.fulfilled_qty) || 0;
             const receivedQty = parseFloat(l.received_qty) || 0;
             const unusedQty = parseFloat(l.unused_qty) || 0;
-            totalUnusedKg += unusedQty;
             const diff = receivedQty - fulfilledQty;
             const hasDiff = Math.abs(diff) > 0.01;
             const diffStyle = diff < 0 ? 'color:#dc2626;font-weight:bold' : (diff > 0 ? 'color:#16a34a;font-weight:bold' : 'color:#6b7280');
             const rowBg = hasDiff ? 'background:#fef2f2;' : '';
-
             const itemCode = l.item_code || l.code || '';
-            tableRows += `<tr style="border-bottom:1px solid #e5e7eb;${rowBg}">
+            return `<tr style="border-bottom:1px solid #e5e7eb;${rowBg}">
                 <td style="padding:6px 8px;text-align:center;color:#6b7280">${i + 1}</td>
                 <td style="padding:6px 8px;font-size:11px;color:#9ca3af;font-family:monospace">${escHtml(itemCode) || '—'}</td>
                 <td style="padding:6px 8px;font-weight:500">${escHtml(l.item_name)}</td>
@@ -341,7 +382,25 @@ async function printOrder(reqId, kitchenNameOverride) {
                 <td style="padding:6px 8px;text-align:center;${unusedQty > 0 ? 'color:#d97706;font-weight:bold' : 'color:#6b7280'}">${unusedQty > 0 ? unusedQty : '—'}</td>
                 <td style="padding:6px 8px;text-align:center;${diffStyle}">${hasDiff ? (diff > 0 ? '+' : '') + diff : '—'}</td>
             </tr>`;
-        });
+        };
+        const tableRows = menuLines.map((l, i) => buildRow(l, i)).join('');
+
+        const tableHead = `<thead><tr>
+                <th style="width:30px;text-align:center">#</th>
+                <th style="width:70px">Item No</th>
+                <th>Item</th>
+                <th class="center" style="width:45px">UOM</th>
+                <th class="center" style="width:60px">Requested</th>
+                <th class="center" style="width:60px">Sent</th>
+                <th class="center" style="width:60px">Received</th>
+                <th class="center" style="width:50px">Unused</th>
+                <th class="center" style="width:50px">Diff</th>
+            </tr></thead>`;
+        const stapleSectionHtml = stapleLines.length ? `
+            <div style="margin-top:18px">
+                <div style="font-size:12px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.3px;border-bottom:2px solid #7c3aed;padding-bottom:5px;margin-bottom:6px">Staple items (${stapleLines.length})</div>
+                <table>${tableHead}<tbody>${stapleLines.map((l, i) => buildRow(l, i)).join('')}</tbody></table>
+            </div>` : '';
 
         // Dishes list with per-dish portions
         let dishesHtml = '';
@@ -457,6 +516,7 @@ async function printOrder(reqId, kitchenNameOverride) {
             ${tableRows}
         </tbody>
     </table>
+    ${stapleSectionHtml}
 
     ${dishesHtml}
     ${disputeHtml}
@@ -502,149 +562,153 @@ async function printOrder(reqId, kitchenNameOverride) {
     }
 }
 
-// ── Print Store Order (grocery_orders table — different from requisitions) ──
-async function printStoreOrder(orderId) {
+// ── Print the WHOLE day: every requisition in one document, separated by meal headings ──
+async function printWholeDay(date, kitchenId, kitchenNameOverride) {
     try {
-        const data = await api(`api/store-orders.php?action=get&id=${orderId}`);
-        const order = data.order;
-        const lines = data.lines || [];
+        const kid = kitchenId || (typeof DB_KITCHEN_ID !== 'undefined' ? DB_KITCHEN_ID
+                  : typeof ORD_KITCHEN_ID !== 'undefined' ? ORD_KITCHEN_ID
+                  : typeof DC_KID !== 'undefined' ? DC_KID : '');
+        const data = await api(`api/requisitions.php?action=day_print&date=${date}&kitchen_id=${kid}`);
+        const reqs = data.requisitions || [];
+        const kitchenName = kitchenNameOverride || data.kitchen_name || '';
+        const dateLabel = formatDate(date);
 
-        const chefName = order.chef_name || 'Chef';
-        const date = formatDate(order.order_date);
-        const status = (order.status || 'pending').toUpperCase();
-        const hasDispute = parseInt(order.has_dispute) === 1;
+        if (reqs.length === 0) { showToast('No orders to print for this day', 'warning'); return; }
 
-        let tableRows = '';
-        lines.forEach((l, i) => {
-            const reqQty = parseFloat(l.requested_qty) || 0;
-            const fulfilledQty = parseFloat(l.fulfilled_qty) || 0;
-            const receivedQty = parseFloat(l.received_qty) || 0;
-            const diff = receivedQty > 0 ? receivedQty - reqQty : (fulfilledQty > 0 ? fulfilledQty - reqQty : 0);
-            const hasDiff = Math.abs(diff) > 0.01;
-            const diffStyle = diff < 0 ? 'color:#dc2626;font-weight:bold' : (diff > 0 ? 'color:#16a34a;font-weight:bold' : 'color:#6b7280');
-            const rowBg = hasDiff ? 'background:#fef2f2;' : '';
+        const mealName = (r) => (typeof reqLabel === 'function') ? reqLabel(r)
+            : ((r.meals || 'Order').charAt(0).toUpperCase() + (r.meals || 'Order').slice(1).replace(/_/g, ' '));
 
-            const itemCode = l.item_code || '';
-            tableRows += `<tr style="border-bottom:1px solid #e5e7eb;${rowBg}">
-                <td style="padding:6px 8px;text-align:center;color:#6b7280">${i + 1}</td>
-                <td style="padding:6px 8px;font-size:11px;color:#9ca3af;font-family:monospace">${escHtml(itemCode) || '—'}</td>
-                <td style="padding:6px 8px;font-weight:500">${escHtml(l.item_name)}</td>
-                <td style="padding:6px 8px;text-align:center;color:#6b7280;font-size:11px">${escHtml(l.uom || 'kg')}</td>
-                <td style="padding:6px 8px;text-align:center">${reqQty}</td>
-                <td style="padding:6px 8px;text-align:center;font-weight:600;color:#2563eb">${fulfilledQty || '—'}</td>
-                <td style="padding:6px 8px;text-align:center;font-weight:600;color:#16a34a">${receivedQty || '—'}</td>
-                <td style="padding:6px 8px;text-align:center;${diffStyle}">${hasDiff ? (diff > 0 ? '+' : '') + diff : '—'}</td>
-            </tr>`;
+        const statusColor = (s) => s === 'closed' ? '#e5e7eb;color:#4b5563'
+            : s === 'fulfilled' || s === 'received' ? '#dcfce7;color:#15803d'
+            : s === 'submitted' ? '#dbeafe;color:#1d4ed8' : '#fef3c7;color:#92400e';
+
+        let sections = '';
+        const stapleAgg = {}; // item|uom -> { item_name, uom, ordered, sent } — all staples across the day
+        reqs.forEach((r, idx) => {
+            const allLines = r.lines || [];
+            const menuLines = allLines.filter(l => !parseInt(l.is_staple));
+            const dishes = r.dishes || [];
+            const guests = r.guest_count || 20;
+
+            // collect staples into the day-wide consolidated list (printed once at the end)
+            allLines.filter(l => parseInt(l.is_staple)).forEach(l => {
+                const key = (l.item_name || '') + '|' + (l.uom || 'kg');
+                if (!stapleAgg[key]) stapleAgg[key] = { item_name: l.item_name, uom: l.uom || 'kg', ordered: 0, sent: 0 };
+                stapleAgg[key].ordered += parseFloat(l.order_qty) || 0;
+                stapleAgg[key].sent += parseFloat(l.fulfilled_qty) || 0;
+            });
+
+            if (menuLines.length === 0) return; // staples-only meal — its items show in the day staples list
+
+            let rows = '';
+            menuLines.forEach((l, i) => {
+                const reqKg = parseFloat(l.required_kg) || 0;
+                const stockQ = parseFloat(l.stock_qty) || 0;
+                const orderQ = parseFloat(l.order_qty) || 0;
+                const sentQ = parseFloat(l.fulfilled_qty) || 0;
+                const recvQ = parseFloat(l.received_qty) || 0;
+                const unusedQ = parseFloat(l.unused_qty) || 0;
+                rows += `<tr style="border-bottom:1px solid #e5e7eb">
+                    <td style="padding:5px 8px;text-align:center;color:#6b7280">${i + 1}</td>
+                    <td style="padding:5px 8px;font-weight:500">${escHtml(l.item_name)}</td>
+                    <td style="padding:5px 8px;text-align:center;color:#6b7280;font-size:11px">${escHtml(l.uom || 'kg')}</td>
+                    <td style="padding:5px 8px;text-align:center">${reqKg > 0 ? reqKg : '—'}</td>
+                    <td style="padding:5px 8px;text-align:center;color:#b45309">${stockQ > 0 ? stockQ : '—'}</td>
+                    <td style="padding:5px 8px;text-align:center;font-weight:600">${orderQ > 0 ? orderQ : '—'}</td>
+                    <td style="padding:5px 8px;text-align:center;color:#2563eb">${sentQ > 0 ? sentQ : '—'}</td>
+                    <td style="padding:5px 8px;text-align:center;color:#16a34a">${recvQ > 0 ? recvQ : '—'}</td>
+                    <td style="padding:5px 8px;text-align:center;color:${unusedQ > 0 ? '#d97706' : '#6b7280'}">${unusedQ > 0 ? unusedQ : '—'}</td>
+                </tr>`;
+            });
+
+            const dishesHtml = dishes.length > 0
+                ? `<div style="margin:6px 0 10px">${dishes.map(d => `<span style="display:inline-block;margin:2px 4px 2px 0;padding:2px 8px;background:#fef3c7;border-radius:6px;font-size:11px">${escHtml(d.recipe_name)} <strong style="color:#92400e">(${d.guest_count || guests} pax)</strong></span>`).join('')}</div>`
+                : '';
+
+            sections += `<div class="day-section" style="margin-bottom:18px">
+                <div style="display:flex;align-items:center;gap:10px;border-bottom:2px solid #ea580c;padding-bottom:6px;margin-bottom:8px;page-break-after:avoid">
+                    <h2 style="font-size:16px;font-weight:700;color:#1f2937;margin:0">${escHtml(mealName(r))}</h2>
+                    <span style="padding:2px 10px;border-radius:999px;font-size:10px;font-weight:600;background:${statusColor(r.status)}">${(r.status || '').toUpperCase()}</span>
+                    <span style="font-size:11px;color:#6b7280">${guests} pax &bull; ${escHtml(r.chef_name || 'Chef')} &bull; ${menuLines.length} items</span>
+                </div>
+                ${dishesHtml}
+                <table style="width:100%;border-collapse:collapse;font-size:12px">
+                    <thead><tr style="background:#f3f4f6">
+                        <th style="padding:6px 8px;text-align:center;width:28px">#</th>
+                        <th style="padding:6px 8px;text-align:left">Item</th>
+                        <th style="padding:6px 8px;text-align:center">UOM</th>
+                        <th style="padding:6px 8px;text-align:center">Req</th>
+                        <th style="padding:6px 8px;text-align:center">Stock</th>
+                        <th style="padding:6px 8px;text-align:center">Order</th>
+                        <th style="padding:6px 8px;text-align:center">Sent</th>
+                        <th style="padding:6px 8px;text-align:center">Recv</th>
+                        <th style="padding:6px 8px;text-align:center">Unused</th>
+                    </tr></thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
         });
 
-        let disputeHtml = '';
-        if (hasDispute) {
-            disputeHtml = `<div style="margin-top:12px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px">
-                <span style="font-size:12px;font-weight:600;color:#dc2626">⚠ DISPUTE: Quantity differences detected between issued and received items</span>
+        // Consolidated "Staples for the day" — all staple items across every meal, combined
+        const staples = Object.values(stapleAgg).sort((a, b) => a.item_name.localeCompare(b.item_name));
+        if (staples.length) {
+            const round2 = v => Math.round(v * 100) / 100;
+            const srows = staples.map((s, i) => `<tr style="border-bottom:1px solid #e5e7eb">
+                <td style="padding:5px 8px;text-align:center;color:#6b7280">${i + 1}</td>
+                <td style="padding:5px 8px;font-weight:500">${escHtml(s.item_name)}</td>
+                <td style="padding:5px 8px;text-align:center;color:#6b7280;font-size:11px">${escHtml(s.uom)}</td>
+                <td style="padding:5px 8px;text-align:center;font-weight:600">${s.ordered > 0 ? round2(s.ordered) : '—'}</td>
+                <td style="padding:5px 8px;text-align:center;color:#16a34a">${s.sent > 0 ? round2(s.sent) : '—'}</td>
+            </tr>`).join('');
+            sections += `<div class="day-section" style="margin-bottom:18px">
+                <div style="border-bottom:2px solid #7c3aed;padding-bottom:6px;margin-bottom:8px;page-break-after:avoid">
+                    <h2 style="font-size:16px;font-weight:700;color:#1f2937;margin:0">Staples for the day <span style="font-size:11px;color:#6b7280;font-weight:400">— ${staples.length} item${staples.length > 1 ? 's' : ''}, all meals combined</span></h2>
+                </div>
+                <table style="width:100%;border-collapse:collapse;font-size:12px">
+                    <thead><tr style="background:#f3f4ff">
+                        <th style="padding:6px 8px;text-align:center;width:28px">#</th>
+                        <th style="padding:6px 8px;text-align:left">Staple item</th>
+                        <th style="padding:6px 8px;text-align:center">UOM</th>
+                        <th style="padding:6px 8px;text-align:center">Order</th>
+                        <th style="padding:6px 8px;text-align:center">Sent</th>
+                    </tr></thead>
+                    <tbody>${srows}</tbody>
+                </table>
             </div>`;
         }
 
         const html = `<!DOCTYPE html>
-<html><head>
-<meta charset="UTF-8">
-<title>Store Order #${order.id} — ${date}</title>
+<html><head><meta charset="UTF-8"><title>Day Requisitions — ${dateLabel}</title>
 <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; padding: 24px; color: #1f2937; font-size: 13px; }
-    @media print {
-        body { padding: 12px; }
-        .no-print { display: none !important; }
-        @page { margin: 15mm; size: A4; }
-    }
-    table { width: 100%; border-collapse: collapse; }
-    th { background: #f3f4f6; text-align: left; padding: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #374151; border-bottom: 2px solid #d1d5db; }
-    th.center { text-align: center; }
-</style>
-</head><body>
+    body { font-family:'Segoe UI',Arial,sans-serif; padding:24px; color:#1f2937; font-size:13px; }
+    th { font-size:10px; text-transform:uppercase; letter-spacing:.3px; color:#374151; border-bottom:2px solid #d1d5db; }
+    @media print { body { padding:12px; } .no-print { display:none !important; } @page { margin:14mm; size:A4; } .day-section { page-break-inside:auto; } }
+</style></head><body>
     <div class="no-print" style="margin-bottom:16px;text-align:right">
-        <button onclick="window.print()" style="background:#ea580c;color:white;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">
-            🖨 Print
-        </button>
-        <button onclick="window.close()" style="background:#e5e7eb;color:#374151;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-left:8px">
-            ✕ Close
-        </button>
+        <button onclick="window.print()" style="background:#ea580c;color:#fff;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">🖨 Print</button>
+        <button onclick="window.close()" style="background:#e5e7eb;color:#374151;border:none;padding:10px 24px;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-left:8px">✕ Close</button>
     </div>
-    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #ea580c;padding-bottom:12px;margin-bottom:16px">
-        <div>
-            <h1 style="font-size:20px;font-weight:700;color:#ea580c">Karibu Pantry Planner</h1>
-        </div>
-        <div style="text-align:right">
-            <div style="font-size:16px;font-weight:700;color:#1f2937">STORE ORDER</div>
-            <div style="font-size:11px;color:#6b7280">#${order.id}</div>
-        </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;border-bottom:3px solid #ea580c;padding-bottom:12px;margin-bottom:18px">
+        <div><h1 style="font-size:20px;font-weight:700;color:#ea580c">Karibu Pantry Planner</h1>
+        ${kitchenName ? `<div style="font-size:12px;color:#6b7280;margin-top:2px">${escHtml(kitchenName)}</div>` : ''}</div>
+        <div style="text-align:right"><div style="font-size:16px;font-weight:700">DAY REQUISITIONS</div>
+        <div style="font-size:12px;color:#6b7280">${dateLabel} &bull; ${reqs.length} meal${reqs.length > 1 ? 's' : ''}</div></div>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:16px">
-        <div style="background:#f9fafb;padding:10px 12px;border-radius:8px;border:1px solid #e5e7eb">
-            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">Date</div>
-            <div style="font-size:14px;font-weight:600;color:#1f2937;margin-top:2px">${date}</div>
-        </div>
-        <div style="background:#f9fafb;padding:10px 12px;border-radius:8px;border:1px solid #e5e7eb">
-            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">Chef</div>
-            <div style="font-size:14px;font-weight:600;color:#1f2937;margin-top:2px">${escHtml(chefName)}</div>
-        </div>
-        <div style="background:#f9fafb;padding:10px 12px;border-radius:8px;border:1px solid #e5e7eb">
-            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px">Status</div>
-            <div style="font-size:14px;font-weight:600;color:#1f2937;margin-top:2px">${status}</div>
-        </div>
+    ${sections}
+    <div style="margin-top:28px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;page-break-inside:avoid">
+        <div><div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:12px">Prepared by (Chef)</div><div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:28px"></div><div style="font-size:10px;color:#9ca3af">Signature &amp; Date</div></div>
+        <div><div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:12px">Issued by (Store)</div><div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:28px"></div><div style="font-size:10px;color:#9ca3af">Signature &amp; Date</div></div>
+        <div><div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:12px">Approved by (Manager)</div><div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:28px"></div><div style="font-size:10px;color:#9ca3af">Signature &amp; Date</div></div>
     </div>
-    <div style="margin-bottom:12px">
-        <span style="font-size:12px;color:#6b7280">${lines.length} items</span>
-    </div>
-    <table>
-        <thead>
-            <tr>
-                <th style="width:30px;text-align:center">#</th>
-                <th style="width:70px">Item No</th>
-                <th>Item</th>
-                <th class="center" style="width:45px">UOM</th>
-                <th class="center" style="width:60px">Requested</th>
-                <th class="center" style="width:60px">Sent</th>
-                <th class="center" style="width:60px">Received</th>
-                <th class="center" style="width:50px">Diff</th>
-            </tr>
-        </thead>
-        <tbody>
-            ${tableRows}
-        </tbody>
-    </table>
-    ${disputeHtml}
-    <div style="margin-top:32px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px">
-        <div>
-            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:12px">Prepared by</div>
-            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:28px"></div>
-            <div style="font-size:10px;color:#9ca3af">Signature &amp; Date</div>
-        </div>
-        <div>
-            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:12px">Issued by</div>
-            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:28px"></div>
-            <div style="font-size:10px;color:#9ca3af">Signature &amp; Date</div>
-        </div>
-        <div>
-            <div style="font-size:10px;font-weight:600;color:#6b7280;text-transform:uppercase;margin-bottom:12px">Received by (Manager)</div>
-            <div style="border-bottom:1px solid #9ca3af;margin-bottom:6px;height:28px"></div>
-            <div style="font-size:10px;color:#9ca3af">Signature &amp; Date</div>
-        </div>
-    </div>
-    <div style="margin-top:24px;text-align:center;font-size:10px;color:#9ca3af">
-        Printed on ${new Date().toLocaleString('en-GB')} — Karibu Pantry Planner
-    </div>
+    <div style="margin-top:24px;text-align:center;font-size:10px;color:#9ca3af">Printed ${new Date().toLocaleString('en-GB')} — Karibu Pantry Planner</div>
 </body></html>`;
 
-        const printWin = window.open('', '_blank', 'width=800,height=900');
-        if (printWin) {
-            printWin.document.write(html);
-            printWin.document.close();
-            setTimeout(() => printWin.print(), 400);
-        } else {
-            showToast('Please allow popups to print', 'warning');
-        }
+        const win = window.open('', '_blank', 'width=820,height=920');
+        if (win) { win.document.write(html); win.document.close(); setTimeout(() => win.print(), 400); }
+        else showToast('Please allow popups to print', 'warning');
     } catch (e) {
-        showToast('Failed to load order for printing: ' + (e.message || ''), 'error');
+        showToast('Failed to build day print: ' + (e.message || ''), 'error');
     }
 }
 

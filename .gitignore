@@ -21,3 +21,16 @@ vapid-keys.php
 Thumbs.db
 # Wed Mar 25 21:58:04 EAT 2026
 deploy.sh
+
+# Local-only secrets / machine notes (SSH password lives here)
+CLAUDE.local.md
+
+# Generated reports & output (regenerated; not source)
+reports/
+
+# Old one-off sample exports
+Ngorongoro_DayPDF_2026-06-14.pdf
+Ngorongoro_LionsPaw_2026-06-14.html
+
+# Stray temp/debug scripts
+_*.php

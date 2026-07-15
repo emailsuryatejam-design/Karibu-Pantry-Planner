@@ -13,8 +13,11 @@ $kitchenId = currentKitchenId();
             </h1>
         </div>
         <div class="flex items-center gap-1.5">
-            <button onclick="ordPrintOrder()" class="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 active:bg-gray-300 transition" title="Print Order Report">
+            <button onclick="printWholeDay(ordDate, ORD_KITCHEN_ID)" class="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 active:bg-gray-300 transition" title="Print whole day">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            </button>
+            <button onclick="window.open('api/requisitions.php?action=day_pdf&date=' + ordDate + '&kitchen_id=' + ORD_KITCHEN_ID, '_blank')" class="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 active:bg-gray-300 transition" title="Download day PDF">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>
             </button>
             <button onclick="ordRefresh()" class="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 active:bg-gray-300 transition" title="Refresh">
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
@@ -98,6 +101,46 @@ $kitchenId = currentKitchenId();
         <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6" id="ordItemDetailContent"></div>
     </div>
 
+    <!-- New Custom Dish modal -->
+    <div id="ordDishModal" class="hidden fixed inset-0 z-[215] bg-black/50 flex items-start justify-center pt-[8vh] p-4 animate-fade-in" onclick="if(event.target===this)ordCloseDishModal()">
+        <div class="bg-white rounded-2xl shadow-xl max-w-md w-full max-h-[84vh] flex flex-col overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+                <div>
+                    <h3 class="text-base font-bold text-gray-900">New dish</h3>
+                    <p class="text-xs text-gray-400">Saved to your recipes &amp; added to this order</p>
+                </div>
+                <button onclick="ordCloseDishModal()" class="w-8 h-8 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto px-5 py-3 space-y-3">
+                <div>
+                    <label class="text-xs font-semibold text-gray-500">Dish name</label>
+                    <input id="ordDishName" type="text" placeholder="e.g. Grilled Kingfish"
+                        class="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 mt-1 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300">
+                </div>
+                <div>
+                    <label class="text-xs font-semibold text-gray-500">For how many people</label>
+                    <input id="ordDishServings" type="number" min="1" step="1"
+                        class="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 mt-1 focus:outline-none focus:ring-2 focus:ring-orange-200 focus:border-orange-300">
+                </div>
+                <div>
+                    <div class="flex items-center justify-between mb-1">
+                        <label class="text-xs font-semibold text-gray-500">Ingredients</label>
+                        <button type="button" onclick="ordAddIngRow()" class="text-xs text-orange-600 font-semibold hover:text-orange-700">+ Add ingredient</button>
+                    </div>
+                    <div id="ordDishIngs" class="space-y-2"></div>
+                </div>
+                <p class="text-[11px] text-gray-400 leading-relaxed">Type the total amount needed for the number of people above (e.g. 5 kg rice for 50). It scales automatically when you reuse the dish later.</p>
+            </div>
+            <div class="px-5 py-3 border-t border-gray-100 flex gap-2">
+                <button onclick="ordCloseDishModal()" class="flex-1 py-3 rounded-xl border-2 border-gray-200 text-gray-600 font-semibold text-sm hover:bg-gray-50">Cancel</button>
+                <button onclick="ordSaveCustomDish()" id="ordDishSaveBtn" class="flex-1 py-3 rounded-xl bg-orange-500 text-white font-semibold text-sm hover:bg-orange-600">Save &amp; add</button>
+            </div>
+        </div>
+    </div>
+    <datalist id="ordItemsDatalist"></datalist>
+
     <!-- Print View (hidden, revealed only during print) -->
     <div id="ordPrintView" class="hidden"></div>
 </div>
@@ -153,6 +196,7 @@ $kitchenId = currentKitchenId();
 
 <script>
 const ORD_KITCHEN_ID = <?= (int)$kitchenId ?>;
+const ORD_KITCHEN_NAME = <?= json_encode($user['kitchen_name'] ?? '') ?>;
 const ORD_UOM_OPTIONS = ['kg', 'g', 'ltr', 'ml', 'pcs', 'tins', 'box', 'pkt', 'bunch', 'bottle', 'unit'];
 
 let ordDate = todayStr();
@@ -174,6 +218,94 @@ const ordMealColors = {
 };
 const ordDefaultColor = { border: 'border-gray-300', bg: 'bg-gray-50', text: 'text-gray-700', header: 'bg-gray-50 border-gray-200' };
 function ordGetColor(meals) { return ordMealColors[(meals||'').toLowerCase()] || ordDefaultColor; }
+
+// ══════════════════════════════════════════════
+//  New custom dish (saves as recipe + adds to order)
+// ══════════════════════════════════════════════
+let ordDishReqId = null;
+let ordItemByName = {};   // lowercase name -> { id, uom }
+
+async function ordEnsureItems() {
+    if (!ordAllItems) {
+        try { const res = await api('api/items.php?action=list&active=1'); ordAllItems = res.items || []; }
+        catch (e) { ordAllItems = []; }
+    }
+    ordItemByName = {};
+    const dl = document.getElementById('ordItemsDatalist');
+    if (dl) dl.innerHTML = ordAllItems.map(i => `<option value="${escHtml(i.name)}"></option>`).join('');
+    ordAllItems.forEach(i => { ordItemByName[(i.name || '').toLowerCase()] = { id: i.id, uom: (i.uom || 'kg') }; });
+}
+
+function ordUomOptions(sel) {
+    return ORD_UOM_OPTIONS.map(u => `<option ${u === sel ? 'selected' : ''}>${u}</option>`).join('');
+}
+
+function ordAddIngRow(name = '', qty = '', uom = 'kg') {
+    const wrap = document.getElementById('ordDishIngs');
+    const div = document.createElement('div');
+    div.className = 'ord-ing-row flex gap-1.5 items-center';
+    div.innerHTML = `
+        <input list="ordItemsDatalist" value="${escHtml(name)}" oninput="ordIngNameChange(this)" placeholder="Item"
+            class="ord-ing-name flex-1 min-w-0 text-sm border border-gray-200 rounded-lg px-2 py-2 focus:outline-none focus:ring-2 focus:ring-orange-200">
+        <input type="number" value="${qty}" min="0" step="0.1" placeholder="Qty"
+            class="ord-ing-qty w-16 text-sm border border-gray-200 rounded-lg px-2 py-2 text-center focus:outline-none focus:ring-2 focus:ring-orange-200">
+        <select class="ord-ing-uom w-20 text-sm border border-gray-200 rounded-lg px-1 py-2 bg-white">${ordUomOptions(uom)}</select>
+        <button type="button" onclick="this.closest('.ord-ing-row').remove()" class="text-gray-300 hover:text-red-500 px-1 shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+        </button>`;
+    wrap.appendChild(div);
+}
+
+function ordIngNameChange(input) {
+    const m = ordItemByName[(input.value || '').trim().toLowerCase()];
+    if (!m) return;
+    const sel = input.closest('.ord-ing-row').querySelector('.ord-ing-uom');
+    if (sel && m.uom) { for (const o of sel.options) if (o.value === m.uom) { sel.value = m.uom; break; } }
+}
+
+async function ordNewDish(reqId, guests) {
+    ordDishReqId = reqId;
+    await ordEnsureItems();
+    document.getElementById('ordDishName').value = '';
+    document.getElementById('ordDishServings').value = guests || 20;
+    document.getElementById('ordDishIngs').innerHTML = '';
+    ordAddIngRow(); ordAddIngRow(); ordAddIngRow();
+    document.getElementById('ordDishModal').classList.remove('hidden');
+}
+
+function ordCloseDishModal() { document.getElementById('ordDishModal').classList.add('hidden'); }
+
+async function ordSaveCustomDish() {
+    const name = document.getElementById('ordDishName').value.trim();
+    const servings = parseInt(document.getElementById('ordDishServings').value) || 0;
+    if (!name) { showToast('Enter a dish name', 'warning'); return; }
+    const ings = [];
+    document.querySelectorAll('#ordDishIngs .ord-ing-row').forEach(row => {
+        const nm = row.querySelector('.ord-ing-name').value.trim();
+        const qty = parseFloat(row.querySelector('.ord-ing-qty').value) || 0;
+        const uom = row.querySelector('.ord-ing-uom').value;
+        if (nm && qty > 0) {
+            const m = ordItemByName[nm.toLowerCase()];
+            ings.push({ item_id: m ? m.id : null, item_name: nm, qty, uom, is_primary: 1 });
+        }
+    });
+    if (!ings.length) { showToast('Add at least one ingredient with a quantity', 'warning'); return; }
+    const btn = document.getElementById('ordDishSaveBtn');
+    setLoading(btn, true);
+    try {
+        const res = await api('api/requisitions.php?action=add_custom_dish', {
+            method: 'POST',
+            body: JSON.stringify({ requisition_id: ordDishReqId, dish_name: name, servings, ingredients: ings })
+        });
+        showToast(res.reused ? `Added existing dish "${name}"` : `"${name}" saved & added (${res.lines_added} item${res.lines_added === 1 ? '' : 's'})`, 'success');
+        ordCloseDishModal();
+        await ordLoad();
+    } catch (e) {
+        showToast(e.message || 'Could not add dish', 'error');
+    } finally {
+        setLoading(btn, false);
+    }
+}
 
 function ordStatusBadge(status) {
     const map = {
@@ -603,14 +735,16 @@ function ordRenderEditableLines(req, lines) {
             <table class="w-full text-[11px]">
                 <thead><tr class="bg-gray-50">
                     <th class="text-left px-2 py-1.5 text-gray-500 font-semibold">Item</th>
-                    <th class="text-center px-1 py-1.5 text-blue-600 font-semibold w-16">Calc</th>
-                    <th class="text-center px-1 py-1.5 text-green-600 font-semibold w-20">Order</th>
+                    <th class="text-center px-1 py-1.5 text-blue-600 font-semibold w-14" title="Recipe requirement">Req</th>
+                    <th class="text-center px-1 py-1.5 text-amber-600 font-semibold w-14" title="Already in kitchen">Stock</th>
+                    <th class="text-center px-1 py-1.5 text-green-600 font-semibold w-20" title="What the store will send — you can change this">Order</th>
                     <th class="text-center px-1 py-1.5 w-8"></th>
                 </tr></thead>
                 <tbody>`;
 
     lines.forEach(line => {
-        const calcQty = parseFloat(line.calc_qty || line.required_qty || 0);
+        const calcQty = parseFloat(line.required_kg || line.calc_qty || line.required_qty || 0);
+        const stockQty = parseFloat(line.stock_qty) || 0;
         const orderQty = parseFloat(line.order_qty) || 0;
         if (ordAdjustments[line.id] === undefined) ordAdjustments[line.id] = orderQty;
         const currentQty = ordAdjustments[line.id];
@@ -628,6 +762,7 @@ function ordRenderEditableLines(req, lines) {
                 ${breakdownHtml ? `<div class="text-[9px] text-gray-400 mt-0.5 leading-tight">${breakdownHtml}</div>` : ''}
             </td>
             <td class="text-center px-1 py-2 text-blue-700 font-medium text-xs">${calcQty > 0 ? calcQty.toFixed(1) : '—'}</td>
+            <td class="text-center px-1 py-2 text-amber-600 font-medium text-xs">${stockQty > 0 ? stockQty.toFixed(1) : '—'}</td>
             <td class="text-center px-1 py-2">
                 <input type="number" value="${currentQty}" step="0.5" min="0"
                     onchange="ordAdjustments[${line.id}] = parseFloat(this.value)||0"
@@ -653,12 +788,23 @@ function ordRenderEditableLines(req, lines) {
             class="px-4 py-3 rounded-xl border-2 border-orange-200 text-orange-500 font-semibold text-sm hover:bg-orange-50 flex items-center justify-center gap-1.5 transition">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
         </button>
+        <button onclick="printOrder(${req.id}, ORD_KITCHEN_NAME, true)" title="Print this meal (with its staples)"
+            class="px-4 py-3 rounded-xl border-2 border-gray-200 text-gray-500 font-semibold text-sm hover:bg-gray-50 flex items-center justify-center gap-1.5 transition">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+        </button>
         <button onclick="ordSubmitToStore(${req.id})" id="ord-submit-${req.id}"
             class="flex-1 bg-green-600 hover:bg-green-700 text-white py-3 rounded-xl text-sm font-semibold transition flex items-center justify-center gap-2">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
             Submit to Store
         </button>
     </div>`;
+
+    // Add a brand-new dish that isn't in the recipe book — saves it as a recipe AND adds it here
+    html += `<button onclick="ordNewDish(${req.id}, ${parseInt(req.guest_count) || 20})"
+        class="w-full mt-2 py-2.5 rounded-xl border-2 border-dashed border-purple-200 text-purple-600 font-semibold text-xs hover:bg-purple-50 flex items-center justify-center gap-1.5 transition">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 11h.01"/><path d="M11 15h.01"/><path d="M16 16h.01"/><path d="m2 16 20 6-6-20A20 20 0 0 0 2 16"/><path d="M5.71 17.11a17.04 17.04 0 0 1 11.4-11.4"/></svg>
+        Add a new dish (not in recipes) — saved for next time
+    </button>`;
 
     html += '</div>';
     return html;
@@ -696,7 +842,15 @@ function ordRenderReadOnlyLines(req, lines) {
         </tr>`;
     });
 
-    html += `</tbody></table></div></div>`;
+    html += `</tbody></table></div>
+        <div class="mt-3">
+            <button onclick="printOrder(${req.id}, ORD_KITCHEN_NAME, true)"
+                class="w-full px-4 py-2.5 rounded-xl border-2 border-gray-200 text-gray-600 font-semibold text-sm hover:bg-gray-50 flex items-center justify-center gap-2 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
+                Print this meal
+            </button>
+        </div>
+    </div>`;
     return html;
 }
 
@@ -1137,18 +1291,14 @@ async function ordShowAddItem(reqId) {
     if (!targetReq) { showToast('Could not create order. Try again.', 'error'); return; }
     ordAddTargetReqId = targetReq.id;
 
-    // Update modal title
+    // All manual additions go to the Staples list. Switch to that tab first so
+    // the chef sees where the item will land.
+    if (ordActiveTab !== 'staple') ordSwitchTab('staple');
+
     const titleEl = document.getElementById('ordAddModalTitle');
     const subEl = document.getElementById('ordAddModalSub');
-    if (ordActiveTab === 'staple') {
-        if (titleEl) titleEl.textContent = 'Add Staple Item';
-        if (subEl) subEl.textContent = 'Search and tap to add';
-    } else {
-        const typeInfo = ordTypes.find(t => (t.code || '').toLowerCase() === (targetReq.meals || '').toLowerCase());
-        const mealLabel = typeInfo ? typeInfo.name : (targetReq.meals || 'Order');
-        if (titleEl) titleEl.textContent = 'Add to ' + mealLabel;
-        if (subEl) subEl.textContent = 'Item will be added to this order';
-    }
+    if (titleEl) titleEl.textContent = 'Add Staple Item';
+    if (subEl) subEl.textContent = 'Item will be added to the Staple order';
 
     if (!ordAllItems) {
         try { const res = await api('api/items.php?action=list&active=1'); ordAllItems = res.items || []; } catch (e) { ordAllItems = []; }
@@ -1279,10 +1429,10 @@ async function ordConfirmAddItem(itemId, itemName) {
     if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
 
     try {
-        const isStaple = ordActiveTab === 'staple' ? 1 : 0;
+        // Manual additions always go to Staples — Menu items only come from recipes.
         await api('api/requisitions.php?action=add_line_to_order', {
             method: 'POST',
-            body: { requisition_id: ordAddTargetReqId, item_id: itemId, item_name: itemName, order_qty: qty, uom: uom, is_staple: isStaple }
+            body: { requisition_id: ordAddTargetReqId, item_id: itemId, item_name: itemName, order_qty: qty, uom: uom, is_staple: 1 }
         });
         showToast(`${itemName} added!`, 'success');
         ordCloseItemDetail();
@@ -1423,14 +1573,16 @@ function ordPrintOrder() {
         html += '<h2>' + escHtml(group.label) + ' (' + escHtml(group.status || '') + ')</h2>';
         html += '<table><thead><tr>';
         html += '<th style="width:5%">#</th>';
-        html += '<th style="width:40%">Item Name</th>';
-        html += '<th style="width:12%">UOM</th>';
-        html += '<th style="width:15%">Calc Qty</th>';
+        html += '<th style="width:34%">Item Name</th>';
+        html += '<th style="width:11%">UOM</th>';
+        html += '<th style="width:15%">Req Qty</th>';
+        html += '<th style="width:15%">Stock</th>';
         html += '<th style="width:15%">Order Qty</th>';
         html += '</tr></thead><tbody>';
 
         group.lines.forEach((line, idx) => {
-            const calcQty = parseFloat(line.calc_qty || line.required_qty || 0);
+            const calcQty = parseFloat(line.required_kg || line.calc_qty || line.required_qty || 0);
+            const stockQty = parseFloat(line.stock_qty) || 0;
             const orderQty = ordAdjustments[line.id] !== undefined
                 ? ordAdjustments[line.id]
                 : (parseFloat(line.order_qty) || 0);
@@ -1444,6 +1596,7 @@ function ordPrintOrder() {
             html += '<td>' + escHtml(line.item_name) + '</td>';
             html += '<td class="num">' + escHtml(line.uom || 'kg') + '</td>';
             html += '<td class="num">' + (calcQty > 0 ? calcQty.toFixed(1) : '-') + '</td>';
+            html += '<td class="num">' + (stockQty > 0 ? stockQty.toFixed(1) : '-') + '</td>';
             html += '<td class="num">' + (orderQty > 0 ? orderQty.toFixed(1) : '-') + '</td>';
             html += '</tr>';
         });

@@ -89,7 +89,33 @@ switch ($action) {
             jsonResponse(['dishes' => [], 'ingredients_by_recipe' => new \stdClass(), 'day' => $dayOfWeek, 'type' => $typeCode]);
         }
 
-        // Batch-load all recipe ingredients in ONE query
+        // ── Resolve each set-menu dish to THIS kitchen's own copy of the recipe ──
+        // The set menu is global and points at one chef's recipe. Each kitchen keeps its
+        // own copy (with its own ingredient toggles), so swap in the matching-by-name recipe
+        // owned by a chef in this kitchen — preferring the current user's own copy. This makes
+        // a chef's toggle the single source of truth for their dashboard, order and store list.
+        if ($kitchenId) {
+            $kuStmt = $db->prepare("SELECT id FROM users WHERE kitchen_id = ?");
+            $kuStmt->execute([$kitchenId]);
+            $kitchenUserIds = $kuStmt->fetchAll(PDO::FETCH_COLUMN);
+            if ($kitchenUserIds) {
+                $uph = implode(',', array_fill(0, count($kitchenUserIds), '?'));
+                $resolve = $db->prepare("SELECT id, servings FROM recipes
+                    WHERE name = ? AND created_by IN ($uph) AND deleted_at IS NULL
+                    ORDER BY (created_by = ?) DESC, id ASC LIMIT 1");
+                foreach ($dishes as &$d) {
+                    $resolve->execute(array_merge([$d['recipe_name']], $kitchenUserIds, [$user['id']]));
+                    $own = $resolve->fetch();
+                    if ($own) {
+                        $d['recipe_id']       = (int)$own['id'];
+                        $d['recipe_servings'] = $own['servings'] ?: $d['recipe_servings'];
+                    }
+                }
+                unset($d);
+            }
+        }
+
+        // Batch-load all recipe ingredients in ONE query (only ordered items — toggled-off excluded)
         $recipeIds = array_unique(array_column($dishes, 'recipe_id'));
         $ph = implode(',', array_fill(0, count($recipeIds), '?'));
         $iStmt = $db->prepare("SELECT ri.recipe_id, ri.item_id, ri.qty, ri.uom, ri.is_primary,
@@ -97,7 +123,7 @@ switch ($action) {
             FROM recipe_ingredients ri
             LEFT JOIN items i ON i.id = ri.item_id
             LEFT JOIN kitchen_inventory ki ON ki.item_id = ri.item_id AND ki.kitchen_id = ?
-            WHERE ri.recipe_id IN ($ph)
+            WHERE ri.recipe_id IN ($ph) AND ri.deleted_at IS NULL
             ORDER BY ri.recipe_id, ri.is_primary DESC, i.name");
         $iStmt->execute(array_merge([$kitchenId], array_values($recipeIds)));
 

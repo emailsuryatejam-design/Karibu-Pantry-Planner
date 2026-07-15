@@ -14,6 +14,62 @@ $action = $_GET['action'] ?? 'list';
 $db = getDB();
 $kitchenId = $user['kitchen_id'] ?? null;
 
+/**
+ * Meal-type codes to auto-create draft requisitions for, per kitchen.
+ * Prevents empty "phantom" drafts for meal types a kitchen never serves
+ * (e.g. sundowner / bush_dinner at a camp that doesn't offer them).
+ * = core meals (always) ∪ meals this kitchen has actually generated an order for
+ *   (any status beyond 'draft' means it was locked/submitted at least once).
+ * Any other meal can still be started on demand via the 'ensure_session' action.
+ */
+function mealsToAutoCreate(PDO $db, int $kid): array {
+    $meals = ['breakfast', 'lunch', 'dinner'];
+    try {
+        $stmt = $db->prepare("SELECT DISTINCT LOWER(meals) m FROM requisitions
+            WHERE kitchen_id = ? AND status <> 'draft' AND deleted_at IS NULL");
+        $stmt->execute([$kid]);
+        foreach ($stmt->fetchAll() as $r) $meals[] = $r['m'];
+    } catch (Exception $e) { /* fall back to core meals */ }
+    return array_values(array_unique($meals));
+}
+
+/**
+ * Translate a computed order quantity into the item's purchase unit (how the store buys/stocks it),
+ * so the chef plans in recipe units but the order/store speak the buying unit.
+ *   - item bought by kg/ltr  → keep weight/volume (g→kg, ml→ltr already handled upstream)
+ *   - item bought as a PACK (pcs/tin/bottle/box/pkt/…):
+ *        · qty already a count  → keep the count (eggs, apples — never "convert" a count)
+ *        · qty in weight/volume → divide by pack size (grams/ml per pack) → whole packs, rounded up
+ *        · no pack size on file → leave in kg as a safe fallback
+ * Returns [qty, uom]. Pure read-time helper — recipes are never altered.
+ */
+function toPurchaseUnit(float $qty, ?string $curUom, ?string $itemUom, $packSizeG): array {
+    $cur = strtolower(trim((string)$curUom));
+    $iu  = strtolower(trim((string)$itemUom));
+    if ($iu === '' || $iu === $cur) return [$qty, $curUom ?: ($itemUom ?: 'kg')];
+    $count = ['pcs','pc','piece','tin','tins','box','pkt','packet','bottle','bunch','tray','bag','unit','can','cans'];
+    if (in_array($cur, $count) && in_array($iu, $count)) return [$qty, $itemUom];        // count → count: keep
+    if (in_array($iu, ['kg','kgs','kilogram','kilograms'])) {
+        if (in_array($cur, ['g','grams','gram','gm'])) return [$qty / 1000, 'kg'];
+        return [$qty, 'kg'];
+    }
+    if (in_array($iu, ['ltr','ltrs','l','litre','litres','liter'])) {
+        if (in_array($cur, ['ml','mls','milliliter','millilitre'])) return [$qty / 1000, 'ltr'];
+        return [$qty, 'ltr'];
+    }
+    if (in_array($iu, $count)) {
+        $base = null;
+        if (in_array($cur, ['kg','kgs','kilogram','kilograms'])) $base = $qty * 1000;
+        elseif (in_array($cur, ['g','grams','gram','gm'])) $base = $qty;
+        elseif (in_array($cur, ['l','ltr','ltrs','litre','litres','liter'])) $base = $qty * 1000;
+        elseif (in_array($cur, ['ml','mls','milliliter','millilitre'])) $base = $qty;
+        $ps = (float)$packSizeG;
+        if ($base !== null && $ps > 0) return [ceil($base / $ps), $itemUom];             // → whole packs
+        return [$base !== null ? round($base / 1000, 2) : $qty, $base !== null ? 'kg' : $itemUom]; // fallback
+    }
+    return [$qty, $itemUom];
+}
+
 switch ($action) {
 
     // ── List requisitions for a date/kitchen ──
@@ -109,12 +165,16 @@ switch ($action) {
             $initTypes = $db->query("SELECT id, name, code, sort_order FROM requisition_types WHERE is_active = 1 ORDER BY sort_order, name")->fetchAll();
         }
 
-        // 3. Auto-create requisitions (INSERT IGNORE — safe for duplicates)
+        // 3. Auto-create requisitions (INSERT IGNORE — safe for duplicates).
+        //    Only for meals this kitchen actually uses — avoids empty phantom drafts.
+        //    Other meals stay available via the "+ start meal" chip (ensure_session).
         $initCreated = 0;
+        $autoMeals = mealsToAutoCreate($db, $kid);
         $insertStmt = $db->prepare("INSERT IGNORE INTO requisitions
             (kitchen_id, req_date, session_number, guest_count, meals, supplement_number, status, created_by)
             VALUES (?, ?, ?, ?, ?, 0, 'draft', ?)");
         foreach ($initTypes as $type) {
+            if (!in_array(strtolower($type['code']), $autoMeals, true)) continue;
             $insertStmt->execute([$kid, $reqDate, $type['sort_order'], $guestCount, $type['code'], $user['id']]);
             if ($insertStmt->rowCount() > 0) $initCreated++;
         }
@@ -152,7 +212,7 @@ switch ($action) {
                 $iStmt = $db->prepare("SELECT ri.recipe_id, ri.item_id, ri.qty, ri.uom, ri.is_primary,
                     i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
                     FROM recipe_ingredients ri LEFT JOIN items i ON i.id = ri.item_id
-                    WHERE ri.recipe_id IN ($ph) ORDER BY ri.recipe_id, ri.is_primary DESC, i.name");
+                    WHERE ri.recipe_id IN ($ph) AND ri.deleted_at IS NULL ORDER BY ri.recipe_id, ri.is_primary DESC, i.name");
                 $iStmt->execute(array_values($recipeIds));
                 $byRecipe = [];
                 foreach ($iStmt->fetchAll() as $ing) $byRecipe[$ing['recipe_id']][] = $ing;
@@ -205,6 +265,35 @@ switch ($action) {
             'created' => $initCreated,
             'first_session' => $firstSession,
         ]);
+
+    // ── Create a single draft on demand for one meal (the "+ start meal" chip) ──
+    //    Lets a chef begin a meal type that isn't auto-created, without phantom drafts.
+    case 'ensure_session':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $kid = (int)($data['kitchen_id'] ?? $kitchenId);
+        $reqDate = $data['req_date'] ?? date('Y-m-d');
+        $meal = strtolower(trim($data['meals'] ?? ''));
+        if (!$kid || $meal === '') jsonError('kitchen_id and meals required');
+
+        $tStmt = $db->prepare("SELECT sort_order FROM requisition_types WHERE code = ? AND is_active = 1");
+        $tStmt->execute([$meal]);
+        $sortOrder = $tStmt->fetchColumn();
+        if ($sortOrder === false) jsonError('Unknown meal type');
+
+        $gc = (int)($data['guest_count'] ?? 20);
+        if ($gc <= 0) $gc = 20;
+        $insOne = $db->prepare("INSERT IGNORE INTO requisitions
+            (kitchen_id, req_date, session_number, guest_count, meals, supplement_number, status, created_by)
+            VALUES (?, ?, ?, ?, ?, 0, 'draft', ?)");
+        $insOne->execute([$kid, $reqDate, (int)$sortOrder, $gc, $meal, $user['id']]);
+
+        $getOne = $db->prepare("SELECT * FROM requisitions
+            WHERE kitchen_id = ? AND req_date = ? AND meals = ? AND supplement_number = 0 AND deleted_at IS NULL
+            ORDER BY id LIMIT 1");
+        $getOne->execute([$kid, $reqDate, $meal]);
+        jsonResponse(['requisition' => $getOne->fetch()]);
 
     // ── Auto-create requisitions for all active types on a date ──
     case 'auto_create_for_date':
@@ -389,11 +478,13 @@ switch ($action) {
         // INSERT IGNORE: UNIQUE constraint (kitchen_id, req_date, meals, supplement_number) silently skips duplicates.
         // No need for a prior SELECT — race-condition safe.
         $created = 0;
+        $autoMeals = mealsToAutoCreate($db, $kid);
         $insertStmt = $db->prepare("INSERT IGNORE INTO requisitions
             (kitchen_id, req_date, session_number, guest_count, meals, supplement_number, status, created_by)
             VALUES (?, ?, ?, ?, ?, 0, 'draft', ?)");
 
         foreach ($types as $type) {
+            if (!in_array(strtolower($type['code']), $autoMeals, true)) continue;
             $insertStmt->execute([$kid, $reqDate, $type['sort_order'], $guestCount, $type['code'], $user['id']]);
             if ($insertStmt->rowCount() > 0) $created++;
         }
@@ -1021,6 +1112,207 @@ switch ($action) {
             jsonError('Failed to update: ' . $e->getMessage());
         }
 
+    // ── Day-close per-item reconciliation: items used today + what's available ──
+    //    available = opening kitchen stock (line snapshot) + what the store actually sent.
+    //    The chef declares what's left (unused); that becomes the new stock (overwrite).
+    case 'day_close_items':
+        requireRole(['chef', 'admin']);
+        $date = $_GET['date'] ?? date('Y-m-d');
+        $kid  = (int)($_GET['kitchen_id'] ?? $kitchenId);
+        if (!$kid) jsonError('Kitchen ID required');
+
+        // One row per item across all of today's locked requisitions.
+        // opening_stock = MAX(stock_qty snapshot) — the kitchen stock at lock time (single opening value per item).
+        // received = what the store fulfilled/the chef received (only counts issued goods).
+        $stmt = $db->prepare("
+            SELECT rl.item_id,
+                   MAX(rl.item_name) AS item_name,
+                   MAX(rl.uom) AS uom,
+                   MAX(COALESCE(rl.stock_qty, 0)) AS opening_stock,
+                   COALESCE(SUM(rl.order_qty), 0) AS ordered_today,
+                   COALESCE(SUM(CASE WHEN r.status IN ('fulfilled','received','closed')
+                        THEN COALESCE(NULLIF(rl.received_qty, 0), rl.fulfilled_qty, 0) ELSE 0 END), 0) AS received_today
+            FROM requisition_lines rl
+            JOIN requisitions r ON r.id = rl.requisition_id
+            WHERE r.req_date = ? AND r.kitchen_id = ? AND r.status <> 'draft'
+              AND rl.deleted_at IS NULL AND rl.status <> 'rejected' AND rl.item_id IS NOT NULL
+            GROUP BY rl.item_id
+            ORDER BY MAX(rl.item_name)
+        ");
+        $stmt->execute([$date, $kid]);
+        $rows = $stmt->fetchAll();
+
+        // current kitchen stock (what was last declared) — used to prefill when re-editing a closed day
+        $invMap = [];
+        $invStmt = $db->prepare("SELECT item_id, qty FROM kitchen_inventory WHERE kitchen_id = ?");
+        $invStmt->execute([$kid]);
+        foreach ($invStmt->fetchAll() as $iv) $invMap[(int)$iv['item_id']] = (float)$iv['qty'];
+
+        $items = [];
+        foreach ($rows as $r) {
+            $opening  = (float)$r['opening_stock'];
+            $received = (float)$r['received_today'];
+            $items[] = [
+                'item_id'       => (int)$r['item_id'],
+                'item_name'     => $r['item_name'],
+                'uom'           => $r['uom'] ?: 'kg',
+                'opening_stock' => round($opening, 2),
+                'ordered'       => round((float)$r['ordered_today'], 2),
+                'received'      => round($received, 2),
+                'available'     => round($opening + $received, 2),
+                'current_stock' => round($invMap[(int)$r['item_id']] ?? 0, 2),
+            ];
+        }
+
+        $statusStmt = $db->prepare("SELECT status, COUNT(*) c FROM requisitions WHERE req_date=? AND kitchen_id=? AND status<>'draft' GROUP BY status");
+        $statusStmt->execute([$date, $kid]);
+        $statusCounts = [];
+        foreach ($statusStmt->fetchAll() as $s) $statusCounts[$s['status']] = (int)$s['c'];
+
+        jsonResponse(['date' => $date, 'items' => $items, 'status_counts' => $statusCounts]);
+
+    // ── Day-close reconcile: set kitchen stock = declared unused (overwrite), close the day ──
+    case 'day_close_reconcile':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $date = $data['date'] ?? date('Y-m-d');
+        $kid  = (int)($data['kitchen_id'] ?? $kitchenId);
+        $itemsIn = $data['items'] ?? []; // [{item_id, unused}, ...]
+        if (!$kid) jsonError('Kitchen ID required');
+
+        // Recompute available server-side (authoritative cap) — identical to day_close_items
+        $availStmt = $db->prepare("
+            SELECT rl.item_id,
+                   MAX(COALESCE(rl.stock_qty, 0)) AS opening_stock,
+                   COALESCE(SUM(CASE WHEN r.status IN ('fulfilled','received','closed')
+                        THEN COALESCE(NULLIF(rl.received_qty, 0), rl.fulfilled_qty, 0) ELSE 0 END), 0) AS received_today
+            FROM requisition_lines rl
+            JOIN requisitions r ON r.id = rl.requisition_id
+            WHERE r.req_date = ? AND r.kitchen_id = ? AND r.status <> 'draft'
+              AND rl.deleted_at IS NULL AND rl.status <> 'rejected' AND rl.item_id IS NOT NULL
+            GROUP BY rl.item_id
+        ");
+        $availStmt->execute([$date, $kid]);
+        $availMap = [];
+        foreach ($availStmt->fetchAll() as $a) {
+            $availMap[(int)$a['item_id']] = (float)$a['opening_stock'] + (float)$a['received_today'];
+        }
+
+        $db->beginTransaction();
+        try {
+            // Overwrite kitchen stock with the declared leftover (clamped to what was available)
+            $setStock = $db->prepare("INSERT INTO kitchen_inventory (kitchen_id, item_id, qty) VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE qty = VALUES(qty)");
+            $applied = 0;
+            foreach ($itemsIn as $it) {
+                $itemId = (int)($it['item_id'] ?? 0);
+                if (!$itemId || !isset($availMap[$itemId])) continue;
+                $unused = max(0, (float)($it['unused'] ?? 0));
+                if ($unused > $availMap[$itemId]) $unused = $availMap[$itemId];
+                $setStock->execute([$kid, $itemId, $unused]);
+                $applied++;
+            }
+
+            // Complete the order lifecycle for the day (mirror the existing close behaviour)
+            $db->prepare("UPDATE requisition_lines rl
+                JOIN requisitions r ON r.id = rl.requisition_id
+                SET rl.received_qty = rl.fulfilled_qty
+                WHERE r.req_date = ? AND r.kitchen_id = ? AND r.status = 'fulfilled' AND (rl.received_qty IS NULL OR rl.received_qty = 0)")
+               ->execute([$date, $kid]);
+            $db->prepare("UPDATE requisitions SET status = 'closed', updated_at = NOW()
+                WHERE req_date = ? AND kitchen_id = ? AND status IN ('received','fulfilled')")
+               ->execute([$date, $kid]);
+
+            $db->commit();
+            auditLog('day_close_reconcile', 'kitchen', $kid, null, ['date' => $date, 'items_set' => $applied]);
+            jsonResponse(['closed' => true, 'items_set' => $applied]);
+        } catch (Exception $e) {
+            $db->rollBack();
+            jsonError('Failed to close: ' . $e->getMessage());
+        }
+
+    // ── Whole-day print: every requisition for a date with lines + dishes, in one payload ──
+    case 'day_print':
+        requireRole(['chef', 'admin']);
+        $date = $_GET['date'] ?? date('Y-m-d');
+        $kid  = (int)($_GET['kitchen_id'] ?? $kitchenId);
+        if (!$kid) jsonError('Kitchen ID required');
+
+        $knStmt = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
+        $knStmt->execute([$kid]);
+        $kitchenName = $knStmt->fetchColumn() ?: '';
+
+        $rStmt = $db->prepare("SELECT r.id, r.meals, r.status, r.guest_count, r.req_date, r.supplement_number,
+                u.name AS chef_name
+            FROM requisitions r LEFT JOIN users u ON u.id = r.created_by
+            WHERE r.req_date = ? AND r.kitchen_id = ? AND r.status <> 'draft'
+            ORDER BY r.session_number ASC, r.supplement_number ASC");
+        $rStmt->execute([$date, $kid]);
+        $reqs = $rStmt->fetchAll();
+
+        $lStmt = $db->prepare("SELECT rl.item_name, rl.uom, rl.required_kg, rl.stock_qty, rl.order_qty,
+                rl.fulfilled_qty, rl.received_qty, rl.unused_qty, IFNULL(rl.is_staple,0) AS is_staple, i.code AS item_code
+            FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id
+            WHERE rl.requisition_id = ? AND rl.deleted_at IS NULL AND rl.status <> 'rejected'
+            ORDER BY rl.is_staple ASC, rl.item_name");
+        $dStmt = $db->prepare("SELECT recipe_name, guest_count FROM requisition_dishes
+            WHERE requisition_id = ? AND deleted_at IS NULL ORDER BY created_at");
+
+        $out = [];
+        foreach ($reqs as $r) {
+            $lStmt->execute([(int)$r['id']]);
+            $lines = $lStmt->fetchAll();
+            if (empty($lines)) continue; // skip meals with no items
+            $dStmt->execute([(int)$r['id']]);
+            $r['lines']  = $lines;
+            $r['dishes'] = $dStmt->fetchAll();
+            $out[] = $r;
+        }
+
+        jsonResponse(['date' => $date, 'kitchen_name' => $kitchenName, 'requisitions' => $out]);
+
+    // ── Whole-day PDF (download/print from the app) — chef, store, admin ──
+    case 'day_pdf':
+        requireRole(['chef', 'admin', 'storekeeper']);
+        $date = $_GET['date'] ?? date('Y-m-d');
+        $kid  = (int)($_GET['kitchen_id'] ?? $kitchenId);
+        if (!$kid) { http_response_code(400); echo 'Kitchen ID required'; exit; }
+
+        $knStmt = $db->prepare("SELECT name FROM kitchens WHERE id = ?");
+        $knStmt->execute([$kid]);
+        $kitchenName = $knStmt->fetchColumn() ?: 'Kitchen';
+
+        $rStmt = $db->prepare("SELECT r.id, r.meals, r.status, r.guest_count, u.name AS chef_name
+            FROM requisitions r LEFT JOIN users u ON u.id = r.created_by
+            WHERE r.req_date = ? AND r.kitchen_id = ? AND r.status <> 'draft'
+            ORDER BY r.session_number, r.supplement_number");
+        $rStmt->execute([$date, $kid]);
+        $lStmt = $db->prepare("SELECT rl.item_name, rl.uom, rl.required_kg, rl.stock_qty, rl.order_qty,
+                rl.fulfilled_qty, rl.received_qty, rl.unused_qty, IFNULL(rl.is_staple,0) AS is_staple
+            FROM requisition_lines rl WHERE rl.requisition_id = ? AND rl.deleted_at IS NULL AND rl.status <> 'rejected'
+            ORDER BY rl.is_staple ASC, rl.item_name");
+        $dStmt = $db->prepare("SELECT recipe_name, guest_count FROM requisition_dishes WHERE requisition_id = ? AND deleted_at IS NULL ORDER BY created_at");
+        $out = [];
+        foreach ($rStmt->fetchAll() as $r) {
+            $lStmt->execute([(int)$r['id']]);
+            $r['lines'] = $lStmt->fetchAll();
+            if (!$r['lines']) continue;
+            $dStmt->execute([(int)$r['id']]);
+            $r['dishes'] = $dStmt->fetchAll();
+            $out[] = $r;
+        }
+
+        require_once __DIR__ . '/../pdf.php';
+        $pdfBytes = generateDayPDF($kitchenName, $date, $out);
+        if (!$pdfBytes) { http_response_code(500); echo 'PDF generation failed'; exit; }
+        $fname = 'Requisitions_' . preg_replace('/[^A-Za-z0-9]+/', '', $kitchenName) . '_' . $date . '.pdf';
+        header('Content-Type: application/pdf');
+        header('Content-Disposition: inline; filename="' . $fname . '"');
+        header('Content-Length: ' . strlen($pdfBytes));
+        echo $pdfBytes;
+        exit;
+
     // ── Dashboard stats (chef) — single query ──
     case 'dashboard_stats':
         $kid = (int)($_GET['kitchen_id'] ?? $kitchenId);
@@ -1195,7 +1487,7 @@ switch ($action) {
             FROM recipe_ingredients ri
             LEFT JOIN items i ON i.id = ri.item_id
             LEFT JOIN kitchen_inventory ki ON ki.item_id = ri.item_id AND ki.kitchen_id = ?
-            WHERE ri.recipe_id = ?
+            WHERE ri.recipe_id = ? AND ri.deleted_at IS NULL
             ORDER BY ri.is_primary DESC, i.name");
         $stmt->execute([$kitchenId, $recipeId]);
         $ingredients = $stmt->fetchAll();
@@ -1244,6 +1536,130 @@ switch ($action) {
         ]);
 
         jsonResponse(['added' => true, 'recipe_name' => $recipe['name']]);
+
+    // ── Add a CUSTOM dish from the Orders screen ──
+    //    Saves it as a reusable recipe (owned by the chef, filed under the order's meal type)
+    //    AND adds it to this order, generating its lines. If a recipe of the same name already
+    //    exists for this chef it is reused (no duplicate). Recipes are authored by the chef and
+    //    never altered by the order process — only read when generating lines.
+    case 'add_custom_dish':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $reqId = (int)($data['requisition_id'] ?? 0);
+        $dishName = trim($data['dish_name'] ?? '');
+        $ingredientsIn = $data['ingredients'] ?? [];
+        if (!$reqId || $dishName === '') jsonError('Order and dish name are required');
+        if (mb_strlen($dishName) > 150) jsonError('Dish name too long (max 150 characters)');
+
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft','processing','submitted')");
+        $stmt->execute([$reqId]);
+        $req = $stmt->fetch();
+        if (!$req) jsonError('Order not found or already being fulfilled by the store');
+
+        $guestCount = (int)($req['guest_count'] ?? 20); if ($guestCount < 1) $guestCount = 20;
+        $servings = (int)($data['servings'] ?? $guestCount); if ($servings < 1) $servings = $guestCount;
+        $mealCode = $req['meals'] ?? 'lunch';
+
+        try { $db->query("SELECT is_staple FROM requisition_lines LIMIT 0"); }
+        catch (Exception $e) { $db->exec("ALTER TABLE requisition_lines ADD COLUMN is_staple TINYINT(1) DEFAULT 0"); }
+
+        $db->beginTransaction();
+        try {
+            // 1. Reuse an existing same-name recipe for this chef, else create a new one
+            $find = $db->prepare("SELECT id FROM recipes WHERE created_by = ? AND LOWER(name) = LOWER(?) AND is_active = 1 AND deleted_at IS NULL LIMIT 1");
+            $find->execute([$user['id'], $dishName]);
+            $recipeId = (int)$find->fetchColumn();
+            $reused = $recipeId > 0;
+
+            if (!$reused) {
+                $cleanIngs = [];
+                foreach ($ingredientsIn as $ing) {
+                    $nm = trim($ing['item_name'] ?? '');
+                    $q  = (float)($ing['qty'] ?? 0);
+                    if ($nm === '' || $q <= 0) continue;
+                    $cleanIngs[] = [
+                        'item_id'    => !empty($ing['item_id']) ? (int)$ing['item_id'] : null,
+                        'item_name'  => $nm,
+                        'qty'        => $q,
+                        'uom'        => trim($ing['uom'] ?? 'kg') ?: 'kg',
+                        'is_primary' => isset($ing['is_primary']) ? ((int)$ing['is_primary'] ? 1 : 0) : 1,
+                    ];
+                }
+                if (empty($cleanIngs)) { $db->rollBack(); jsonError('Add at least one ingredient'); }
+
+                $insR = $db->prepare("INSERT INTO recipes (name, category, cuisine, difficulty, servings, created_by, is_active) VALUES (?, ?, NULL, 'medium', ?, ?, 1)");
+                $insR->execute([$dishName, $mealCode, $servings, $user['id']]);
+                $recipeId = (int)$db->lastInsertId();
+                $insI = $db->prepare("INSERT INTO recipe_ingredients (recipe_id, item_id, item_name, qty, uom, is_primary) VALUES (?, ?, ?, ?, ?, ?)");
+                foreach ($cleanIngs as $ci) $insI->execute([$recipeId, $ci['item_id'], $ci['item_name'], $ci['qty'], $ci['uom'], $ci['is_primary']]);
+            }
+
+            // 2. Attach as a dish on this order (skip if already attached)
+            $scaleFactor = $servings > 0 ? $guestCount / $servings : 1;
+            $dchk = $db->prepare("SELECT id FROM requisition_dishes WHERE requisition_id = ? AND recipe_id = ? AND deleted_at IS NULL");
+            $dchk->execute([$reqId, $recipeId]);
+            $dishId = (int)$dchk->fetchColumn();
+            $dishExisted = $dishId > 0;
+            if (!$dishExisted) {
+                $insD = $db->prepare("INSERT INTO requisition_dishes (requisition_id, recipe_id, recipe_name, recipe_servings, scale_factor, guest_count) VALUES (?, ?, ?, ?, ?, ?)");
+                $insD->execute([$reqId, $recipeId, $dishName, $servings, round($scaleFactor, 3), $guestCount]);
+                $dishId = (int)$db->lastInsertId();
+            }
+
+            // 3. Generate the dish's order lines — only when the dish is newly attached, so
+            //    re-adding the same dish to the same order can't double its lines.
+            //    (same unit normalization as save_dish_lines)
+            $linesAdded = 0;
+            $roundUp = function($v) { return ceil($v * 2) / 2; }; // half-up (default kitchen mode)
+            $ingRows = [];
+            if (!$dishExisted) {
+                $ingStmt = $db->prepare("SELECT ri.item_id, ri.qty, ri.uom, ri.item_name,
+                        i.uom AS item_uom, i.piece_weight, i.portion_weight, i.order_mode, i.pack_size_g
+                    FROM recipe_ingredients ri LEFT JOIN items i ON i.id = ri.item_id
+                    WHERE ri.recipe_id = ? AND ri.deleted_at IS NULL AND ri.is_primary = 1");
+                $ingStmt->execute([$recipeId]);
+                $ingRows = $ingStmt->fetchAll();
+            }
+            foreach ($ingRows as $ing) {
+                $itemId = (int)$ing['item_id'];
+                $scaledQty = (float)$ing['qty'] * $scaleFactor;
+                $ingUom = $ing['uom'] ?? 'kg';
+                $rU = strtolower(trim($ingUom)); $iU = strtolower(trim($ing['item_uom'] ?? ''));
+                if (in_array($rU, ['g','grams','gram','gm']) && in_array($iU, ['kg','kgs','kilogram','kilograms'])) { $scaledQty /= 1000; $ingUom = $ing['item_uom']; }
+                elseif (in_array($rU, ['ml','milliliter','millilitre','mls']) && in_array($iU, ['ltr','l','litre','liter','lt','ltrs'])) { $scaledQty /= 1000; $ingUom = $ing['item_uom']; }
+                elseif (in_array($rU, ['kg','kgs','kilogram']) && in_array($iU, ['g','grams','gram'])) { $scaledQty *= 1000; $ingUom = $ing['item_uom']; }
+                if (in_array($ingUom, ['pcs','tins','box','pkt','unit']) && !empty($ing['piece_weight']) && (float)$ing['piece_weight'] > 0) { $scaledQty *= (float)$ing['piece_weight']; $ingUom = 'kg'; }
+                $qty = $roundUp($scaledQty);
+                // Translate into the item's purchase/stock unit (the store's unit)
+                [$qty, $ingUom] = toPurchaseUnit($qty, $ingUom, $ing['item_uom'], $ing['pack_size_g'] ?? null);
+                if ($qty <= 0) continue;
+
+                $exRow = false;
+                if ($itemId) {
+                    $ex = $db->prepare("SELECT id FROM requisition_lines WHERE requisition_id = ? AND item_id = ? AND deleted_at IS NULL AND status <> 'rejected' LIMIT 1");
+                    $ex->execute([$reqId, $itemId]); $exRow = $ex->fetch();
+                }
+                if ($exRow) {
+                    $db->prepare("UPDATE requisition_lines SET order_qty = order_qty + ?, required_kg = COALESCE(required_kg,0) + ? WHERE id = ?")
+                       ->execute([$qty, $qty, $exRow['id']]);
+                } else {
+                    $db->prepare("INSERT INTO requisition_lines (requisition_id, item_id, item_name, meal, order_mode, required_kg, order_qty, uom, status, source_dish_id, source_recipe_id, is_staple)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, 0)")
+                       ->execute([$reqId, $itemId ?: null, $ing['item_name'], $mealCode, $ing['order_mode'] ?: 'portion', $qty, $qty, $ingUom, $dishId, $recipeId]);
+                }
+                $linesAdded++;
+            }
+
+            $db->prepare("UPDATE requisitions SET updated_at = NOW() WHERE id = ?")->execute([$reqId]);
+            $db->commit();
+        } catch (Exception $e) {
+            $db->rollBack();
+            jsonError('Failed to add dish: ' . $e->getMessage());
+        }
+
+        auditLog('add_custom_dish', 'requisitions', $reqId, null, ['dish' => $dishName, 'recipe_id' => $recipeId, 'reused' => $reused, 'lines' => $linesAdded], $reqId);
+        jsonResponse(['added' => true, 'recipe_id' => $recipeId, 'reused' => $reused, 'lines_added' => $linesAdded, 'dish_name' => $dishName]);
 
     // ── Add a packed / no-recipe dish to a breakfast order ──
     case 'add_packed_dish':
@@ -1295,10 +1711,11 @@ switch ($action) {
         $reqId = (int)($data['requisition_id'] ?? 0);
         if (!$reqId) jsonError('Requisition ID required');
 
-        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'draft'");
+        // Editable until SUBMIT — allow (re)generating while draft or processing
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft','processing')");
         $stmt->execute([$reqId]);
         $req = $stmt->fetch();
-        if (!$req) jsonError('Requisition not found or not in draft status');
+        if (!$req) jsonError('Order not found, or already submitted to the store');
 
         // Set lock flag and redirect to save_dish_lines via goto
         $data['_lock_menu'] = true;
@@ -1315,12 +1732,32 @@ switch ($action) {
             $reqId = (int)($data['requisition_id'] ?? 0);
             if (!$reqId) jsonError('Requisition ID required');
 
-            // Fix #6: explicit check for already-submitted to give a clear error
-            $statusChk = $db->prepare("SELECT status FROM requisitions WHERE id = ?");
+            // If already submitted/fulfilled, the chef is sending EXTRA items (e.g. staples) added
+            // after the fact. Don't dead-end — apply any qty changes, re-notify the store, and
+            // resurface the order so the added items aren't missed.
+            $statusChk = $db->prepare("SELECT * FROM requisitions WHERE id = ?");
             $statusChk->execute([$reqId]);
             $statusRow = $statusChk->fetch();
-            if ($statusRow && $statusRow['status'] === 'submitted') {
-                jsonError('This order is already submitted — the store has it. Ask admin to revert if changes are needed.');
+            if ($statusRow && in_array($statusRow['status'], ['submitted', 'fulfilled', 'received'])) {
+                $lineUpdates = $data['lines'] ?? [];
+                if (!empty($lineUpdates)) {
+                    $updStmt = $db->prepare('UPDATE requisition_lines SET order_qty = ? WHERE id = ? AND requisition_id = ?');
+                    foreach ($lineUpdates as $lu) { $updStmt->execute([max(0, (float)($lu['order_qty'] ?? 0)), (int)$lu['id'], $reqId]); }
+                }
+                $db->prepare("UPDATE requisitions SET updated_at = NOW() WHERE id = ?")->execute([$reqId]);
+                try {
+                    $kName = $db->query("SELECT name FROM kitchens WHERE id = " . (int)$statusRow['kitchen_id'])->fetchColumn() ?: 'Camp';
+                    $mealLbl = ucfirst($statusRow['meals'] ?? 'order');
+                    $body = "{$user['name']} added extra items to the {$mealLbl} order for {$kName} — please re-check before fulfilling.";
+                    $payload = ['title' => 'Order updated — items added', 'body' => $body, 'url' => '/app.php?page=store-dashboard', 'tag' => 'req-addition-' . $reqId];
+                    sendPushToKitchen((int)$statusRow['kitchen_id'], $payload, 'storekeeper', $user['id']);
+                    storeNotification((int)$statusRow['kitchen_id'], null, $payload['title'], $body, 'requisition_addition', $reqId);
+                    require_once __DIR__ . '/../mailer.php';
+                    $html = mailTemplate('Items added to a submitted order', "<p>{$body}</p>", 'View Store Dashboard', rtrim(APP_URL, '/') . '/app.php?page=store-dashboard');
+                    notifyStorekeepers((int)$statusRow['kitchen_id'], "Items added — {$mealLbl} ({$kName})", $html);
+                } catch (Exception $e) { error_log('[Karibu] resubmit notify: ' . $e->getMessage()); }
+                auditLog('requisition_resubmit_additions', 'requisition', $reqId);
+                jsonResponse(['submitted' => true, 'requisition_id' => $reqId, 'notified' => true, 'message' => 'Store notified of the added items']);
             }
 
             $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft', 'processing')");
@@ -1422,7 +1859,9 @@ switch ($action) {
             $itemName = trim($data['item_name'] ?? '');
             $orderQty = max(0, (float)($data['order_qty'] ?? 1));
             $uom = trim($data['uom'] ?? 'kg');
-            $isStaple = (int)($data['is_staple'] ?? 1);
+            // All manual line-adds go to Staples. Menu lines come only from lock_menu
+            // (recipe ingredients with is_primary=1) — never via this endpoint.
+            $isStaple = 1;
 
             if (!$reqId || (!$itemId && !$itemName)) jsonError('Requisition ID and item required');
 
@@ -1602,11 +2041,11 @@ switch ($action) {
         if (!$reqId) jsonError('Requisition ID required');
         if (empty($dishes)) jsonError('At least one dish is required');
 
-        // Verify requisition is draft
-        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status = 'draft'");
+        // Editable until SUBMIT — allow (re)generating lines while draft or processing
+        $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft','processing')");
         $stmt->execute([$reqId]);
         $req = $stmt->fetch();
-        if (!$req) jsonError('Requisition not found or not in draft status');
+        if (!$req) jsonError('Order not found, or already submitted to the store');
 
         // Load kitchen rounding settings
         $roundingMode = 'half';
@@ -1653,11 +2092,11 @@ switch ($action) {
                 $ph = implode(',', array_fill(0, count($recipeIds), '?'));
                 $batchIngStmt = $db->prepare("SELECT ri.recipe_id, ri.item_id, ri.qty, ri.uom, ri.is_primary,
                     i.name AS item_name, COALESCE(ki.qty, 0) AS stock_qty, i.portion_weight, i.order_mode, i.category,
-                    i.piece_weight, i.is_pantry_staple
+                    i.piece_weight, i.is_pantry_staple, i.uom AS item_uom, i.pack_size_g
                     FROM recipe_ingredients ri
                     LEFT JOIN items i ON i.id = ri.item_id
                     LEFT JOIN kitchen_inventory ki ON ki.item_id = ri.item_id AND ki.kitchen_id = ?
-                    WHERE ri.recipe_id IN ($ph)");
+                    WHERE ri.recipe_id IN ($ph) AND ri.deleted_at IS NULL");
                 $batchIngStmt->execute(array_merge([$kitchenId], array_values($recipeIds)));
                 foreach ($batchIngStmt->fetchAll() as $ing) {
                     $allIngredients[(int)$ing['recipe_id']][] = $ing;
@@ -1693,16 +2132,31 @@ switch ($action) {
                     $itemId = (int)$ing['item_id'];
                     if (!$itemId) continue;
 
-                    // Two-level staple check: skip if item is pantry staple AND ingredient is not primary
-                    if (!empty($ing['is_pantry_staple']) && empty($ing['is_primary'])) {
+                    // Recipe-level skip: if chef toggled the ingredient off (is_primary=0),
+                    // do NOT order it — regardless of whether the item is globally marked
+                    // a pantry staple. The orange-circle toggle on the recipe is authoritative.
+                    if (empty($ing['is_primary'])) {
                         $staplesSkipped = ($staplesSkipped ?? 0) + 1;
                         continue;
                     }
 
                     $scaledQty = (float)$ing['qty'] * $scaleFactor;
+                    $ingUom = $ing['uom'] ?? 'kg';
+
+                    // Normalize the recipe unit to the ITEM's catalog unit so the same item always
+                    // orders in one consistent unit (grams→kg, ml→ltr). Recipes may be authored in
+                    // grams/ml; the order, store issue and day-close all then speak the item's unit.
+                    $rU = strtolower(trim($ingUom));
+                    $iU = strtolower(trim($ing['item_uom'] ?? ''));
+                    if (in_array($rU, ['g','grams','gram','gm']) && in_array($iU, ['kg','kgs','kilogram','kilograms'])) {
+                        $scaledQty = $scaledQty / 1000; $ingUom = $ing['item_uom'];
+                    } elseif (in_array($rU, ['ml','milliliter','millilitre','mls']) && in_array($iU, ['ltr','l','litre','liter','lt','ltrs'])) {
+                        $scaledQty = $scaledQty / 1000; $ingUom = $ing['item_uom'];
+                    } elseif (in_array($rU, ['kg','kgs','kilogram']) && in_array($iU, ['g','grams','gram'])) {
+                        $scaledQty = $scaledQty * 1000; $ingUom = $ing['item_uom'];
+                    }
 
                     // Convert pcs→kg if item has piece_weight
-                    $ingUom = $ing['uom'] ?? 'kg';
                     if (in_array($ingUom, ['pcs', 'tins', 'box', 'pkt', 'unit']) && !empty($ing['piece_weight']) && (float)$ing['piece_weight'] > 0) {
                         $scaledQty = $scaledQty * (float)$ing['piece_weight'];
                         $ingUom = 'kg';
@@ -1716,6 +2170,8 @@ switch ($action) {
                             'item_name' => $ing['item_name'],
                             'total_qty' => $scaledQty,
                             'uom' => $ingUom,
+                            'item_uom' => $ing['item_uom'] ?? null,
+                            'pack_size_g' => $ing['pack_size_g'] ?? null,
                             'stock_qty' => (float)$ing['stock_qty'],
                             'portion_weight' => (float)$ing['portion_weight'],
                             'order_mode' => $ing['order_mode'],
@@ -1750,11 +2206,33 @@ switch ($action) {
                 return ceil($val * 2) / 2; // 'half' — round up to nearest 0.5
             };
 
+            // Phase 3 — running stock balance: how much kitchen stock the day's OTHER (non-draft)
+            // orders have already claimed per item, so a shared item isn't double-subtracted across
+            // meals/supplements. Read-time only — kitchen_inventory is never mutated here; day-close
+            // still overwrites it with the physical count.
+            $claimedMap = [];
+            try {
+                $claimStmt = $db->prepare("SELECT rl.item_id, SUM(GREATEST(0, COALESCE(rl.required_kg,0) - COALESCE(rl.order_qty,0))) AS claimed
+                    FROM requisition_lines rl JOIN requisitions r ON r.id = rl.requisition_id
+                    WHERE r.kitchen_id = ? AND r.req_date = ? AND r.id <> ? AND r.status <> 'draft'
+                      AND rl.deleted_at IS NULL AND COALESCE(rl.is_staple,0) = 0
+                    GROUP BY rl.item_id");
+                $claimStmt->execute([(int)$req['kitchen_id'], $req['req_date'], $reqId]);
+                foreach ($claimStmt->fetchAll() as $cm) $claimedMap[(int)$cm['item_id']] = (float)$cm['claimed'];
+            } catch (Exception $e) { /* non-fatal — fall back to raw opening stock */ }
+
             foreach ($aggregated as $itemId => $agg) {
                 $requiredKg = $roundUp($agg['total_qty']);
-                $orderQty = max(0, $roundUp($requiredKg - $agg['stock_qty']));
+                // Stock still available to THIS order = opening stock minus what other orders already claimed
+                $availStock = max(0, (float)$agg['stock_qty'] - ($claimedMap[$itemId] ?? 0));
+                $orderQty = max(0, $roundUp($requiredKg - $availStock));
 
                 if ($requiredKg <= 0) continue;
+
+                // Translate the order into the item's purchase/stock unit (the store's unit).
+                // Recipes stay in the chef's units; only the order line speaks the buying unit.
+                [$orderQty, $lineUom]   = toPurchaseUnit($orderQty,  $agg['uom'], $agg['item_uom'], $agg['pack_size_g']);
+                [$requiredKg, ]         = toPurchaseUnit($requiredKg, $agg['uom'], $agg['item_uom'], $agg['pack_size_g']);
 
                 // Use first source for tracking + store all sources as JSON
                 $sourceDishId = $agg['sources'][0]['dish_id'] ?? null;
@@ -1765,8 +2243,8 @@ switch ($action) {
 
                 $insertStmt->execute([
                     $reqId, $itemId, $agg['item_name'], $meal, $agg['order_mode'],
-                    $guestCount, $agg['portion_weight'], $requiredKg, $agg['stock_qty'], $orderQty,
-                    $agg['uom'], $sourceDishId, $sourceRecipeId, $sourceDishesJson
+                    $guestCount, $agg['portion_weight'], $requiredKg, $availStock, $orderQty,
+                    $lineUom, $sourceDishId, $sourceRecipeId, $sourceDishesJson
                 ]);
 
                 $totalItems++;
@@ -1863,7 +2341,7 @@ switch ($action) {
                     i.name AS item_name, i.stock_qty, i.portion_weight, i.order_mode, i.category
                     FROM recipe_ingredients ri
                     LEFT JOIN items i ON i.id = ri.item_id
-                    WHERE ri.recipe_id IN ($ph)
+                    WHERE ri.recipe_id IN ($ph) AND ri.deleted_at IS NULL
                     ORDER BY ri.recipe_id, ri.is_primary DESC, i.name");
                 $iStmt->execute(array_values($recipeIds));
                 foreach ($iStmt->fetchAll() as $ing) {

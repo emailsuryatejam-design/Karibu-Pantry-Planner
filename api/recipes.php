@@ -6,6 +6,13 @@ $db = getDB();
 $input = $_SERVER['REQUEST_METHOD'] === 'POST' ? getJsonInput() : [];
 $action = $_GET['action'] ?? ($input['action'] ?? ($_POST['action'] ?? ''));
 
+// Storekeepers may VIEW recipes and flip the orange on/off toggle only —
+// never destructive edits (add/remove ingredient, edit qty, delete/rename a recipe).
+if (($user['role'] ?? '') === 'storekeeper'
+    && !in_array($action, ['list', 'get', 'search_items', 'toggle_primary'], true)) {
+    jsonError('Storekeepers can view recipes and toggle items on/off only', 403);
+}
+
 switch ($action) {
 
     // ── List recipes ──
@@ -59,7 +66,7 @@ switch ($action) {
         $recipe = $recipe->fetch();
         if (!$recipe) jsonError('Recipe not found', 404);
 
-        $ings = $db->prepare('SELECT ri.*, i.stock_qty FROM recipe_ingredients ri LEFT JOIN items i ON ri.item_id = i.id WHERE ri.recipe_id = ? ORDER BY ri.id');
+        $ings = $db->prepare('SELECT ri.*, i.stock_qty FROM recipe_ingredients ri LEFT JOIN items i ON ri.item_id = i.id WHERE ri.recipe_id = ? AND ri.deleted_at IS NULL ORDER BY ri.id');
         $ings->execute([$id]);
         $recipe['ingredients'] = $ings->fetchAll();
 
@@ -222,6 +229,31 @@ switch ($action) {
         jsonResponse(['ingredient_id' => $db->lastInsertId()]);
         break;
 
+    // ── Update an ingredient's quantity (and optionally its unit) ──
+    case 'update_ingredient':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $ingId = (int)($input['id'] ?? 0);
+        $newQty = (float)($input['qty'] ?? 0);
+        $newUom = isset($input['uom']) ? trim((string)$input['uom']) : null;
+        if (!$ingId || $newQty <= 0) jsonError('Ingredient and a valid quantity are required');
+
+        // Ownership: chefs may only edit ingredients in their own recipes
+        $ownStmt = $db->prepare("SELECT rc.created_by FROM recipe_ingredients ri JOIN recipes rc ON rc.id = ri.recipe_id WHERE ri.id = ? AND ri.deleted_at IS NULL");
+        $ownStmt->execute([$ingId]);
+        $ingOwner = $ownStmt->fetchColumn();
+        if ($ingOwner === false) jsonError('Ingredient not found');
+        if ($user['role'] === 'chef' && (int)$ingOwner !== (int)$user['id']) jsonError('You can only edit your own recipes', 403);
+
+        if ($newUom !== null && $newUom !== '') {
+            $db->prepare("UPDATE recipe_ingredients SET qty = ?, uom = ? WHERE id = ?")->execute([$newQty, $newUom, $ingId]);
+        } else {
+            $db->prepare("UPDATE recipe_ingredients SET qty = ? WHERE id = ?")->execute([$newQty, $ingId]);
+        }
+        auditLog('update_ingredient', 'recipe_ingredients', $ingId, null, ['qty' => $newQty, 'uom' => $newUom]);
+        jsonResponse(['updated' => true, 'id' => $ingId, 'qty' => $newQty]);
+        break;
+
     // ── Toggle ingredient primary/staple status ──
     case 'toggle_primary':
         requireMethod('POST');
@@ -229,8 +261,42 @@ switch ($action) {
         $isPrimary = (int)($input['is_primary'] ?? 0);
         if (!$id) jsonError('Ingredient ID required');
 
+        // Update the ingredient the user tapped
         $db->prepare('UPDATE recipe_ingredients SET is_primary = ? WHERE id = ?')->execute([$isPrimary, $id]);
-        jsonResponse(['updated' => true, 'is_primary' => $isPrimary]);
+
+        // Camp-wide sync: apply the same on/off choice to this item in EVERY copy of the same
+        // dish at the same camp. Recipes are per-chef copies; without this, a toggle only changes
+        // one copy and the shared order may use another — so "off" items kept getting ordered.
+        $synced = 0;
+        $meta = $db->prepare("SELECT ri.item_id, ri.item_name, rc.name AS recipe_name, u.kitchen_id
+            FROM recipe_ingredients ri
+            JOIN recipes rc ON rc.id = ri.recipe_id
+            LEFT JOIN users u ON u.id = rc.created_by
+            WHERE ri.id = ?");
+        $meta->execute([$id]);
+        $m = $meta->fetch();
+        if ($m && !empty($m['recipe_name']) && !empty($m['kitchen_id'])) {
+            if (!empty($m['item_id'])) {
+                $prop = $db->prepare("UPDATE recipe_ingredients ri
+                    JOIN recipes rc ON rc.id = ri.recipe_id
+                    JOIN users u ON u.id = rc.created_by
+                    SET ri.is_primary = ?
+                    WHERE rc.name = ? AND u.kitchen_id = ? AND ri.item_id = ?
+                      AND ri.deleted_at IS NULL AND rc.deleted_at IS NULL AND ri.id <> ?");
+                $prop->execute([$isPrimary, $m['recipe_name'], (int)$m['kitchen_id'], (int)$m['item_id'], $id]);
+            } else {
+                $prop = $db->prepare("UPDATE recipe_ingredients ri
+                    JOIN recipes rc ON rc.id = ri.recipe_id
+                    JOIN users u ON u.id = rc.created_by
+                    SET ri.is_primary = ?
+                    WHERE rc.name = ? AND u.kitchen_id = ? AND ri.item_name = ?
+                      AND ri.deleted_at IS NULL AND rc.deleted_at IS NULL AND ri.id <> ?");
+                $prop->execute([$isPrimary, $m['recipe_name'], (int)$m['kitchen_id'], $m['item_name'], $id]);
+            }
+            $synced = $prop->rowCount();
+        }
+        auditLog('toggle_primary', 'recipe_ingredients', $id, null, ['is_primary' => $isPrimary, 'synced_copies' => $synced]);
+        jsonResponse(['updated' => true, 'is_primary' => $isPrimary, 'synced_copies' => $synced]);
         break;
 
     // ── Remove ingredient ──

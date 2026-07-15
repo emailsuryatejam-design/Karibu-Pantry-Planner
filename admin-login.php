@@ -133,6 +133,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </div>
                 </div>
 
+                <div class="text-right -mt-1">
+                    <a href="/admin-forgot.php" class="text-xs text-slate-500 hover:text-slate-700 transition">Forgot password?</a>
+                </div>
+
                 <button type="submit"
                     style="width:100%;background:#1e293b;color:#fff;padding:12px 0;border-radius:12px;font-size:14px;font-weight:600;border:none;cursor:pointer;margin-top:8px;box-shadow:0 1px 2px rgba(0,0,0,.1);transition:background .15s;"
                     onmouseover="this.style.background='#334155'" onmouseout="this.style.background='#1e293b'">

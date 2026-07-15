@@ -130,6 +130,7 @@ const DB_KITCHEN_ID = <?= (int)$kitchenId ?>;
 let dbDate = todayStr();
 let dbGuestCount = 20;
 let dbGuestCounts = {};    // mealCode -> per-meal guest count
+let dbDayGuests = null;    // the guest count the chef last used this day — unlocked meals inherit it
 let dbTypes = [];
 let dbSessions = [];
 let dbSessionMap = {};     // mealCode -> session object
@@ -196,14 +197,27 @@ async function dbLoadStats() {
 
 async function dbInit() {
     try {
-        const initData = await api('api/requisitions.php?action=page_init', {
-            method: 'POST',
-            body: JSON.stringify({
-                req_date: dbDate,
-                kitchen_id: DB_KITCHEN_ID,
-                guest_count: dbGuestCount
-            })
-        });
+        // Retry page_init a few times — camps often have flaky connectivity, and a single
+        // dropped request must not strand the chef on a dead "menu not loading" screen.
+        let initData, lastErr = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                initData = await api('api/requisitions.php?action=page_init', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        req_date: dbDate,
+                        kitchen_id: DB_KITCHEN_ID,
+                        guest_count: dbGuestCount
+                    })
+                });
+                lastErr = null;
+                break;
+            } catch (err) {
+                lastErr = err;
+                if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 800));
+            }
+        }
+        if (lastErr) throw lastErr;
 
         if (initData.settings) {
             dbSettings = initData.settings;
@@ -219,10 +233,27 @@ async function dbInit() {
             }
         });
 
-        // Init per-meal guest counts from sessions
+        // Work out the day's guest count: prefer what the chef already committed on a locked
+        // meal (their real choice); otherwise the kitchen default. Unlocked meals inherit this
+        // instead of snapping back to the default — so it doesn't look "reset" on revisit.
+        if (dbDayGuests == null) {
+            let best = null;
+            dbSessions.forEach(s => {
+                if (s.status !== 'draft' && parseInt(s.guest_count) > 0) {
+                    if (!best || (s.updated_at || '') > (best.updated_at || '')) best = s;
+                }
+            });
+            dbDayGuests = best ? parseInt(best.guest_count) : dbGuestCount;
+        }
+
+        // Per-meal guest counts: locked meals keep their saved count; unlocked meals inherit the day count
         for (const mc of Object.keys(dbSessionMap)) {
-            if (!dbGuestCounts[mc]) {
-                dbGuestCounts[mc] = parseInt(dbSessionMap[mc].guest_count) || dbGuestCount;
+            if (dbGuestCounts[mc]) continue; // already set this session — leave it
+            const s = dbSessionMap[mc];
+            if (s.status !== 'draft' && parseInt(s.guest_count) > 0) {
+                dbGuestCounts[mc] = parseInt(s.guest_count);
+            } else {
+                dbGuestCounts[mc] = dbDayGuests;
             }
         }
 
@@ -239,7 +270,29 @@ async function dbInit() {
 
     } catch(e) {
         console.warn('Dashboard init failed:', e);
-        document.getElementById('dbMealContent').innerHTML = '<p class="text-center text-red-400 text-xs py-4">Failed to load menu</p>';
+        const emsg = (e && e.message) || '';
+        const isAuth = /authenticat|log ?in|session/i.test(emsg);
+        const isOffline = !navigator.onLine || /failed to fetch|networkerror|load failed|invalid server response|request failed|timeout|timed out/i.test(emsg);
+        let heading, sub, btn;
+        if (isAuth) {
+            heading = 'Your session expired';
+            sub = 'Please log in again to continue.';
+            btn = `<button onclick="location.href='index.php'" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 active:bg-orange-700 transition">Log in again</button>`;
+        } else {
+            heading = isOffline ? "Can't reach the server" : "Couldn't load the menu";
+            sub = isOffline ? 'Check your internet connection — your menu is safe.' : 'This is usually a connection hiccup — try again.';
+            btn = `<button onclick="dbInit()" class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-orange-500 text-white text-sm font-semibold hover:bg-orange-600 active:bg-orange-700 transition">
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+                Retry
+            </button>`;
+        }
+        document.getElementById('dbMealContent').innerHTML =
+            `<div class="text-center py-10 px-4">
+                <div class="text-3xl mb-2">${isOffline ? '📶' : '🍽️'}</div>
+                <p class="text-sm font-semibold text-gray-700 mb-1">${heading}</p>
+                <p class="text-[11px] text-gray-400 mb-4">${sub}</p>
+                ${btn}
+            </div>`;
     }
 }
 
@@ -257,7 +310,7 @@ async function dbLoadAllSetMenus() {
 async function dbLoadSetMenuForMeal(mealCode, dayOfWeek) {
     if (dbSetMenuLoaded[mealCode]) return;
     const session = dbSessionMap[mealCode];
-    if (!session || session.status !== 'draft') return;
+    if (!session) return;
     if (!dbMealDishes[mealCode]) dbMealDishes[mealCode] = {};
 
     try {
@@ -274,7 +327,8 @@ async function dbLoadSetMenuForMeal(mealCode, dayOfWeek) {
             };
         }
 
-        if (savedDishes.length === 0) {
+        // Auto-load the weekly set menu only for a fresh primary draft — NOT for supplements (they start empty)
+        if (savedDishes.length === 0 && session.status === 'draft' && !(parseInt(session.supplement_number) > 0)) {
             const data = await api(`api/set-menus.php?action=get_day_with_ingredients&day=${dayOfWeek}&type=${encodeURIComponent(mealCode)}`);
             for (const md of (data.dishes || [])) {
                 if (dbMealDishes[mealCode][md.recipe_id]) continue;
@@ -303,11 +357,23 @@ async function dbLoadSetMenuForMeal(mealCode, dayOfWeek) {
 function dbSetMealGuests(mealCode, val) {
     const count = Math.max(1, parseInt(val) || 1);
     dbGuestCounts[mealCode] = count;
-    const dishes = dbMealDishes[mealCode] || {};
-    for (const recipeId of Object.keys(dishes)) {
-        dishes[recipeId].dish_portions = count;
+    dbDayGuests = count; // remember as the day's count so other meals don't reset
+
+    const applyToMeal = (mc) => {
+        const dishes = dbMealDishes[mc] || {};
+        for (const recipeId of Object.keys(dishes)) dishes[recipeId].dish_portions = count;
+        dbRecalcMealAgg(mc);
+    };
+    applyToMeal(mealCode);
+
+    // Carry the new count to other UNLOCKED meals so switching tabs shows the same number.
+    // Locked / submitted meals keep what they were committed with.
+    for (const mc of Object.keys(dbSessionMap)) {
+        if (mc === mealCode) continue;
+        const s = dbSessionMap[mc];
+        if (s && s.status === 'draft') { dbGuestCounts[mc] = count; applyToMeal(mc); }
     }
-    dbRecalcMealAgg(mealCode);
+
     dbRenderActiveMeal();
 }
 
@@ -326,6 +392,8 @@ function dbRecalcMealAgg(mealCode) {
         const portions = dish.dish_portions || dbGuestCounts[mealCode] || dbGuestCount;
         const scaleFactor = portions / (dish.recipe_servings || 4);
         (dish.ingredients || []).forEach(ing => {
+            // Skip ingredients toggled off in the recipe (is_primary=0) — matches the order generated by lock_menu
+            if (ing.is_primary !== undefined && parseInt(ing.is_primary) === 0) return;
             const itemId = ing.item_id;
             const scaledQty = parseFloat(ing.qty) * scaleFactor;
             if (newAgg[itemId]) {
@@ -350,7 +418,7 @@ function dbRenderMealTabs() {
     const container = document.getElementById('dbMealTabs');
     const mealCodes = dbTypes.map(t => t.code).filter(c => dbSessionMap[c]);
 
-    container.innerHTML = mealCodes.map(mc => {
+    let html = mealCodes.map(mc => {
         const isActive = mc === dbActiveMeal;
         const typeName = dbTypeName(mc);
         const session = dbSessionMap[mc];
@@ -365,6 +433,37 @@ function dbRenderMealTabs() {
             ${isLocked ? '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>' : ''}
         </button>`;
     }).join('');
+
+    // Meal types not yet started today — shown as dashed "+ start" chips so any meal stays
+    // available without auto-creating empty phantom drafts for meals the kitchen rarely uses.
+    const notStarted = dbTypes.filter(t => !dbSessionMap[t.code]);
+    html += notStarted.map(t => `<button onclick="dbStartMeal('${t.code}')" title="Start a ${dbTypeName(t.code)} order"
+        class="px-3 py-2.5 rounded-xl text-xs font-medium whitespace-nowrap transition flex items-center gap-1 border border-dashed border-gray-300 text-gray-400 hover:text-orange-500 hover:border-orange-300">
+        <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
+        ${dbTypeName(t.code)}
+    </button>`).join('');
+
+    container.innerHTML = html;
+}
+
+// Start a meal type that isn't auto-created — creates its draft on demand, then reloads.
+async function dbStartMeal(mealCode) {
+    try {
+        await api('api/requisitions.php?action=ensure_session', {
+            method: 'POST',
+            body: JSON.stringify({
+                kitchen_id: DB_KITCHEN_ID,
+                req_date: dbDate,
+                meals: mealCode,
+                guest_count: dbGuestCounts[mealCode] || dbDayGuests || dbGuestCount
+            })
+        });
+        dbActiveMeal = mealCode;
+        dbSetMenuLoaded[mealCode] = false;
+        await dbInit();
+    } catch (e) {
+        showToast(e.message || 'Could not start this meal', 'error');
+    }
 }
 
 function dbSelectMeal(mealCode) {
@@ -391,7 +490,11 @@ function dbRenderActiveMeal() {
     const agg = dbMealAgg[mealCode] || {};
     const aggItems = Object.values(agg);
     const isDraft = session && session.status === 'draft';
+    const isProcessing = session && session.status === 'processing';
+    const isEditable = isDraft || isProcessing;   // freeze at SUBMIT — editable until then
     const isLocked = session && session.status !== 'draft';
+    const isSubmittedPlus = session && ['submitted','fulfilled','received','closed'].includes(session.status);
+    const isSupplement = session && parseInt(session.supplement_number) > 0;
     const gc = dbGuestCounts[mealCode] || dbGuestCount;
 
     let totalItems = 0, totalKg = 0;
@@ -430,8 +533,15 @@ function dbRenderActiveMeal() {
     }
     html += `</div></div>`;
 
-    // Per-meal Guest Count (only for drafts)
-    if (isDraft) {
+    // Supplement banner — make clear this is an ADDITIONAL order on top of the submitted one
+    if (isSupplement) {
+        html += `<div class="px-3 py-2 bg-purple-50 border-b border-purple-100 text-[10px] text-purple-700">
+            <strong>Supplement #${session.supplement_number}</strong> — extra items added on top of the original ${escHtml(typeName)} order already sent to the store.
+        </div>`;
+    }
+
+    // Per-meal Guest Count (editable until submit)
+    if (isEditable) {
         html += `<div class="px-3 py-2.5 border-b border-gray-100 flex items-center justify-between">
             <div>
                 <div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Guest Count</div>
@@ -453,7 +563,7 @@ function dbRenderActiveMeal() {
         html += '<div class="space-y-1.5">';
         dishList.forEach(d => {
             const portions = d.dish_portions || gc;
-            html += `<div class="flex items-center justify-between py-1.5 ${isDraft ? 'cursor-pointer active:bg-orange-50 rounded-lg px-1 -mx-1' : ''}" ${isDraft ? `onclick="dbShowPortionsModal('${escHtml(mealCode)}', ${d.recipe_id})"` : ''}>
+            html += `<div class="flex items-center justify-between py-1.5 ${isEditable ? 'cursor-pointer active:bg-orange-50 rounded-lg px-1 -mx-1' : ''}" ${isEditable ? `onclick="dbShowPortionsModal('${escHtml(mealCode)}', ${d.recipe_id})"` : ''}>
                 <div class="flex items-center gap-2 flex-1 min-w-0">
                     <div class="w-7 h-7 rounded-lg bg-orange-100 flex items-center justify-center shrink-0">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#ea580c" stroke-width="2"><path d="M6 13.87A4 4 0 0 1 7.41 6a5.11 5.11 0 0 1 1.05-1.54 5 5 0 0 1 7.08 0A5.11 5.11 0 0 1 16.59 6 4 4 0 0 1 18 13.87V21H6Z"/><line x1="6" x2="18" y1="17" y2="17"/></svg>
@@ -461,12 +571,12 @@ function dbRenderActiveMeal() {
                     <div class="min-w-0 flex-1">
                         <div class="text-xs font-medium text-gray-800 truncate">${escHtml(d.recipe_name)}</div>
                         <div class="text-[9px] text-gray-400">${portions} pax</div>
-                        ${d.ingredients ? `<div class="text-[9px] text-gray-400 mt-0.5 leading-relaxed">${d.ingredients.map(i => i.item_name + ' ' + (Math.round(i.qty * (portions / (d.recipe_servings || 4)) * 10) / 10) + i.uom).join(', ')}</div>` : ''}
+                        ${d.ingredients ? `<div class="text-[9px] text-gray-400 mt-0.5 leading-relaxed">${d.ingredients.filter(i => !(i.is_primary !== undefined && parseInt(i.is_primary) === 0)).map(i => i.item_name + ' ' + (Math.round(i.qty * (portions / (d.recipe_servings || 4)) * 10) / 10) + i.uom).join(', ')}</div>` : ''}
                     </div>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
-                    ${isDraft ? `<span class="text-xs font-bold text-orange-600">${portions}</span>` : `<span class="text-[10px] text-gray-500">${portions} pax</span>`}
-                    ${isDraft ? `<button onclick="event.stopPropagation();dbRemoveDish('${escHtml(mealCode)}', ${d.recipe_id})" class="text-gray-300 hover:text-red-500 transition p-1 compact-btn">
+                    ${isEditable ? `<span class="text-xs font-bold text-orange-600">${portions}</span>` : `<span class="text-[10px] text-gray-500">${portions} pax</span>`}
+                    ${isEditable ? `<button onclick="event.stopPropagation();dbRemoveDish('${escHtml(mealCode)}', ${d.recipe_id})" class="text-gray-300 hover:text-red-500 transition p-1 compact-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
                     </button>` : ''}
                 </div>
@@ -475,8 +585,8 @@ function dbRenderActiveMeal() {
         html += '</div>';
     }
 
-    // Add Dish button (drafts only)
-    if (isDraft) {
+    // Add Dish button (editable until submit)
+    if (isEditable) {
         html += `<button onclick="dbOpenAddDish('${escHtml(mealCode)}')" class="w-full mt-2 border border-dashed border-orange-200 rounded-lg px-3 py-2 text-xs font-semibold text-orange-500 flex items-center justify-center gap-1.5 hover:bg-orange-50 active:bg-orange-100 transition">
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
             Add Dish
@@ -493,19 +603,64 @@ function dbRenderActiveMeal() {
         </div>`;
     }
 
-    // Per-meal Lock Button (drafts with dishes only)
-    if (isDraft && dishList.length > 0) {
+    // Per-meal Lock / Update Button (editable meals with dishes)
+    if (isEditable && dishList.length > 0) {
+        const btnLabel = isProcessing ? 'Update Order' : `Lock ${escHtml(typeName)} &amp; Generate Order`;
         html += `<div class="px-3 py-3 border-t border-gray-100">
             <button onclick="dbLockMeal('${mealCode}')" id="dbLockBtn_${mealCode}"
                 class="w-full bg-orange-500 text-white py-3 rounded-xl text-sm font-bold hover:bg-orange-600 active:bg-orange-700 transition flex items-center justify-center gap-2 shadow-sm">
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
-                Lock ${escHtml(typeName)} &amp; Generate Order
+                ${btnLabel}
             </button>
+            ${isProcessing ? `<p class="text-[10px] text-gray-400 text-center mt-2">Add or remove dishes above, then tap Update. Send to the store from the Orders page.</p>` : ''}
+        </div>`;
+    }
+
+    // Add-a-supplement button — once the order is with the store, extra items go on a supplement
+    if (isSubmittedPlus) {
+        html += `<div class="px-3 py-3 border-t border-gray-100">
+            <button onclick="dbCreateSupplement('${escHtml(mealCode)}')" id="dbSuppBtn_${mealCode}"
+                class="w-full border-2 border-purple-200 text-purple-600 py-2.5 rounded-xl text-sm font-semibold hover:bg-purple-50 active:bg-purple-100 transition flex items-center justify-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+                Need more? Add a supplement
+            </button>
+            <p class="text-[10px] text-gray-400 text-center mt-2">Creates an additional order for ${escHtml(typeName)} — your sent order stays as is.</p>
         </div>`;
     }
 
     html += '</div>';
     container.innerHTML = html;
+}
+
+// Create a supplement (additional) order once the original is already with the store
+async function dbCreateSupplement(mealCode) {
+    const session = dbSessionMap[mealCode];
+    if (!session) return;
+    const typeName = dbTypeName(mealCode);
+    const confirmed = await customConfirm(
+        `Add supplement — ${typeName}`,
+        `Your ${typeName} order is already with the store. This creates a separate ADDITIONAL order you can add more dishes to (the original is unchanged). Continue?`,
+        'Create supplement', 'Cancel'
+    );
+    if (!confirmed) return;
+    const btn = document.getElementById('dbSuppBtn_' + mealCode);
+    if (btn) setLoading(btn, true);
+    try {
+        await api('api/requisitions.php?action=create_supplementary', {
+            method: 'POST',
+            body: { parent_id: session.id }
+        });
+        showToast(`Supplement order created for ${typeName} — add the extra dishes`, 'success');
+        dbSetMenuLoaded[mealCode] = false;
+        await dbInit();
+        dbActiveMeal = mealCode;
+        dbRenderMealTabs();
+        dbRenderActiveMeal();
+    } catch(e) {
+        showToast(e.message || 'Failed to create supplement', 'error');
+    } finally {
+        if (btn) setLoading(btn, false);
+    }
 }
 
 function dbTypeName(code) {
@@ -542,7 +697,7 @@ function dbShowPortionsModal(mealCode, recipeId) {
     const dish = dishes[recipeId];
     if (!dish) return;
     const session = dbSessionMap[mealCode];
-    if (!session || session.status !== 'draft') return;
+    if (!session || (session.status !== 'draft' && session.status !== 'processing')) return;
     document.getElementById('dbPmMealCode').value = mealCode;
     document.getElementById('dbPmRecipeId').value = recipeId;
     document.getElementById('dbPmDishName').textContent = dish.recipe_name;
@@ -647,7 +802,9 @@ async function dbAddDish(recipeId) {
         const data = await api(`api/requisitions.php?action=get_recipe_ingredients&recipe_id=${recipeId}`);
         const recipe = data.recipe;
         const ingredients = data.ingredients || [];
-        if (ingredients.length === 0) {
+        // Breakfast can include simple/no-recipe items (toast, fruit, etc.) — allow ingredient-less
+        // dishes there. Other meals still require ingredients so the order can be generated.
+        if (ingredients.length === 0 && mealCode !== 'breakfast') {
             showToast('This dish has no ingredients. Add ingredients in Recipes first.', 'warning');
             return;
         }
@@ -683,16 +840,19 @@ function dbRemoveDish(mealCode, recipeId) {
 // ══════════════════════════════════════════════
 async function dbLockMeal(mealCode) {
     const session = dbSessionMap[mealCode];
-    if (!session || session.status !== 'draft') return;
+    if (!session || (session.status !== 'draft' && session.status !== 'processing')) return;
+    const isUpdate = session.status === 'processing';
 
     const dishes = Object.values(dbMealDishes[mealCode] || {});
-    if (dishes.length === 0) { showToast('No dishes to submit', 'warning'); return; }
+    if (dishes.length === 0) { showToast('No dishes added yet', 'warning'); return; }
 
     const typeName = dbTypeName(mealCode);
     const confirmed = await customConfirm(
-        `Lock ${typeName}`,
-        `Submit ${typeName} (${dishes.length} dish${dishes.length > 1 ? 'es' : ''}) to generate the order?`,
-        'Lock & Submit', 'Cancel'
+        isUpdate ? `Update ${typeName}` : `Generate ${typeName} order`,
+        isUpdate
+            ? `Re-generate the order for ${typeName} with these ${dishes.length} dish${dishes.length > 1 ? 'es' : ''}? (Item quantities recalculate; send to the store from the Orders page.)`
+            : `Generate the order for ${typeName} (${dishes.length} dish${dishes.length > 1 ? 'es' : ''})? You can still add more before sending to the store.`,
+        isUpdate ? 'Update Order' : 'Generate Order', 'Cancel'
     );
     if (!confirmed) return;
 
@@ -713,12 +873,12 @@ async function dbLockMeal(mealCode) {
                 adjustments: {}
             })
         });
-        showToast(`${typeName} submitted!`, 'success');
+        showToast(isUpdate ? `${typeName} order updated` : `${typeName} order generated`, 'success');
         dbSetMenuLoaded[mealCode] = false;
         await dbInit();
         dbLoadStats();
     } catch(e) {
-        showToast(e.message || 'Failed to submit', 'error');
+        showToast(e.message || 'Failed to generate order', 'error');
     } finally {
         if (btn) setLoading(btn, false);
     }

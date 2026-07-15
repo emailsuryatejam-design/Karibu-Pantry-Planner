@@ -9,10 +9,12 @@
             </h1>
             <p class="text-xs text-gray-500 mt-0.5" id="rCount">Manage kitchen recipes</p>
         </div>
+        <?php if (!isStorekeeper()): ?>
         <button onclick="rShowCreate()" class="bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-xl text-sm font-semibold flex items-center gap-1.5 transition compact-btn">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
             Add
         </button>
+        <?php endif; ?>
     </div>
 
     <!-- Search -->
@@ -239,23 +241,13 @@ async function rLoadDetail(id) {
             </div>`;
         }
 
-        // Meta row (prep, cook, difficulty)
-        html += `<div class="flex items-center gap-3 px-4 py-2 bg-gray-50/50 text-[10px] text-gray-500 flex-wrap">`;
-        if (r.prep_time) html += `<span>Prep: ${r.prep_time}min</span>`;
-        if (r.cook_time) html += `<span>Cook: ${r.cook_time}min</span>`;
-        html += `<span class="${diffColors[r.difficulty] || ''} font-medium">${(r.difficulty || 'medium').charAt(0).toUpperCase() + (r.difficulty || 'medium').slice(1)}</span>`;
-        html += `</div>`;
-
-        // Description
-        if (r.notes) {
-            html += `<div class="px-4 py-2 border-t border-gray-50"><p class="text-xs text-gray-600 italic">${r.notes}</p></div>`;
-        }
+        // (prep/cook/difficulty/cuisine/notes removed — recipe card kept to the essentials)
 
         // Ingredients
         html += `<div class="px-4 py-2 border-t border-gray-50">`;
         html += `<div class="flex items-center justify-between mb-2">
             <h4 class="text-[10px] font-semibold text-gray-500 uppercase">Ingredients (${ings.length})</h4>
-            <button onclick="rShowAddIngredient(${id})" class="text-[10px] font-semibold text-orange-600 bg-orange-50 px-2 py-1 rounded-lg compact-btn hover:bg-orange-100 transition">+ Add</button>
+            ${R_CAN_EDIT ? `<button onclick="rShowAddIngredient(${id})" class="text-[10px] font-semibold text-orange-600 bg-orange-50 px-2 py-1 rounded-lg compact-btn hover:bg-orange-100 transition">+ Add</button>` : ''}
         </div>`;
         if (ings.length === 0) {
             html += `<p class="text-xs text-gray-400">No ingredients yet — add items from the pantry</p>`;
@@ -276,11 +268,16 @@ async function rLoadDetail(id) {
                         ${isPrimary ? '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>' : ''}
                     </button>
                     <span class="text-xs ${isPrimary ? 'text-gray-800' : 'text-gray-400 line-through'} truncate flex-1">${ing.item_name}</span>
-                    <span class="text-[10px] text-gray-500 shrink-0">${totalQty} ${ing.uom}</span>
+                    ${R_CAN_EDIT
+                        ? `<input type="number" value="${totalQty}" step="0.01" min="0" inputmode="decimal"
+                            onchange="rUpdateIngQty(${ing.id}, ${id}, this)" onclick="event.stopPropagation()"
+                            class="w-14 text-[11px] text-gray-700 text-right border border-gray-200 rounded px-1 py-0.5 shrink-0 focus:outline-none focus:ring-1 focus:ring-orange-300" title="Tap to change quantity">`
+                        : `<span class="text-[11px] text-gray-700 shrink-0">${totalQty}</span>`}
+                    <span class="text-[10px] text-gray-400 shrink-0">${ing.uom}</span>
                     <span class="text-[9px] text-blue-500 shrink-0 bg-blue-50 px-1 py-0.5 rounded">${perPortion}/${ing.uom} pp</span>
-                    <button onclick="rRemoveIngredient(${ing.id}, ${id})" class="text-gray-300 hover:text-red-500 transition compact-btn p-0.5" title="Remove">
+                    ${R_CAN_EDIT ? `<button onclick="rRemoveIngredient(${ing.id}, ${id})" class="text-gray-300 hover:text-red-500 transition compact-btn p-0.5" title="Remove">
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-                    </button>
+                    </button>` : ''}
                 </div>`;
             });
             html += `</div>`;
@@ -335,7 +332,8 @@ async function rLoadDetail(id) {
         </div>`;
         <?php endif; ?>
 
-        // Actions
+        // Actions (chefs/admin only — storekeepers get view + the orange on/off toggle)
+        if (R_CAN_EDIT) {
         html += `<div class="flex items-center gap-2 px-4 py-3 border-t border-gray-100 bg-gray-50/50">
             <button onclick="rShowAddToOrder(${id}, '${escHtml(r.name).replace(/'/g, "\\'")}')" class="flex-1 text-xs text-blue-700 font-semibold bg-blue-50 py-2 rounded-lg compact-btn flex items-center justify-center gap-1">
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/></svg>
@@ -344,6 +342,7 @@ async function rLoadDetail(id) {
             <button onclick="rShowEdit(${id})" class="flex-1 text-xs text-orange-700 font-semibold bg-orange-50 py-2 rounded-lg compact-btn">Edit</button>
             <button onclick="rDeleteRecipe(${id}, '${r.name.replace(/'/g, "\\'")}')" class="text-xs text-red-600 font-medium bg-red-50 px-4 py-2 rounded-lg compact-btn">Delete</button>
         </div>`;
+        }
 
         html += '</div>';
 
@@ -364,7 +363,9 @@ async function rShowEdit(id) {
 
 function rOpenForm(recipe) {
     const isEdit = !!recipe;
-    const categories = ['appetizer','soup','salad','main_course','side','dessert','beverage','breakfast','lunch','dinner','snack','sauce','bread'];
+    const categories = ['breakfast','lunch','dinner','appetizer','soup','salad','main_course','side','dessert','beverage','snack','sauce','bread'];
+    const isPacked = isEdit && parseInt(recipe.is_packed) === 1;
+    const defCat = isEdit ? (recipe.category || 'main_course') : (rActiveTab === 'breakfast' ? 'breakfast' : 'main_course');
 
     let html = `
         <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
@@ -373,27 +374,30 @@ function rOpenForm(recipe) {
             <button onclick="closeSheet()" class="p-1 compact-btn"><svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
         </div>
         <div class="flex-1 overflow-y-auto px-5 py-4 scroll-touch space-y-3">
-            <input type="text" id="rFormName" value="${isEdit ? recipe.name : ''}" placeholder="Recipe name" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
-            <div class="flex gap-2">
-                <select id="rFormCategory" class="flex-1 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm compact-btn">
-                    ${categories.map(c => `<option value="${c}" ${(isEdit ? recipe.category : (rActiveTab === 'breakfast' ? 'breakfast' : 'main_course')) === c ? 'selected' : ''}>${c.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>`).join('')}
-                </select>
-                <select id="rFormDifficulty" class="w-28 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm compact-btn">
-                    <option value="easy" ${(isEdit && recipe.difficulty === 'easy') ? 'selected' : ''}>Easy</option>
-                    <option value="medium" ${(!isEdit || recipe.difficulty === 'medium') ? 'selected' : ''}>Medium</option>
-                    <option value="hard" ${(isEdit && recipe.difficulty === 'hard') ? 'selected' : ''}>Hard</option>
-                </select>
+            <div>
+                <label class="text-[11px] font-semibold text-gray-500 block mb-1">Recipe name</label>
+                <input type="text" id="rFormName" value="${isEdit ? escHtml(recipe.name) : ''}" placeholder="e.g. Grilled Kingfish" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
             </div>
             <div class="flex gap-2">
-                <input type="text" id="rFormCuisine" value="${isEdit && recipe.cuisine ? recipe.cuisine : ''}" placeholder="Cuisine (optional)" class="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
-                <input type="number" id="rFormServings" value="${isEdit ? recipe.servings || 4 : 4}" placeholder="Servings" class="w-24 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 compact-btn">
+                <div class="flex-1">
+                    <label class="text-[11px] font-semibold text-gray-500 block mb-1">Meal type</label>
+                    <select id="rFormCategory" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm compact-btn">
+                        ${categories.map(c => `<option value="${c}" ${defCat === c ? 'selected' : ''}>${c.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}</option>`).join('')}
+                    </select>
+                </div>
+                <div class="w-24">
+                    <label class="text-[11px] font-semibold text-gray-500 block mb-1">Serves</label>
+                    <input type="number" id="rFormServings" value="${isEdit ? recipe.servings || 4 : 4}" min="1" placeholder="4" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-orange-200 compact-btn">
+                </div>
             </div>
-            <div class="flex gap-2">
-                <input type="number" id="rFormPrep" value="${isEdit && recipe.prep_time ? recipe.prep_time : ''}" placeholder="Prep min" class="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 compact-btn">
-                <input type="number" id="rFormCook" value="${isEdit && recipe.cook_time ? recipe.cook_time : ''}" placeholder="Cook min" class="flex-1 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200 compact-btn">
+            <div>
+                <label class="text-[11px] font-semibold text-gray-500 block mb-1">Method <span class="text-gray-400 font-normal">(optional)</span></label>
+                <textarea id="rFormInstructions" placeholder="How to make it — one step per line" rows="4" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">${isEdit && recipe.instructions ? escHtml(recipe.instructions) : ''}</textarea>
             </div>
-            <textarea id="rFormNotes" placeholder="Description / notes (optional)" rows="2" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">${isEdit && recipe.notes ? recipe.notes : ''}</textarea>
-            <textarea id="rFormInstructions" placeholder="Instructions (one step per line)" rows="4" class="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">${isEdit && recipe.instructions ? recipe.instructions : ''}</textarea>
+            <label class="flex items-center gap-2 text-xs text-gray-600 bg-gray-50 rounded-lg px-3 py-2.5">
+                <input type="checkbox" id="rFormPacked" ${isPacked ? 'checked' : ''} class="w-4 h-4 accent-orange-500">
+                Packed / ready item — no ingredients to order (e.g. bread, juice)
+            </label>
             <button onclick="rSaveRecipe(${isEdit ? recipe.id : 'null'})" class="w-full bg-orange-500 hover:bg-orange-600 text-white py-2.5 rounded-lg text-sm font-semibold transition">Save Recipe</button>
         </div>`;
     openSheet(html);
@@ -409,13 +413,9 @@ async function rSaveRecipe(editId) {
             id: editId,
             name,
             category: document.getElementById('rFormCategory').value,
-            difficulty: document.getElementById('rFormDifficulty').value,
-            cuisine: document.getElementById('rFormCuisine').value || null,
             servings: parseInt(document.getElementById('rFormServings').value) || 4,
-            prep_time: parseInt(document.getElementById('rFormPrep').value) || null,
-            cook_time: parseInt(document.getElementById('rFormCook').value) || null,
-            notes: document.getElementById('rFormNotes').value || null,
             instructions: document.getElementById('rFormInstructions').value || null,
+            is_packed: document.getElementById('rFormPacked').checked ? 1 : 0,
         }});
         closeSheet();
         showToast('Recipe saved!');
@@ -426,9 +426,8 @@ async function rSaveRecipe(editId) {
                 rRecipes[idx] = { ...rRecipes[idx],
                     name: document.getElementById('rFormName')?.value?.trim() || rRecipes[idx].name,
                     category: document.getElementById('rFormCategory')?.value || rRecipes[idx].category,
-                    difficulty: document.getElementById('rFormDifficulty')?.value || rRecipes[idx].difficulty,
-                    cuisine: document.getElementById('rFormCuisine')?.value || rRecipes[idx].cuisine,
                     servings: parseInt(document.getElementById('rFormServings')?.value) || rRecipes[idx].servings,
+                    is_packed: document.getElementById('rFormPacked')?.checked ? 1 : 0,
                 };
             }
             rRenderList();
@@ -681,6 +680,16 @@ async function rRemoveIngredient(ingredientId, recipeId) {
     } catch(e) { showToast(e.message || 'Failed', 'error'); }
 }
 
+async function rUpdateIngQty(ingredientId, recipeId, el) {
+    const qty = parseFloat(el.value);
+    if (!(qty > 0)) { showToast('Enter a valid quantity', 'warning'); el.focus(); return; }
+    try {
+        await api('api/recipes.php', { method: 'POST', body: { action: 'update_ingredient', id: ingredientId, qty } });
+        showToast('Quantity updated', 'success');
+        rLoadDetail(recipeId);
+    } catch(e) { showToast(e.message || 'Failed to update quantity', 'error'); }
+}
+
 async function rTogglePrimary(ingredientId, recipeId, newValue) {
     try {
         await api('api/recipes.php', { method: 'POST', body: { action: 'toggle_primary', id: ingredientId, is_primary: newValue } });
@@ -693,6 +702,8 @@ async function rTogglePrimary(ingredientId, recipeId, newValue) {
 //  Add to Today's Order — from Recipes
 // ═══════════════════════════════════════
 const R_KITCHEN_ID = <?= (int)($user['kitchen_id'] ?? 0) ?>;
+const R_ROLE = <?= json_encode($user['role'] ?? '') ?>;
+const R_CAN_EDIT = R_ROLE === 'chef' || R_ROLE === 'admin';  // storekeepers: view + orange toggle only
 
 async function rShowAddToOrder(recipeId, recipeName) {
     // Load today's requisitions (auto-create if needed)

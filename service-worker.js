@@ -3,7 +3,7 @@
  * Cache-first for static assets, network-first for API/PHP, offline fallback
  */
 
-const CACHE_NAME = 'karibu-v2';
+const CACHE_NAME = 'karibu-v9';
 const STATIC_ASSETS = [
     '/app.php',
     '/assets/app.css',

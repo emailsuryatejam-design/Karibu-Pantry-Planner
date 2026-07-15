@@ -1,3 +1,4 @@
+<?php $soKitchenId = (int)(currentUser()['kitchen_id'] ?? 0); ?>
 <!-- Store Orders — Storekeeper view: see chef orders, mark items as sent -->
 <div id="storeOrdersPage">
     <!-- Header -->
@@ -8,6 +9,14 @@
                 Store Orders
             </h1>
             <p class="text-xs text-gray-500 mt-0.5">Requisitions from kitchen</p>
+        </div>
+        <div class="flex items-center gap-1.5">
+            <button onclick="printWholeDay(todayStr(), SO_KITCHEN_ID)" class="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 active:bg-gray-300 transition" title="Print whole day">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+            </button>
+            <button onclick="window.open('api/requisitions.php?action=day_pdf&date=' + todayStr() + '&kitchen_id=' + SO_KITCHEN_ID, '_blank')" class="p-2 rounded-xl bg-gray-100 text-gray-500 hover:bg-gray-200 active:bg-gray-300 transition" title="Download day PDF">
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M12 18v-6"/><path d="m9 15 3 3 3-3"/></svg>
+            </button>
         </div>
     </div>
 
@@ -52,6 +61,8 @@
 </div>
 
 <script>
+const SO_KITCHEN_ID = <?= $soKitchenId ?>;
+const SO_KITCHEN_NAME = <?= json_encode(currentUser()['kitchen_name'] ?? '') ?>;
 let soStatus = 'all';
 let soOrders = [];
 let soCurrentOrderId = null;
@@ -335,9 +346,9 @@ async function soOpenDetail(orderId) {
             }
         }
 
-        // Print button — uses printStoreOrder() from app.js
+        // Print button — uses the canonical printOrder() (same as all other pages; includes staples in their own section)
         html += `
-            <button onclick="printStoreOrder(${order.id})" class="w-full bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 py-2.5 rounded-xl text-xs font-medium transition mt-3 flex items-center justify-center gap-2">
+            <button onclick="printOrder(${order.id}, SO_KITCHEN_NAME, true)" class="w-full bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 py-2.5 rounded-xl text-xs font-medium transition mt-3 flex items-center justify-center gap-2">
                 <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
                 Print Order
             </button>`;

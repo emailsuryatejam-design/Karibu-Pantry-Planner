@@ -18,7 +18,7 @@ $page = $_GET['page'] ?? $defaultPage;
 
 // Valid pages per role
 $chefPages  = ['dashboard', 'orders', 'requisition', 'review-supply', 'day-close', 'menu-plan', 'recipes', 'kitchen-inventory', 'reports', 'settings'];
-$storePages = ['store-dashboard', 'store-orders', 'store-inventory', 'store-history', 'reports', 'settings'];
+$storePages = ['store-dashboard', 'store-orders', 'store-inventory', 'store-history', 'recipes', 'reports', 'settings'];
 $adminPages = array_unique(array_merge($chefPages, $storePages, [
     'admin-home', 'admin-users', 'admin-camps', 'admin-meal-types',
     'admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus',
@@ -593,6 +593,10 @@ body.admin-portal {
                 <a href="app.php?page=store-history" class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= $page === 'store-history' ? 'text-green-600' : 'text-gray-400' ?>">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
                     <span class="text-[9px] font-medium">History</span>
+                </a>
+                <a href="app.php?page=recipes" class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= $page === 'recipes' ? 'text-green-600' : 'text-gray-400' ?>">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 11h.01"/><path d="M11 15h.01"/><path d="M16 16h.01"/><path d="m2 16 20 6-6-20A20 20 0 0 0 2 16"/><path d="M5.71 17.11a17.04 17.04 0 0 1 11.4-11.4"/></svg>
+                    <span class="text-[9px] font-medium">Recipes</span>
                 </a>
                 <a href="app.php?page=reports" class="flex flex-col items-center justify-center gap-0.5 px-1 py-1 rounded-lg min-w-[48px] <?= $page === 'reports' ? 'text-green-600' : 'text-gray-400' ?>">
                     <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
