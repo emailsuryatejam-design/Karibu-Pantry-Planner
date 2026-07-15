@@ -86,8 +86,9 @@ table + a separate **"Staple items" section** (via `is_staple`), and renders sig
     + Demo(6). Run by **GitHub Actions** `.github/workflows/missed-meal-alerts.yml` at 05:10/09:10/15:10 UTC
     (= 08:10/12:10/18:10 EAT), which SSHes in with the `HOSTINGER_SSH_KEY` secret. Manual test:
     `gh workflow run "Missed-meal alerts" -f meal=lunch -f dry=true`.
-- Repo: github.com/emailsuryatejam-design/Karibu-Pantry-Planner (branch `main`). NOTE: repo currently
-  lags production — deployed code is rsync'd from the local folder, not committed. Sync before relying on git.
+- Repo: github.com/emailsuryatejam-design/Karibu-Pantry-Planner (branch `main`). **Synced to production
+  2026-07-15.** Deploy is still rsync from the local folder → server; commit + push after deploying to
+  keep git in sync. `CLAUDE.local.md` (secret), `reports/`, `vendor/`, `_*.php` are gitignored.
 - Order-submit email alerts go to per-kitchen notification recipients (demo kitchen → global admin).
 
 ## Key files

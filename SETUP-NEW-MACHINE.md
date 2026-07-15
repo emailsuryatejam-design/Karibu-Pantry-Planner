@@ -9,12 +9,20 @@ from the folder automatically.
 
 ## The 4 steps (simplest path)
 
-### 1. Copy this folder to the new Mac
-Copy the entire `smart req_ karibu` folder (this whole thing — it includes the code, `CLAUDE.md`,
-`CLAUDE.local.md`, `reports/`, `routines/`). Easiest transfer between two Macs: **AirDrop**. Otherwise
-a USB drive or a private cloud folder.
-> ⚠️ `CLAUDE.local.md` contains the SSH password in plain text. Transfer privately (AirDrop / USB) —
-> don't email it or drop it on a shared/public link.
+### 1. Get the project onto the new Mac — two ways
+
+**A) git clone (cleanest, repo is synced to production):**
+```
+gh repo clone emailsuryatejam-design/Karibu-Pantry-Planner
+```
+Then copy **`CLAUDE.local.md`** across separately (AirDrop/USB) — it holds the SSH password and is
+**gitignored on purpose**, so it is NOT in the repo. Optionally run `composer install` to get `vendor/`
+locally (only needed if you run PHP locally; the live app already has it).
+
+**B) Copy the whole folder** (includes everything incl. `CLAUDE.local.md`, `reports/`, `vendor/`) —
+easiest between two Macs via **AirDrop**, or a USB drive.
+> ⚠️ `CLAUDE.local.md` contains the SSH password in plain text. Transfer it privately (AirDrop / USB) —
+> never email it or put it on a shared/public link.
 
 ### 2. Install the few tools the workflow uses (new Mac)
 - **Claude Code** (sign in with the new account).
