@@ -1,0 +1,58 @@
+name: Missed-meal alerts
+
+# Emails a camp's reception + manager (cc bobby@karibucamps.com) when the chef hasn't
+# placed that meal's order. Runs 10 min after each meal cutoff, in UTC (server is UTC;
+# these equal 08:10 / 12:10 / 18:10 East Africa Time). Runs the already-deployed
+# notify-missed-meals.php on the Hostinger server over SSH.
+
+on:
+  schedule:
+    - cron: '10 5 * * *'    # breakfast  (08:10 EAT)
+    - cron: '10 9 * * *'    # lunch      (12:10 EAT)
+    - cron: '10 15 * * *'   # dinner     (18:10 EAT)
+  workflow_dispatch:
+    inputs:
+      meal:
+        description: Meal to check
+        type: choice
+        options: [breakfast, lunch, dinner]
+        default: breakfast
+      dry:
+        description: Dry run (list recipients, send nothing)
+        type: boolean
+        default: false
+
+concurrency:
+  group: missed-meal-alerts
+  cancel-in-progress: false
+
+jobs:
+  alert:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pick meal + mode
+        id: pick
+        run: |
+          SCHED="${{ github.event.schedule }}"
+          MEAL="${{ github.event.inputs.meal }}"
+          case "$SCHED" in
+            "10 5 * * *")  MEAL=breakfast ;;
+            "10 9 * * *")  MEAL=lunch ;;
+            "10 15 * * *") MEAL=dinner ;;
+          esac
+          FLAG=""
+          if [ "${{ github.event.inputs.dry }}" = "true" ]; then FLAG="--dry"; fi
+          echo "meal=$MEAL" >> "$GITHUB_OUTPUT"
+          echo "flag=$FLAG" >> "$GITHUB_OUTPUT"
+          echo "Running: $MEAL $FLAG"
+
+      - name: Run missed-meal check over SSH
+        env:
+          SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/hostinger_key
+          chmod 600 ~/.ssh/hostinger_key
+          ssh -i ~/.ssh/hostinger_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 -p 65002 \
+            u929828006@46.202.197.46 \
+            "cd domains/palegoldenrod-coyote-386848.hostingersite.com/public_html && php notify-missed-meals.php ${{ steps.pick.outputs.meal }} ${{ steps.pick.outputs.flag }}"
