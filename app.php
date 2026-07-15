@@ -113,6 +113,20 @@ $pageFile = __DIR__ . '/pages/' . $page . '.php';
 .text-\[10px\] { font-size: 12px !important; }
 .text-\[11px\] { font-size: 13px !important; }
 
+/* ── Bigger tap targets: prevent mis-taps on 7" tablets / phones (min ~44px) ── */
+body:not(.admin-portal) button,
+body:not(.admin-portal) .compact-btn,
+body:not(.admin-portal) select { min-height: 44px; }
+/* small square icon buttons (X remove, orange toggle, +/- steppers, edit) → 44px hit area */
+body:not(.admin-portal) button.w-5,  body:not(.admin-portal) button.w-6,
+body:not(.admin-portal) button.w-7,  body:not(.admin-portal) button.w-8,
+body:not(.admin-portal) button.w-9,  body:not(.admin-portal) .compact-btn.w-5,
+body:not(.admin-portal) .compact-btn.w-6, body:not(.admin-portal) .compact-btn.w-7,
+body:not(.admin-portal) .compact-btn.w-8, body:not(.admin-portal) .compact-btn.w-9 { min-width: 44px; min-height: 44px; }
+/* a little more breathing room between buttons sitting in a tight row */
+body:not(.admin-portal) .flex.gap-1 > button,
+body:not(.admin-portal) .flex.gap-1\.5 > button { margin: 1px; }
+
 /* ── Admin Portal Shell ─────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
