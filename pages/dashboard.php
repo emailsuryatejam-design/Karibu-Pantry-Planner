@@ -46,6 +46,16 @@ $kitchenId = $user['kitchen_id'] ?? 0;
     </button>
 </div>
 
+<!-- Past day = view only (back-dating is blocked) -->
+<div id="dbPastNote" class="hidden mb-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2" class="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+    <p class="text-[11px] text-amber-800 leading-snug">
+        <span class="font-bold">This day has passed — view only.</span>
+        Menus and orders can only be changed for today onwards.
+        <button onclick="dbGoToday()" class="underline font-semibold">Go to today</button>
+    </p>
+</div>
+
 <!-- ══════════════════════════════════════════════ -->
 <!--  MEAL TABS (horizontal)                         -->
 <!-- ══════════════════════════════════════════════ -->
@@ -128,6 +138,8 @@ $kitchenId = $user['kitchen_id'] ?? 0;
 const DB_KITCHEN_ID = <?= (int)$kitchenId ?>;
 
 let dbDate = todayStr();
+// Back-dating is blocked: a day that has passed is view-only for chefs (server enforces it too).
+function dbIsPastDay() { return dbDate < todayStr(); }
 let dbGuestCount = 20;
 let dbGuestCounts = {};    // mealCode -> per-meal guest count
 let dbDayGuests = null;    // the guest count the chef last used this day — unlocked meals inherit it
@@ -154,7 +166,14 @@ const dbSearchDishesDebounced = debounce(() => dbSearchDishes(), 350);
 // ══════════════════════════════════════════════
 //  Init
 // ══════════════════════════════════════════════
-document.getElementById('dbDateDisplay').textContent = formatDate(dbDate);
+// One place keeps the date label, the "Back to Today" link and the past-day note in step.
+function dbSyncDateUI() {
+    document.getElementById('dbDateDisplay').textContent = formatDate(dbDate);
+    document.getElementById('dbTodayBtn').classList.toggle('hidden', dbDate === todayStr());
+    document.getElementById('dbPastNote').classList.toggle('hidden', !dbIsPastDay());
+}
+
+dbSyncDateUI();
 dbLoadStats();
 dbInit();
 
@@ -162,8 +181,7 @@ dbInit();
 // ── Date Switcher ──
 function dbChangeDate(days) {
     dbDate = changeDate(dbDate, days);
-    document.getElementById('dbDateDisplay').textContent = formatDate(dbDate);
-    document.getElementById('dbTodayBtn').classList.toggle('hidden', dbDate === todayStr());
+    dbSyncDateUI();
     // Reset state
     dbSessionMap = {};
     dbMealDishes = {};
@@ -175,8 +193,7 @@ function dbChangeDate(days) {
 
 function dbGoToday() {
     dbDate = todayStr();
-    document.getElementById('dbDateDisplay').textContent = formatDate(dbDate);
-    document.getElementById('dbTodayBtn').classList.add('hidden');
+    dbSyncDateUI();
     dbSessionMap = {};
     dbMealDishes = {};
     dbMealAgg = {};
@@ -491,7 +508,8 @@ function dbRenderActiveMeal() {
     const aggItems = Object.values(agg);
     const isDraft = session && session.status === 'draft';
     const isProcessing = session && session.status === 'processing';
-    const isEditable = isDraft || isProcessing;   // freeze at SUBMIT — editable until then
+    // freeze at SUBMIT — and a day that has already passed is view-only (back-dating is blocked)
+    const isEditable = (isDraft || isProcessing) && !dbIsPastDay();
     const isLocked = session && session.status !== 'draft';
     const isSubmittedPlus = session && ['submitted','fulfilled','received','closed'].includes(session.status);
     const isSupplement = session && parseInt(session.supplement_number) > 0;

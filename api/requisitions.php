@@ -70,6 +70,54 @@ function toPurchaseUnit(float $qty, ?string $curUom, ?string $itemUom, $packSize
     return [$qty, $itemUom];
 }
 
+/**
+ * Back-dating guard (2026-07-16).
+ * Orders may only be created or changed for TODAY or later — no back-dated requisitions.
+ * `date('Y-m-d')` is EAT (config.php sets Africa/Dar_es_Salaam), i.e. the camps' own day.
+ *
+ * Admins are exempt, so an old order can still be corrected when there is a genuine reason.
+ * Deliberately NOT guarded — these legitimately happen AFTER the order's own date:
+ *   fulfill / confirm_receipt / close / close_with_unused / update_unused / day_close_*
+ *   / cancel_order / admin_*  — plus all read-only actions.
+ */
+function guardBackdate(PDO $db, string $action, array $user): void {
+    static $GUARDED = [
+        'create', 'create_supplementary', 'ensure_session', 'save_lines', 'submit',
+        'add_single_dish', 'add_custom_dish', 'add_packed_dish', 'remove_packed_dish',
+        'lock_menu', 'submit_order', 'recalculate_order', 'add_line_to_order',
+        'toggle_line', 'update_line', 'chef_remove_line', 'save_and_submit', 'save_dish_lines',
+    ];
+    if (!in_array($action, $GUARDED, true)) return;
+    if (($user['role'] ?? '') === 'admin') return;
+    if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') return;
+
+    $in = getJsonInput();
+    $date = null;
+
+    if (!empty($in['req_date'])) {
+        $date = substr((string)$in['req_date'], 0, 10);
+    } else {
+        // Resolve the order's date from whichever id this action carries.
+        $reqId = (int)($in['requisition_id'] ?? $in['parent_id'] ?? 0);
+        if (!$reqId && !empty($in['line_id'])) {
+            $s = $db->prepare("SELECT requisition_id FROM requisition_lines WHERE id = ?");
+            $s->execute([(int)$in['line_id']]);
+            $reqId = (int)$s->fetchColumn();
+        }
+        if ($reqId) {
+            $s = $db->prepare("SELECT req_date FROM requisitions WHERE id = ?");
+            $s->execute([$reqId]);
+            $date = $s->fetchColumn() ?: null;
+        }
+    }
+
+    if ($date && $date < date('Y-m-d')) {
+        jsonError('That day has already passed — orders can only be made or changed for today onwards.', 400);
+    }
+}
+
+guardBackdate($db, $action, $user);
+
 switch ($action) {
 
     // ── List requisitions for a date/kitchen ──
@@ -113,7 +161,10 @@ switch ($action) {
         $req = $stmt->fetch();
         if (!$req) jsonError('Requisition not found', 404);
 
-        $lines = $db->prepare("SELECT rl.*, i.stock_qty AS current_stock, i.code AS item_code FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? AND rl.deleted_at IS NULL AND rl.status != 'rejected' ORDER BY rl.item_name");
+        // The chef's Orders page passes include_off=1 so toggled-off (rejected) lines stay
+        // visible there (greyed, switch-back-on) — every other caller keeps hiding them.
+        $offFilter = !empty($_GET['include_off']) ? '' : "AND rl.status != 'rejected' ";
+        $lines = $db->prepare("SELECT rl.*, i.stock_qty AS current_stock, i.code AS item_code FROM requisition_lines rl LEFT JOIN items i ON i.id = rl.item_id WHERE rl.requisition_id = ? AND rl.deleted_at IS NULL $offFilter ORDER BY rl.item_name");
         $lines->execute([$id]);
         $lineData = $lines->fetchAll();
 
@@ -168,15 +219,19 @@ switch ($action) {
         // 3. Auto-create requisitions (INSERT IGNORE — safe for duplicates).
         //    Only for meals this kitchen actually uses — avoids empty phantom drafts.
         //    Other meals stay available via the "+ start meal" chip (ensure_session).
+        //    Never auto-create on a PAST date — browsing back through the calendar must not
+        //    silently make back-dated drafts (that is how old empty orders piled up).
         $initCreated = 0;
-        $autoMeals = mealsToAutoCreate($db, $kid);
-        $insertStmt = $db->prepare("INSERT IGNORE INTO requisitions
-            (kitchen_id, req_date, session_number, guest_count, meals, supplement_number, status, created_by)
-            VALUES (?, ?, ?, ?, ?, 0, 'draft', ?)");
-        foreach ($initTypes as $type) {
-            if (!in_array(strtolower($type['code']), $autoMeals, true)) continue;
-            $insertStmt->execute([$kid, $reqDate, $type['sort_order'], $guestCount, $type['code'], $user['id']]);
-            if ($insertStmt->rowCount() > 0) $initCreated++;
+        if ($reqDate >= date('Y-m-d')) {
+            $autoMeals = mealsToAutoCreate($db, $kid);
+            $insertStmt = $db->prepare("INSERT IGNORE INTO requisitions
+                (kitchen_id, req_date, session_number, guest_count, meals, supplement_number, status, created_by)
+                VALUES (?, ?, ?, ?, ?, 0, 'draft', ?)");
+            foreach ($initTypes as $type) {
+                if (!in_array(strtolower($type['code']), $autoMeals, true)) continue;
+                $insertStmt->execute([$kid, $reqDate, $type['sort_order'], $guestCount, $type['code'], $user['id']]);
+                if ($insertStmt->rowCount() > 0) $initCreated++;
+            }
         }
 
         // 4. Fetch all sessions for this date
@@ -477,16 +532,19 @@ switch ($action) {
 
         // INSERT IGNORE: UNIQUE constraint (kitchen_id, req_date, meals, supplement_number) silently skips duplicates.
         // No need for a prior SELECT — race-condition safe.
+        // Never auto-create on a PAST date (see page_init) — browsing back must not back-date.
         $created = 0;
-        $autoMeals = mealsToAutoCreate($db, $kid);
-        $insertStmt = $db->prepare("INSERT IGNORE INTO requisitions
-            (kitchen_id, req_date, session_number, guest_count, meals, supplement_number, status, created_by)
-            VALUES (?, ?, ?, ?, ?, 0, 'draft', ?)");
+        if ($reqDate >= date('Y-m-d')) {
+            $autoMeals = mealsToAutoCreate($db, $kid);
+            $insertStmt = $db->prepare("INSERT IGNORE INTO requisitions
+                (kitchen_id, req_date, session_number, guest_count, meals, supplement_number, status, created_by)
+                VALUES (?, ?, ?, ?, ?, 0, 'draft', ?)");
 
-        foreach ($types as $type) {
-            if (!in_array(strtolower($type['code']), $autoMeals, true)) continue;
-            $insertStmt->execute([$kid, $reqDate, $type['sort_order'], $guestCount, $type['code'], $user['id']]);
-            if ($insertStmt->rowCount() > 0) $created++;
+            foreach ($types as $type) {
+                if (!in_array(strtolower($type['code']), $autoMeals, true)) continue;
+                $insertStmt->execute([$kid, $reqDate, $type['sort_order'], $guestCount, $type['code'], $user['id']]);
+                if ($insertStmt->rowCount() > 0) $created++;
+            }
         }
 
         if ($created > 0) {
@@ -1899,6 +1957,60 @@ switch ($action) {
             jsonError('Failed to add item: ' . $e->getMessage());
         }
         break;
+
+    // ── Toggle an order line on/off (the orange dot on the Orders screen) ──
+    //    OFF: drop it from THIS order now (status=rejected) AND turn the item off in the recipes
+    //    used by this order (is_primary=0, camp-wide) so future orders skip it too.
+    //    ON: reverse both. Same behaviour as the Recipes orange toggle, driven from Orders.
+    case 'toggle_line':
+        requireMethod('POST');
+        requireRole(['chef', 'admin']);
+        $data = getJsonInput();
+        $lineId = (int)($data['line_id'] ?? 0);
+        $on = !empty($data['on']) ? 1 : 0;
+        if (!$lineId) jsonError('Line ID required');
+
+        $lc = $db->prepare("SELECT rl.id, rl.item_id, rl.item_name, rl.requisition_id, r.status, r.kitchen_id
+            FROM requisition_lines rl JOIN requisitions r ON r.id = rl.requisition_id
+            WHERE rl.id = ? AND rl.deleted_at IS NULL");
+        $lc->execute([$lineId]);
+        $ln = $lc->fetch();
+        if (!$ln) jsonError('Line not found');
+        if (in_array($ln['status'], ['fulfilled', 'received', 'closed'])) jsonError('Order already sent — items are locked');
+
+        $reqId    = (int)$ln['requisition_id'];
+        $itemId   = (int)$ln['item_id'];
+        $itemName = (string)$ln['item_name'];
+        $kId      = (int)$ln['kitchen_id'];
+
+        // 1. This order, right now: rejected = skipped, pending = ordered (qty preserved)
+        $db->prepare("UPDATE requisition_lines SET status = ? WHERE id = ?")
+           ->execute([$on ? 'pending' : 'rejected', $lineId]);
+
+        // 2. Future orders: flip is_primary for this item across the camp's copies of the
+        //    dishes used in THIS order (camp-wide, same match rule as the Recipes toggle:
+        //    by item_id when we have one, else by item_name).
+        $recipeSynced = 0;
+        $nm = $db->prepare("SELECT DISTINCT rc.name FROM requisition_dishes d
+            JOIN recipes rc ON rc.id = d.recipe_id
+            WHERE d.requisition_id = ? AND d.deleted_at IS NULL AND d.recipe_id IS NOT NULL");
+        $nm->execute([$reqId]);
+        $names = array_column($nm->fetchAll(), 'name');
+        if ($names && ($itemId || $itemName !== '')) {
+            $ph = implode(',', array_fill(0, count($names), '?'));
+            $matchCol = $itemId ? 'ri.item_id = ?' : 'ri.item_name = ?';
+            $matchVal = $itemId ?: $itemName;
+            $upd = $db->prepare("UPDATE recipe_ingredients ri
+                JOIN recipes rc ON rc.id = ri.recipe_id
+                JOIN users u ON u.id = rc.created_by
+                SET ri.is_primary = ?
+                WHERE rc.name IN ($ph) AND u.kitchen_id = ? AND $matchCol
+                  AND ri.deleted_at IS NULL AND rc.deleted_at IS NULL");
+            $upd->execute(array_merge([$on], $names, [$kId, $matchVal]));
+            $recipeSynced = $upd->rowCount();
+        }
+        auditLog('toggle_line', 'requisition_lines', $lineId, null, ['on' => $on, 'recipe_synced' => $recipeSynced], $reqId);
+        jsonResponse(['updated' => true, 'on' => $on, 'recipe_synced' => $recipeSynced]);
 
     // ── Update a single line item (qty + UOM editable until storekeeper acts) ──
     case 'update_line':

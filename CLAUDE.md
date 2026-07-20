@@ -44,6 +44,27 @@ reconciles unused stock. One app, role-based views. Hosted on Hostinger.
   "phantom" drafts piled up (e.g. sundowner/bush_dinner at camps that don't serve them).
   Those were soft-deleted (reversible; undo manifest in `reports/phantom_purge_manifest_*.json`).
 
+## No back-dating (2026-07-16)
+- **Chefs can only create/change orders for today or later.** `guardBackdate()` at the top of
+  `api/requisitions.php` blocks ~18 write actions (create, ensure_session, lock_menu, submit_order,
+  add_*/update_line/toggle_line/save_dish_lines…) when the order's `req_date < date('Y-m-d')` (EAT).
+  It resolves the date from `req_date` | `requisition_id` | `parent_id` | `line_id`.
+- **Admins are exempt** — the escape hatch for genuinely fixing an old order.
+- **NOT guarded** (these legitimately happen after the order's date): `fulfill`, `confirm_receipt`,
+  `close`, `close_with_unused`, `update_unused`, `day_close_*`, `cancel_order`, `admin_*`, all reads.
+- `page_init` + `auto_create_for_date` **no longer auto-create drafts on past dates** — browsing back
+  through the calendar used to silently create back-dated drafts (that's how ~250 stale past-dated open
+  orders accumulated: Lions Paw 78 oldest 26 Mar, Tarangire 78, River 52, Sametu 39). Viewing history
+  still works (returns existing orders, `created: 0`).
+- UI mirrors it: `ordIsPastDay()` / `dbIsPastDay()` force read-only + an amber "This day has passed —
+  view only" note on Orders and Dashboard. Server is authoritative; the UI just avoids error toasts.
+- **Known consequence:** Tarangire was actively back-filling (21 back-dated orders in 60d; on 14 Jul they
+  created lunch+dinner for 8–12 Jul). That workflow is now blocked — they must order on the day or ask an admin.
+- **Caveat:** the UI's "today" comes from the *browser* (`todayStr()`), the block from the *server* (EAT).
+  A tablet with a wrong clock/timezone could show a day the server rejects. Camps are EAT so this is
+  narrow, but a badly-set tablet = "that day has passed" on what looks like today.
+- Forward-dating is untouched — planning ahead is normal (270 forward-dated orders in 60d).
+
 ## Printing — ONE canonical function (do not fork this)
 **All print buttons across the app call `printOrder(reqId, kitchenName, skipDaySuggest)`**
 in `assets/app.js`. It reads `api/requisitions.php?action=get`, splits lines into a menu
@@ -134,6 +155,15 @@ table + a separate **"Staple items" section** (via `is_staple`), and renders sig
   Name · Meal type · Serves · Method · Packed-toggle (dropped cuisine/difficulty/prep/cook/notes);
   detail view decluttered (`rOpenForm`/`rSaveRecipe`/`rLoadDetail` in pages/recipes.php). Ingredient
   qty is inline-editable (`update_ingredient`).
+- "toggle an item off from orders" / "chef stopped taking an ingredient from store" → **order-line
+  orange toggle (2026-07-15).** Orange dot per menu row in `pages/orders.php` `ordRenderEditableLines`
+  → `ordToggleLine()` → `toggle_line` action in `api/requisitions.php`. **Permanent, like the Recipes
+  dot:** OFF sets `requisition_lines.status='rejected'` (this order — qty preserved, store's `mark_sent`
+  skips it) AND flips `recipe_ingredients.is_primary=0` **camp-wide** for that item across the order's
+  dishes (future orders). ON reverses both. One-time skip = just set qty to 0 (unchanged). The chef's
+  Orders page passes `&action=get&...&include_off=1` so toggled-off lines stay visible (greyed,
+  strikethrough) to switch back on; every other `get` caller still hides rejected. Locked once the
+  order is fulfilled/received/closed.
 - "menu not loading" / "can't load menu" → NOT a data bug. Dashboard `dbInit` calls
   `page_init`; if that one API call fails (flaky camp internet, or stale cached app
   version) it showed a dead-end "Failed to load menu". Server is almost always healthy —

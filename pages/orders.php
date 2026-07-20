@@ -39,6 +39,16 @@ $kitchenId = currentKitchenId();
         </button>
     </div>
 
+    <!-- Past day = view only (back-dating is blocked) -->
+    <div id="ordPastNote" class="hidden mb-3 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2.5">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#b45309" stroke-width="2" class="shrink-0 mt-0.5"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+        <p class="text-[11px] text-amber-800 leading-snug">
+            <span class="font-bold">This day has passed — view only.</span>
+            Orders can only be made or changed for today onwards.
+            <button onclick="ordGoToday()" class="underline font-semibold">Go to today</button>
+        </p>
+    </div>
+
     <!-- Menu/Staple Tabs -->
     <div class="flex gap-1.5 mb-3">
         <button onclick="ordSwitchTab('menu')" id="ordTabMenu"
@@ -200,6 +210,8 @@ const ORD_KITCHEN_NAME = <?= json_encode($user['kitchen_name'] ?? '') ?>;
 const ORD_UOM_OPTIONS = ['kg', 'g', 'ltr', 'ml', 'pcs', 'tins', 'box', 'pkt', 'bunch', 'bottle', 'unit'];
 
 let ordDate = todayStr();
+// Back-dating is blocked: a day that has passed is view-only for chefs (server enforces it too).
+function ordIsPastDay() { return ordDate < todayStr(); }
 let ordActiveTab = 'menu'; // 'menu' or 'staple'
 let ordRequisitions = [];
 let ordLinesByReq = {};
@@ -320,20 +332,25 @@ function ordStatusBadge(status) {
 }
 
 // ── Date Switcher ──
-document.getElementById('ordDateDisplay').textContent = formatDate(ordDate);
+// One place keeps the date label, the "Back to Today" link and the past-day note in step.
+function ordSyncDateUI() {
+    document.getElementById('ordDateDisplay').textContent = formatDate(ordDate);
+    document.getElementById('ordTodayBtn').classList.toggle('hidden', ordDate === todayStr());
+    document.getElementById('ordPastNote').classList.toggle('hidden', !ordIsPastDay());
+}
+
+ordSyncDateUI();
 ordLoad();
 
 function ordChangeDate(days) {
     ordDate = changeDate(ordDate, days);
-    document.getElementById('ordDateDisplay').textContent = formatDate(ordDate);
-    document.getElementById('ordTodayBtn').classList.toggle('hidden', ordDate === todayStr());
+    ordSyncDateUI();
     ordLoad();
 }
 
 function ordGoToday() {
     ordDate = todayStr();
-    document.getElementById('ordDateDisplay').textContent = formatDate(ordDate);
-    document.getElementById('ordTodayBtn').classList.add('hidden');
+    ordSyncDateUI();
     ordLoad();
 }
 
@@ -399,7 +416,7 @@ async function ordLoad() {
         // Fetch full lines for all requisitions
         const reqsNeedingLines = ordRequisitions.filter(r => ['draft', 'processing', 'submitted', 'fulfilled', 'received'].includes(r.status));
         await Promise.all(reqsNeedingLines.map(r =>
-            api(`api/requisitions.php?action=get&id=${r.id}`).then(data => {
+            api(`api/requisitions.php?action=get&id=${r.id}&include_off=1`).then(data => {
                 ordLinesByReq[r.id] = data.lines || [];
             }).catch(() => { ordLinesByReq[r.id] = []; })
         ));
@@ -448,7 +465,7 @@ async function ordRefreshCard(reqId) {
     if (!req) { ordLoad(); return; }
     try {
         const [linesData, dishData] = await Promise.all([
-            api(`api/requisitions.php?action=get&id=${reqId}`),
+            api(`api/requisitions.php?action=get&id=${reqId}&include_off=1`),
             api(`api/requisitions.php?action=get_dishes_with_ingredients&requisition_id=${reqId}`)
         ]);
         ordLinesByReq[reqId] = linesData.lines || [];
@@ -478,6 +495,28 @@ async function ordRefreshCard(reqId) {
             ordRender();
         }
     } catch(err) { showToast(err.message, 'error'); }
+}
+
+// ── Orange on/off toggle for an order item (mirrors the Recipes toggle) ──
+// on=1 → start ordering it again; on=0 → stop ordering it. Takes effect on THIS
+// order right now AND on future orders (flips the recipe's orange dot camp-wide).
+async function ordToggleLine(lineId, reqId, on) {
+    try {
+        const res = await api('api/requisitions.php?action=toggle_line', {
+            method: 'POST',
+            body: { line_id: lineId, on: on }
+        });
+        if (on) {
+            showToast('Added back — the store will get it again', 'success');
+        } else {
+            showToast(res.recipe_synced > 0
+                ? 'Removed — and it won’t come in future orders'
+                : 'Removed from this order', 'success');
+        }
+        await ordRefreshCard(reqId);
+    } catch (err) {
+        showToast(err.message || 'Could not change that item', 'error');
+    }
 }
 
 function ordRender() {
@@ -587,7 +626,7 @@ function ordRenderCard(req) {
         return ordActiveTab === 'staple' ? staple === 1 : staple === 0;
     });
 
-    const canAddItems = ['draft', 'processing', 'submitted'].includes(req.status);
+    const canAddItems = ['draft', 'processing', 'submitted'].includes(req.status) && !ordIsPastDay();
 
     if (lines.length === 0 && allLines.length > 0) {
         const otherCount = allLines.filter(l => {
@@ -643,6 +682,7 @@ function ordRenderCard(req) {
         </div>`;
     }
 
+    const ordActiveLineCount = lines.filter(l => l.status !== 'rejected').length;
     const isCollapsed = !!ordCollapsed[req.id];
     const chevronSvg = isCollapsed
         ? '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg>'
@@ -653,7 +693,7 @@ function ordRenderCard(req) {
         <div class="flex items-center gap-2">
             <span class="text-sm font-bold ${color.text}">${escHtml(mealLabel)} Order</span>
             <span class="text-[10px] text-gray-400">#${req.id}</span>
-            <span class="text-[10px] text-gray-500 font-medium">${lines.length} item${lines.length !== 1 ? 's' : ''}</span>
+            <span class="text-[10px] text-gray-500 font-medium">${ordActiveLineCount} item${ordActiveLineCount !== 1 ? 's' : ''}</span>
         </div>
         <div class="flex items-center gap-2">
             ${ordStatusBadge(req.status)}
@@ -665,7 +705,7 @@ function ordRenderCard(req) {
     </div>`;
 
     if (!isCollapsed) {
-        const isEditable = ['draft', 'processing', 'submitted'].includes(req.status);
+        const isEditable = ['draft', 'processing', 'submitted'].includes(req.status) && !ordIsPastDay();
         const gc = parseInt(req.guest_count) || 20;
 
         if (isEditable) {
@@ -734,6 +774,7 @@ function ordRenderEditableLines(req, lines) {
         <div class="overflow-x-auto">
             <table class="w-full text-[11px]">
                 <thead><tr class="bg-gray-50">
+                    <th class="px-1 py-1.5 w-10" title="Tap the dot to stop / start ordering an item"></th>
                     <th class="text-left px-2 py-1.5 text-gray-500 font-semibold">Item</th>
                     <th class="text-center px-1 py-1.5 text-blue-600 font-semibold w-14" title="Recipe requirement">Req</th>
                     <th class="text-center px-1 py-1.5 text-amber-600 font-semibold w-14" title="Already in kitchen">Stock</th>
@@ -748,6 +789,7 @@ function ordRenderEditableLines(req, lines) {
         const orderQty = parseFloat(line.order_qty) || 0;
         if (ordAdjustments[line.id] === undefined) ordAdjustments[line.id] = orderQty;
         const currentQty = ordAdjustments[line.id];
+        const isOff = line.status === 'rejected'; // toggled off = not ordered (this & future orders)
 
         // Dish breakdown for this item
         const dishSources = (ordDishBreakdown[req.id] || {})[line.item_id] || [];
@@ -755,18 +797,27 @@ function ordRenderEditableLines(req, lines) {
             ? dishSources.map(s => `<span class="inline-flex items-center gap-0.5"><span class="text-gray-500">${escHtml(s.dish_name)}</span> <span class="text-blue-500 font-medium">${s.qty.toFixed(1)}</span></span>`).join('<span class="text-gray-300 mx-0.5">&middot;</span>')
             : '';
 
-        html += `<tr class="border-b border-gray-50">
+        html += `<tr class="border-b border-gray-50 ${isOff ? 'bg-gray-50/70' : ''}">
+            <td class="px-1 py-2 text-center align-middle">
+                <button onclick="event.stopPropagation(); ordToggleLine(${line.id}, ${req.id}, ${isOff ? 1 : 0})"
+                    title="${isOff ? 'Not ordered — tap to start ordering this item' : 'Ordered from store — tap to stop ordering it (now and next time)'}"
+                    class="w-5 h-5 rounded-full shrink-0 inline-flex items-center justify-center transition-colors compact-btn ${isOff ? 'bg-gray-200 hover:bg-gray-300' : 'bg-orange-400 hover:bg-orange-300'}">
+                    ${isOff ? '' : '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>'}
+                </button>
+            </td>
             <td class="px-2 py-2">
-                <p class="text-xs font-medium text-gray-800 truncate">${escHtml(line.item_name)}</p>
+                <p class="text-xs font-medium truncate ${isOff ? 'text-gray-400 line-through' : 'text-gray-800'}">${escHtml(line.item_name)}</p>
                 <p class="text-[9px] text-gray-400">${escHtml(line.uom || 'kg')}</p>
                 ${breakdownHtml ? `<div class="text-[9px] text-gray-400 mt-0.5 leading-tight">${breakdownHtml}</div>` : ''}
             </td>
-            <td class="text-center px-1 py-2 text-blue-700 font-medium text-xs">${calcQty > 0 ? calcQty.toFixed(1) : '—'}</td>
-            <td class="text-center px-1 py-2 text-amber-600 font-medium text-xs">${stockQty > 0 ? stockQty.toFixed(1) : '—'}</td>
+            <td class="text-center px-1 py-2 font-medium text-xs ${isOff ? 'text-gray-300' : 'text-blue-700'}">${calcQty > 0 ? calcQty.toFixed(1) : '—'}</td>
+            <td class="text-center px-1 py-2 font-medium text-xs ${isOff ? 'text-gray-300' : 'text-amber-600'}">${stockQty > 0 ? stockQty.toFixed(1) : '—'}</td>
             <td class="text-center px-1 py-2">
-                <input type="number" value="${currentQty}" step="0.5" min="0"
-                    onchange="ordAdjustments[${line.id}] = parseFloat(this.value)||0"
-                    class="w-16 text-center text-xs font-bold border border-green-300 rounded-lg py-1 bg-green-50 focus:outline-none focus:ring-1 focus:ring-green-300">
+                ${isOff
+                    ? `<span class="inline-block w-16 text-center text-[10px] font-semibold text-gray-400">Not<br>ordered</span>`
+                    : `<input type="number" value="${currentQty}" step="0.5" min="0"
+                        onchange="ordAdjustments[${line.id}] = parseFloat(this.value)||0"
+                        class="w-16 text-center text-xs font-bold border border-green-300 rounded-lg py-1 bg-green-50 focus:outline-none focus:ring-1 focus:ring-green-300">`}
             </td>
             <td class="text-center px-1 py-2">
                 <button onclick="event.stopPropagation(); ordShowEditLine(${line.id}, ${req.id})" class="w-6 h-6 rounded-md bg-gray-100 text-gray-500 flex items-center justify-center hover:bg-gray-200 transition" title="Edit">
@@ -812,6 +863,7 @@ function ordRenderEditableLines(req, lines) {
 
 // ── Read-only lines — table with dish breakdown ──
 function ordRenderReadOnlyLines(req, lines) {
+    lines = lines.filter(l => l.status !== 'rejected'); // hide toggled-off / store-removed items
     let html = `<div class="px-3 py-3">
         <div class="overflow-x-auto">
             <table class="w-full text-[11px]">
@@ -894,7 +946,7 @@ function ordRenderStapleTab() {
         return html;
     }
 
-    const isEditable = allStapleLines.some(l => ['draft', 'processing', 'submitted'].includes(l.reqStatus));
+    const isEditable = allStapleLines.some(l => ['draft', 'processing', 'submitted'].includes(l.reqStatus)) && !ordIsPastDay();
 
     let html = `<div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">`;
     html += `<div class="flex items-center justify-between px-4 py-3 bg-purple-50 border-b border-purple-100">
@@ -1457,7 +1509,7 @@ async function ordSubmitStapleOrders(reqIds) {
     try {
         let submitted = 0;
         for (const reqId of reqIds) {
-            const allLines = (ordLinesByReq[reqId] || []).filter(l => parseInt(l.is_staple) === 1);
+            const allLines = (ordLinesByReq[reqId] || []).filter(l => parseInt(l.is_staple) === 1 && l.status !== 'rejected');
             if (allLines.length === 0) continue;
             const lineData = allLines.map(line => ({
                 id: parseInt(line.id),
@@ -1485,7 +1537,7 @@ async function ordSubmitToStore(reqId) {
     // Fix #6: block double-submit
     if (_ordSubmitting.has(reqId)) { showToast('Already submitting…', 'error'); return; }
 
-    const allLines = ordLinesByReq[reqId] || [];
+    const allLines = (ordLinesByReq[reqId] || []).filter(l => l.status !== 'rejected');
     if (allLines.length === 0) { showToast('No items to submit', 'error'); return; }
 
     const lineData = allLines.map(line => ({
