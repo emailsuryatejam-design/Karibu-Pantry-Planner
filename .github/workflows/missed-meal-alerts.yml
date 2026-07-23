@@ -1,15 +1,23 @@
 name: Missed-meal alerts
 
-# Emails a camp's reception + manager (cc bobby@karibucamps.com) when the chef hasn't
-# placed that meal's order. Runs 10 min after each meal cutoff, in UTC (server is UTC;
-# these equal 08:10 / 12:10 / 18:10 East Africa Time). Runs the already-deployed
-# notify-missed-meals.php on the Hostinger server over SSH.
+# Emails a camp's reception + manager when the chef hasn't placed that meal's order.
+# GitHub's scheduler routinely runs 1–3 h late, so each meal is TRIGGERED SEVERAL TIMES,
+# starting well before its cutoff. The server script (notify-missed-meals.php) only actually
+# sends AFTER the meal's cutoff (08:10 / 12:10 / 18:10 EAT) and at most once per camp/meal/day —
+# so early fires do nothing and whichever fire lands after the cutoff sends, close to on time.
+# Cutoffs in UTC: breakfast 05:00, lunch 09:00, dinner 15:00.
 
 on:
   schedule:
-    - cron: '10 5 * * *'    # breakfast  (08:10 EAT)
-    - cron: '10 9 * * *'    # lunch      (12:10 EAT)
-    - cron: '10 15 * * *'   # dinner     (18:10 EAT)
+    - cron: '10 3 * * *'    # breakfast — early trigger (fires ~06:10 EAT, sends only after 08:10)
+    - cron: '10 4 * * *'    # breakfast — mid trigger
+    - cron: '10 5 * * *'    # breakfast — on-time trigger (08:10 EAT)
+    - cron: '10 7 * * *'    # lunch — early trigger
+    - cron: '10 8 * * *'    # lunch — mid trigger
+    - cron: '10 9 * * *'    # lunch — on-time trigger (12:10 EAT)
+    - cron: '10 13 * * *'   # dinner — early trigger
+    - cron: '10 14 * * *'   # dinner — mid trigger
+    - cron: '10 15 * * *'   # dinner — on-time trigger (18:10 EAT)
   workflow_dispatch:
     inputs:
       meal:
@@ -36,9 +44,9 @@ jobs:
           SCHED="${{ github.event.schedule }}"
           MEAL="${{ github.event.inputs.meal }}"
           case "$SCHED" in
-            "10 5 * * *")  MEAL=breakfast ;;
-            "10 9 * * *")  MEAL=lunch ;;
-            "10 15 * * *") MEAL=dinner ;;
+            "10 3 * * *"|"10 4 * * *"|"10 5 * * *")    MEAL=breakfast ;;
+            "10 7 * * *"|"10 8 * * *"|"10 9 * * *")    MEAL=lunch ;;
+            "10 13 * * *"|"10 14 * * *"|"10 15 * * *") MEAL=dinner ;;
           esac
           FLAG=""
           if [ "${{ github.event.inputs.dry }}" = "true" ]; then FLAG="--dry"; fi
@@ -53,6 +61,14 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/hostinger_key
           chmod 600 ~/.ssh/hostinger_key
-          ssh -i ~/.ssh/hostinger_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 -p 65002 \
-            u929828006@46.202.197.46 \
-            "cd domains/palegoldenrod-coyote-386848.hostingersite.com/public_html && php notify-missed-meals.php ${{ steps.pick.outputs.meal }} ${{ steps.pick.outputs.flag }}"
+          CMD="cd domains/palegoldenrod-coyote-386848.hostingersite.com/public_html && php notify-missed-meals.php ${{ steps.pick.outputs.meal }} ${{ steps.pick.outputs.flag }}"
+          # Retry: a brief SSH timeout must not silently skip the alert. 3 tries, 30s apart.
+          n=0
+          until [ "$n" -ge 3 ]; do
+            if ssh -i ~/.ssh/hostinger_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 -p 65002 \
+                 u929828006@46.202.197.46 "$CMD"; then
+              echo "OK on attempt $((n+1))"; exit 0
+            fi
+            n=$((n+1)); echo "attempt $n failed; retrying in 30s..."; sleep 30
+          done
+          echo "::error::missed-meal SSH failed after 3 attempts"; exit 1

@@ -1,7 +1,10 @@
 <?php
 /**
  * Missed-meal reminder (per meal). If a camp's chef hasn't placed today's order for the given
- * meal, email EVERY notification address on that kitchen (reception + manager) and CC bobby@karibucamps.com.
+ * meal, email EVERY notification address on that kitchen (reception + manager).
+ * (Bobby is no longer copied — removed 2026-07-23.)
+ * Only sends after the meal's cutoff ($SEND_AFTER) and at most once per camp/meal/day, so the
+ * GitHub scheduler can fire early/repeatedly to beat its own lateness without false or double alerts.
  *
  * Run each meal from hPanel cron (server time = Africa/Dar_es_Salaam / EAT):
  *   10 8  * * *  php .../notify-missed-meals.php breakfast >> ~/.logs/missed-meals.log 2>&1   # 08:10
@@ -21,9 +24,13 @@ require __DIR__ . '/mailer.php';
 use PHPMailer\PHPMailer\PHPMailer;
 
 $db = getDB();
-$LOOP = 'bobby@karibucamps.com';
+$LOOP = '';                        // Bobby removed from missed-meal alerts (2026-07-23)
 $EXCLUDE = [2, 6];
 $VALID = ['breakfast', 'lunch', 'dinner'];
+// Only actually send once the meal's ordering window has closed (server time = EAT).
+// This lets the scheduler fire EARLY (to beat its own 1–3h lateness) without ever alerting
+// before the cutoff — early fires are skipped, whichever fire lands after the cutoff sends.
+$SEND_AFTER = ['breakfast' => '08:10', 'lunch' => '12:10', 'dinner' => '18:10'];
 
 $meal = null; $dry = false; $testTo = null;
 foreach (array_slice($argv, 1) as $a) {
@@ -60,6 +67,12 @@ echo "== Missed-meal check for $today at $now | meals=" . implode(',', $meals) .
 $targets = $db->query("SELECT id,name FROM kitchens WHERE id NOT IN (" . implode(',', $EXCLUDE) . ") AND is_active=1 ORDER BY id")->fetchAll();
 
 foreach ($meals as $mealCode) {
+    // Time guard: on a real run, don't send before this meal's window has closed.
+    // (Dry-runs and --to= tests always proceed, so you can preview at any time.)
+    if (!$dry && !$testTo && isset($SEND_AFTER[$mealCode]) && $now < $SEND_AFTER[$mealCode]) {
+        echo "  [$mealCode] before {$SEND_AFTER[$mealCode]} — too early to alert, skipping this run\n";
+        continue;
+    }
     foreach ($targets as $k) {
         $kid = (int)$k['id'];
         $has = $db->prepare("SELECT COUNT(*) FROM requisitions WHERE kitchen_id=? AND req_date=? AND meals=? AND status<>'draft' AND deleted_at IS NULL");
@@ -78,15 +91,24 @@ foreach ($meals as $mealCode) {
         $content = "<p style='font-size:15px'>Hi,</p>"
             . "<p style='font-size:15px'>As of <b>{$now}</b> today ({$today}), the chef at <b>" . htmlspecialchars($k['name']) . "</b> has <b>not placed the {$M} order</b> in the app.</p>"
             . "<p style='font-size:15px'>Please follow up with the kitchen so the store can prepare {$M} in time.</p>"
-            . "<p style='color:#9ca3af;font-size:12px'>Automated {$M} reminder — Karibu Pantry Planner. bobby@karibucamps.com is copied.</p>";
+            . "<p style='color:#9ca3af;font-size:12px'>Automated {$M} reminder — Karibu Pantry Planner.</p>";
         $html = mailTemplate("{$M} order reminder — {$k['name']}", $content);
 
+        $ccNote = $LOOP ? " (cc {$LOOP})" : "";
         if ($dry) {
-            echo "  [$mealCode] {$k['name']}: MISSED → would email: " . implode(', ', $recips) . " (cc {$LOOP})\n";
-        } else {
-            $ok = sendMealAlert($recips, $LOOP, $subject, $html);
-            echo "  [$mealCode] {$k['name']}: MISSED → sent to " . implode(', ', $recips) . " (cc {$LOOP}) : " . ($ok ? 'OK' : 'FAILED') . "\n";
+            echo "  [$mealCode] {$k['name']}: MISSED → would email: " . implode(', ', $recips) . "{$ccNote}\n";
+            continue;
         }
+        // Send each camp at most once per meal per day, however many times the job fires
+        // (the scheduler runs several times per meal to beat its own lateness).
+        $alertKey = "missedmeal:{$today}:{$mealCode}:{$kid}";
+        if (!$testTo && cacheGet($alertKey, 72000)) {
+            echo "  [$mealCode] {$k['name']}: MISSED but already alerted today — skip\n";
+            continue;
+        }
+        $ok = sendMealAlert($recips, $LOOP, $subject, $html);
+        if ($ok && !$testTo) cacheSet($alertKey, $now);
+        echo "  [$mealCode] {$k['name']}: MISSED → sent to " . implode(', ', $recips) . "{$ccNote} : " . ($ok ? 'OK' : 'FAILED') . "\n";
     }
 }
 echo "== done ==\n";
