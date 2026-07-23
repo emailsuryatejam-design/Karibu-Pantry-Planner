@@ -103,10 +103,16 @@ table + a separate **"Staple items" section** (via `is_staple`), and renders sig
   - `cron-daily-camp-notes.php` — per-camp ops report. `... html` = color-coded HTML page; no arg = JSON.
     Powers the local Claude routine `karibu-daily-camp-notes` (saves reports/daily/YYYY-MM-DD.html).
   - `notify-missed-meals.php <breakfast|lunch|dinner> [--dry] [--to=x]` — if a camp hasn't placed that
-    meal's order, emails the kitchen's reception + manager, cc bobby@karibucamps.com. Excludes Woodlands(2)
-    + Demo(6). Run by **GitHub Actions** `.github/workflows/missed-meal-alerts.yml` at 05:10/09:10/15:10 UTC
-    (= 08:10/12:10/18:10 EAT), which SSHes in with the `HOSTINGER_SSH_KEY` secret. Manual test:
-    `gh workflow run "Missed-meal alerts" -f meal=lunch -f dry=true`.
+    meal's order, emails the kitchen's reception + manager. Excludes Woodlands(2) + Demo(6).
+    **Bobby removed from cc (2026-07-23).** Run by **GitHub Actions** `missed-meal-alerts.yml`.
+    - **Timing (2026-07-23):** GitHub's scheduler runs 1–3h late, so alerts were landing ~11am. Now
+      each meal has **3 staggered crons** starting early (breakfast 03/04/05:10 UTC, lunch 07/08/09:10,
+      dinner 13/14/15:10). The script only **sends after the meal's cutoff** (`$SEND_AFTER` = 08:10/12:10/
+      18:10 EAT) and **once per camp/meal/day** (file-cache key `missedmeal:{date}:{meal}:{kid}`, 20h TTL).
+      So early fires are skipped, whichever fire lands post-cutoff sends near on-time, no dupes.
+    - **Reliability:** the SSH step **retries 3× (30s apart) and fails loudly** — a brief timeout used to
+      silently skip a meal (happened 19 + 21 Jul). `--dry`/`--to=` bypass the time-guard for previewing.
+    - Manual test: `gh workflow run "Missed-meal alerts" -f meal=lunch -f dry=true`.
 - Repo: github.com/emailsuryatejam-design/Karibu-Pantry-Planner (branch `main`). **Synced to production
   2026-07-15.** Deploy is still rsync from the local folder → server; commit + push after deploying to
   keep git in sync. `CLAUDE.local.md` (secret), `reports/`, `vendor/`, `_*.php` are gitignored.
