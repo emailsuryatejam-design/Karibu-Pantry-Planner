@@ -1,0 +1,76 @@
+# CodeRabbit config — Karibu Pantry Planner
+# PHP 8.3 / MySQL PWA for safari-camp kitchens. No build step; vanilla JS in inline
+# <script> blocks; Tailwind via CDN. Security-sensitive (auth, SQL, CSRF, SSH deploys).
+# Docs: https://docs.coderabbit.ai/guides/configure-coderabbit
+language: en-US
+tone_instructions: >-
+  Be direct and concrete. Prioritise correctness and security bugs (SQL injection,
+  broken auth/role checks, XSS, missing CSRF, data-scoping leaks between kitchens)
+  over style. Cite file:line. Skip nitpicks on generated or vendored code.
+
+early_access: false
+
+reviews:
+  profile: assertive          # thorough audit — surface more, we'll triage
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  poem: false
+  collapse_walkthrough: false
+  abort_on_close: true
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - main
+
+  # Don't waste review budget on media, vendored code, generated files, or scratch scripts.
+  path_filters:
+    - "!vendor/**"
+    - "!node_modules/**"
+    - "!android/**"
+    - "!reports/**"
+    - "!.cache/**"
+    - "!Menu for Pantry planner/**"
+    - "!**/*.pdf"
+    - "!**/*.HEIC"
+    - "!**/*.JPG"
+    - "!**/*.jpg"
+    - "!**/*.png"
+    - "!package-lock.json"
+    - "!_*.php"
+
+  path_instructions:
+    - path: "api/**/*.php"
+      instructions: >-
+        Server API. VERIFY, per action: (1) every SQL query uses PDO prepared
+        statements — flag any user input concatenated into SQL; (2) each write
+        checks method + auth + role (requireMethod/requireAuth/requireRole) and
+        CSRF is validated on POST; (3) kitchen scoping is enforced so a chef or
+        storekeeper cannot read or mutate another kitchen's requisitions/lines;
+        (4) no credentials, tokens, or secrets appear in code; (5) status/lifecycle
+        transitions (draft→processing→submitted→fulfilled→received→closed) can't be
+        skipped or reversed by an unauthorised role.
+    - path: "pages/**/*.php"
+      instructions: >-
+        Server-rendered pages with inline vanilla JS (no build step). Flag XSS:
+        any server value echoed into HTML/JS or interpolated into a JS template
+        literal without escaping (escHtml / htmlspecialchars). Confirm client API
+        calls send the CSRF token.
+    - path: "assets/app.js"
+      instructions: >-
+        Shared client logic, cache-first in service-worker.js. If behaviour changes
+        here, note that CACHE_NAME in service-worker.js must be bumped or clients
+        keep the stale file.
+    - path: "**/*.htaccess"
+      instructions: >-
+        Flag anything that would expose .env, config.php, _*.php, or dotfiles, or
+        that weakens security headers.
+
+chat:
+  auto_reply: true
+
+knowledge_base:
+  learnings:
+    scope: auto
