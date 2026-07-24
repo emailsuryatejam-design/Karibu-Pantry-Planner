@@ -105,6 +105,11 @@ table + a separate **"Staple items" section** (via `is_staple`), and renders sig
   - `notify-missed-meals.php <breakfast|lunch|dinner> [--dry] [--to=x]` — if a camp hasn't placed that
     meal's order, emails the kitchen's reception + manager. Excludes Woodlands(2) + Demo(6).
     **Bobby removed from cc (2026-07-23).** Run by **GitHub Actions** `missed-meal-alerts.yml`.
+    - **⏸ ARCHIVED / OFF (2026-07-24):** workflow **disabled** via `gh workflow disable "Missed-meal alerts"`
+      — no scheduled runs fire. Code (yml + script) is kept in the repo, not deleted. To bring it back:
+      `gh workflow enable "Missed-meal alerts"`. Reason: user shelved the feature. A known gap if it's
+      re-enabled: it counts a `processing` order as "placed", so a camp stuck at processing (e.g. Tarangire,
+      chef never taps Submit to Store) is NOT chased — consider requiring `status='submitted'` before reviving.
     - **Timing (2026-07-23):** GitHub's scheduler runs 1–3h late, so alerts were landing ~11am. Now
       each meal has **3 staggered crons** starting early (breakfast 03/04/05:10 UTC, lunch 07/08/09:10,
       dinner 13/14/15:10). The script only **sends after the meal's cutoff** (`$SEND_AFTER` = 08:10/12:10/
