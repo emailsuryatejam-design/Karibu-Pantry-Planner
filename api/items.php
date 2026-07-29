@@ -167,26 +167,14 @@ switch ($action) {
         jsonResponse(['updated' => $count]);
         break;
 
-    // ── Reset all order data (admin only) ──
+    // ── Reset all order data — DISABLED 2026-07-29 (no hard deletes) ──
+    // Previously hard-DELETEd all requisitions + menu tables in one call. Neutered so no admin can
+    // wipe live data. To genuinely reset: mysqldump backup first, then clear via direct DB access.
     case 'reset_orders':
         requireMethod('POST');
         requireRole(['admin']);
-        $db->beginTransaction();
-        try {
-            $db->exec('DELETE FROM requisition_lines');
-            $db->exec('DELETE FROM requisition_dishes');
-            $db->exec('DELETE FROM requisitions');
-            $db->exec('DELETE FROM dish_ingredients');
-            $db->exec('DELETE FROM menu_dishes');
-            $db->exec('DELETE FROM menu_plans');
-            $db->commit();
-            cacheClear('active_items');
-            auditLog('reset_orders', 'system', null, null, ['action' => 'cleared all orders']);
-            jsonResponse(['reset' => true]);
-        } catch (Exception $e) {
-            $db->rollBack();
-            jsonError('Reset failed: ' . $e->getMessage());
-        }
+        auditLog('reset_orders_blocked', 'system', null, null, ['blocked' => true]);
+        jsonError('Disabled: bulk order/menu wipe is turned off. Data is never hard-deleted from here.', 403);
         break;
 
     // ── Bulk import items from SAP (admin only) ──

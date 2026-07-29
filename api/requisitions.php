@@ -2524,17 +2524,15 @@ switch ($action) {
         auditLog('admin_reopen', 'requisition', $reqId);
         jsonResponse(['reopened' => true]);
 
-    // ── Admin: reset all orders for a clean start ──
+    // ── Admin: reset all orders — DISABLED 2026-07-29 (no hard deletes) ──
+    // This used to hard-DELETE every requisition/line/dish/notification in ONE call, with no undo.
+    // Neutered so no admin can wipe the live database. To genuinely reset: take a mysqldump backup
+    // first, then clear via direct DB access — never re-add a one-click destructive endpoint here.
     case 'reset_all_orders':
         requireMethod('POST');
         requireRole(['admin']);
-
-        $db->exec("DELETE FROM requisition_lines");
-        $db->exec("DELETE FROM requisition_dishes");
-        $db->exec("DELETE FROM requisitions");
-        $db->exec("DELETE FROM notifications");
-
-        jsonResponse(['message' => 'All orders, lines, dishes, and notifications cleared']);
+        auditLog('reset_all_orders_blocked', 'requisition', null, null, ['blocked' => true]);
+        jsonError('Disabled: bulk order wipe is turned off. Data is never hard-deleted from here.', 403);
 
     // ── Change log for a requisition (all audit entries for that order) ──
     case 'change_log':

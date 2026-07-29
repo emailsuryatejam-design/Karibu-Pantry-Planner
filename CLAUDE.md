@@ -44,6 +44,23 @@ reconciles unused stock. One app, role-based views. Hosted on Hostinger.
   "phantom" drafts piled up (e.g. sundowner/bush_dinner at camps that don't serve them).
   Those were soft-deleted (reversible; undo manifest in `reports/phantom_purge_manifest_*.json`).
 
+## Admins & no-hard-delete rule (2026-07-29)
+- **Global admins** live in `users` (role='admin', `kitchen_id`=NULL, login via `admin-login.php`
+  with email + `password_hash`). Per-kitchen admins have a `kitchen_id` and log in by PIN.
+  Provisioned 2026-07-29: **Joyce** (id 35, joyce@spanishtiles.co.tz) — note: **external domain**.
+- **HOUSE RULE — no hard deletes.** Surya's standing instruction: never issue hard `DELETE`; use
+  soft-delete (`deleted_at`/`deleted_by`). Most of the app already does (84 `deleted_at` sites), BUT
+  these hard-`DELETE` paths still exist and are **NOT yet fixed**:
+  - ⚠️ `reset_all_orders` (api/requisitions.php ~2532) — admin-only, **wipes ALL** requisitions/lines/
+    dishes/notifications. Nuclear.
+  - ⚠️ `reset_orders` (api/items.php ~172) — admin-only, wipes ALL requisitions + menu tables.
+  - `chef_remove`/custom-dish removal (requisitions.php ~1760) + menu-plan/set-menus config deletes —
+    routine hard-deletes, lower stakes.
+  - push_subscriptions deletes = fine (transient tokens). Migration dedup (req.php ~473) = one-time.
+  - **DB backups:** `mysqldump` works on the server (PHP `exec` is disabled, so run it from the shell
+    with a 0600 `--defaults-extra-file`). Backups saved to `~/db-backups/` on the server + pulled to
+    local `reports/db-backups/` (gitignored). First backup: 2026-07-29.
+
 ## No back-dating (2026-07-16)
 - **Chefs can only create/change orders for today or later.** `guardBackdate()` at the top of
   `api/requisitions.php` blocks ~18 write actions (create, ensure_session, lock_menu, submit_order,
