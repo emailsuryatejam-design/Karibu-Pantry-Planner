@@ -23,7 +23,7 @@ $adminPages = array_unique(array_merge($chefPages, $storePages, [
     'admin-home', 'admin-users', 'admin-camps', 'admin-meal-types',
     'admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus',
     'admin-emails', 'admin-orders', 'admin-stock', 'admin-recipes',
-    'admin-reports', 'admin-audit', 'admin-recycle',
+    'admin-reports', 'admin-audit', 'admin-recycle', 'admin-attendance',
 ]));
 
 $allowedPages = isAdmin() ? $adminPages : (isChef() ? $chefPages : $storePages);
@@ -77,7 +77,7 @@ $adminPortalPages = [
 $isAdminPage = $isAdminRole && in_array($page, $adminPortalPages);
 
 // Nav group membership for active-state highlighting
-$opsPages  = ['admin-orders','admin-reports'];
+$opsPages  = ['admin-orders','admin-reports','admin-attendance'];
 $cntPages  = ['admin-recipes','admin-stock'];
 $mgmtPages = ['admin-users','admin-camps','admin-items','admin-meal-types','admin-emails','admin-kitchens','admin-req-types','admin-set-menus'];
 
@@ -397,6 +397,10 @@ body.admin-portal {
                         <a href="app.php?page=admin-reports" class="<?= $page === 'admin-reports' ? 'active' : '' ?>" role="menuitem">
                             <span class="dd-icon">📈</span>
                             <div><div style="font-weight:600">Reports & Analytics</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Usage, waste, summaries</div></div>
+                        </a>
+                        <a href="app.php?page=admin-attendance" class="<?= $page === 'admin-attendance' ? 'active' : '' ?>" role="menuitem">
+                            <span class="dd-icon">🗓️</span>
+                            <div><div style="font-weight:600">Attendance</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Who's ordering vs missing, per day</div></div>
                         </a>
                       </div>
                     </div>

@@ -44,6 +44,16 @@ reconciles unused stock. One app, role-based views. Hosted on Hostinger.
   "phantom" drafts piled up (e.g. sundowner/bush_dinner at camps that don't serve them).
   Those were soft-deleted (reversible; undo manifest in `reports/phantom_purge_manifest_*.json`).
 
+## Admin: Attendance / usage calendar (2026-07-30)
+- `pages/admin-attendance.php` (nav: Admin → **Operations → Attendance**, `app.php?page=admin-attendance&days=7|14|30`).
+  Server-rendered grid: rows = active kitchens (excl Demo 6), cols = days, each day = 3 dots B/L/D.
+  green=ordered (submitted→closed) · **amber=processing (built, never Submitted to Store)** · red=missed ·
+  grey=not due yet (today before the meal cutoff). Right column = usage % (green ÷ due; today's not-yet-due
+  excluded). Amber instantly exposes camps like Tarangire that build orders but never submit them.
+  Registered in `$adminPages` + `$opsPages`. Only breakfast/lunch/dinner tracked.
+- Gap noted: `admin-login.php` does NOT update `users.last_login` — admin login times aren't recorded
+  (chef/store PIN logins aren't either). One-line fix if per-user login history is wanted.
+
 ## Admins & no-hard-delete rule (2026-07-29)
 - **Global admins** live in `users` (role='admin', `kitchen_id`=NULL, login via `admin-login.php`
   with email + `password_hash`). Per-kitchen admins have a `kitchen_id` and log in by PIN.
