@@ -202,6 +202,16 @@ table + a separate **"Staple items" section** (via `is_staple`), and renders sig
   Orders page passes `&action=get&...&include_off=1` so toggled-off lines stay visible (greyed,
   strikethrough) to switch back on; every other `get` caller still hides rejected. Locked once the
   order is fulfilled/received/closed.
+- "can't see the lunch/X menu" (dishes missing though chef added them) → **split-session bug.** Once a
+  meal's primary order is submitted, further dishes go onto **supplements**; the dashboard's menu view
+  shows only ONE session per meal (`dbSessionMap` keeps first-or-draft), so if the primary has no dishes
+  (only staples) the chef sees an empty menu + a "need more? add supplement" loop while the real dishes sit
+  on hidden supplements. Seen 4×/7d, always lunch (Sametu, River). **Partial fix 2026-08-01:** `page_init`
+  (+ the 2 sibling session queries) now filter `AND r.deleted_at IS NULL` so archived orders vanish.
+  **Still TODO:** make the dashboard menu view aggregate dishes across a meal's primary + supplements.
+  One-off remediation: reset the meal to a single clean draft (reuse the supp-0 row to dodge the unique key
+  `(kitchen,date,meal,supp)`, soft-delete the rest; manifest in reports/cleanup/). Fresh draft auto-loads
+  that day's weekly_menu set menu so the chef sees dishes again.
 - "menu not loading" / "can't load menu" → NOT a data bug. Dashboard `dbInit` calls
   `page_init`; if that one API call fails (flaky camp internet, or stale cached app
   version) it showed a dead-end "Failed to load menu". Server is almost always healthy —

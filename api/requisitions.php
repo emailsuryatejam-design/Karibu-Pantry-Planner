@@ -238,7 +238,7 @@ switch ($action) {
         $rStmt = $db->prepare("SELECT r.*, u.name AS chef_name,
             (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL) AS line_count
             FROM requisitions r LEFT JOIN users u ON u.id = r.created_by
-            WHERE r.req_date = ? AND r.kitchen_id = ?
+            WHERE r.req_date = ? AND r.kitchen_id = ? AND r.deleted_at IS NULL
             ORDER BY r.session_number ASC, r.supplement_number ASC");
         $rStmt->execute([$reqDate, $kid]);
         $initReqs = $rStmt->fetchAll();
@@ -557,7 +557,7 @@ switch ($action) {
         $stmt = $db->prepare("SELECT r.*, u.name AS chef_name,
             (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL) AS line_count
             FROM requisitions r LEFT JOIN users u ON u.id = r.created_by
-            WHERE r.req_date = ? AND r.kitchen_id = ?
+            WHERE r.req_date = ? AND r.kitchen_id = ? AND r.deleted_at IS NULL
             ORDER BY r.session_number ASC, r.supplement_number ASC");
         $stmt->execute([$reqDate, $kid]);
         $reqs = $stmt->fetchAll();
@@ -604,7 +604,7 @@ switch ($action) {
         $allStmt = $db->prepare("SELECT r.*, u.name AS chef_name,
             (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL) AS line_count
             FROM requisitions r LEFT JOIN users u ON u.id = r.created_by
-            WHERE r.req_date = ? AND r.kitchen_id = ?
+            WHERE r.req_date = ? AND r.kitchen_id = ? AND r.deleted_at IS NULL
             ORDER BY r.session_number ASC, r.supplement_number ASC");
         $allStmt->execute([$parent['req_date'], $parent['kitchen_id']]);
         $allReqs = $allStmt->fetchAll();
