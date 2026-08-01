@@ -30,7 +30,31 @@ function mealsToAutoCreate(PDO $db, int $kid): array {
         $stmt->execute([$kid]);
         foreach ($stmt->fetchAll() as $r) $meals[] = $r['m'];
     } catch (Exception $e) { /* fall back to core meals */ }
-    return array_values(array_unique($meals));
+    // 'staples' is NOT a meal — it's the standalone daily staples order, created on demand
+    // via ensureStaplesReq(). Never auto-create it as a meal tab.
+    return array_values(array_filter(array_unique($meals), fn($m) => $m !== 'staples'));
+}
+
+/**
+ * Find-or-create the STANDALONE daily staples order for a kitchen/date.
+ * Staples (salt, sugar, butter…) are bulk items tied to no dish and no meal — they live on
+ * their own `meals='staples'` requisition (one per kitchen/date, supplement_number=0), so
+ * submitting/fulfilling staples never touches a meal. Returns the staples requisition id.
+ * The unique key (kitchen_id, req_date, meals, supplement_number) makes INSERT IGNORE safe.
+ */
+function ensureStaplesReq(PDO $db, int $kid, string $date, int $userId): int {
+    $sel = $db->prepare("SELECT id FROM requisitions
+        WHERE kitchen_id = ? AND req_date = ? AND meals = 'staples' AND supplement_number = 0
+          AND deleted_at IS NULL LIMIT 1");
+    $sel->execute([$kid, $date]);
+    $id = $sel->fetchColumn();
+    if ($id) return (int)$id;
+    // session_number 900 keeps staples sorting after the meals; guest_count irrelevant for staples.
+    $db->prepare("INSERT IGNORE INTO requisitions
+        (kitchen_id, req_date, session_number, guest_count, meals, supplement_number, status, created_by)
+        VALUES (?, ?, 900, 0, 'staples', 0, 'draft', ?)")->execute([$kid, $date, $userId]);
+    $sel->execute([$kid, $date]);
+    return (int)$sel->fetchColumn();
 }
 
 /**
@@ -130,7 +154,7 @@ switch ($action) {
                 (SELECT COUNT(*) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL) AS line_count
                 FROM requisitions r
                 LEFT JOIN users u ON u.id = r.created_by
-                WHERE r.req_date = ? AND r.kitchen_id = ?";
+                WHERE r.req_date = ? AND r.kitchen_id = ? AND r.deleted_at IS NULL";
         $params = [$date, $kid];
 
         if ($status) {
@@ -1434,7 +1458,7 @@ switch ($action) {
             (SELECT COALESCE(SUM(order_qty), 0) FROM requisition_lines WHERE requisition_id = r.id AND deleted_at IS NULL AND status != 'rejected') AS total_kg
             FROM requisitions r
             LEFT JOIN users u ON u.id = r.created_by
-            WHERE r.req_date = ? AND r.kitchen_id = ?
+            WHERE r.req_date = ? AND r.kitchen_id = ? AND r.deleted_at IS NULL
             ORDER BY r.session_number ASC, r.supplement_number ASC");
         $stmt->execute([$date, $kid]);
         $reqs = $stmt->fetchAll();
@@ -1917,11 +1941,15 @@ switch ($action) {
             $itemName = trim($data['item_name'] ?? '');
             $orderQty = max(0, (float)($data['order_qty'] ?? 1));
             $uom = trim($data['uom'] ?? 'kg');
-            // All manual line-adds go to Staples. Menu lines come only from lock_menu
-            // (recipe ingredients with is_primary=1) — never via this endpoint.
-            $isStaple = 1;
+            // Two intents:
+            //   'staple' (default)  → bulk staple (salt/sugar/butter): goes to the STANDALONE daily
+            //                          staples order (never a meal). is_staple=1.
+            //   'meal_extra'        → a one-off non-recipe item for THIS meal: a menu line on the meal
+            //                          (is_staple=0, source_recipe_id stays NULL so it survives menu
+            //                          regeneration). Stays with, and is sent with, the meal.
+            $intent = ($data['intent'] ?? 'staple') === 'meal_extra' ? 'meal_extra' : 'staple';
 
-            if (!$reqId || (!$itemId && !$itemName)) jsonError('Requisition ID and item required');
+            if (!$itemId && !$itemName) jsonError('Item required');
 
             // Self-healing: ensure is_staple column exists
             try { $db->query("SELECT is_staple FROM requisition_lines LIMIT 0"); }
@@ -1935,24 +1963,43 @@ switch ($action) {
                 if ($iRow) { $itemName = $iRow['name']; if (!$uom) $uom = $iRow['uom']; }
             }
 
-            $stmt = $db->prepare("SELECT * FROM requisitions WHERE id = ? AND status IN ('draft','processing','submitted')");
-            $stmt->execute([$reqId]);
-            $req = $stmt->fetch();
-            if (!$req) jsonError('Requisition not found or not editable');
+            // Kitchen + date context comes from the order the chef was viewing (or the session/today).
+            $ctxKitchen = (int)$kitchenId; $ctxDate = $data['req_date'] ?? date('Y-m-d');
+            if ($reqId) {
+                $ctx = $db->prepare("SELECT kitchen_id, req_date, meals FROM requisitions WHERE id = ? AND deleted_at IS NULL");
+                $ctx->execute([$reqId]);
+                if ($ctxReq = $ctx->fetch()) { $ctxKitchen = (int)$ctxReq['kitchen_id']; $ctxDate = $ctxReq['req_date']; }
+            }
+            if ($user['role'] !== 'admin' && $ctxKitchen !== (int)$kitchenId) jsonError('Not your kitchen', 403);
 
-            // Check if item already exists (only if item_id is provided)
+            if ($intent === 'meal_extra') {
+                // Extra item for a specific meal — a menu line that stays with the meal.
+                if (!$reqId) jsonError('Meal order required for a meal extra');
+                $tgt = $db->prepare("SELECT meals FROM requisitions WHERE id = ? AND status IN ('draft','processing','submitted') AND deleted_at IS NULL");
+                $tgt->execute([$reqId]);
+                $mreq = $tgt->fetch();
+                if (!$mreq) jsonError('Meal order not found or not editable');
+                if ($mreq['meals'] === 'staples') jsonError('That is the staples order — add it as a bulk staple instead');
+                $targetReqId = $reqId; $isStaple = 0;
+            } else {
+                // Bulk staple → the standalone daily staples order (created on demand).
+                $targetReqId = ensureStaplesReq($db, $ctxKitchen, $ctxDate, (int)$user['id']);
+                $isStaple = 1;
+            }
+
+            // Check if item already exists on the target order (only if item_id is provided)
             if ($itemId) {
                 $existCheck = $db->prepare("SELECT id FROM requisition_lines WHERE requisition_id = ? AND item_id = ? AND deleted_at IS NULL AND status != 'rejected'");
-                $existCheck->execute([$reqId, $itemId]);
+                $existCheck->execute([$targetReqId, $itemId]);
                 if ($existCheck->fetch()) jsonError('Item already in this order');
             }
 
             $ins = $db->prepare("INSERT INTO requisition_lines (requisition_id, item_id, item_name, uom, order_qty, status, is_staple) VALUES (?, ?, ?, ?, ?, 'pending', ?)");
-            $ins->execute([$reqId, $itemId ?: null, $itemName, $uom, $orderQty, $isStaple]);
+            $ins->execute([$targetReqId, $itemId ?: null, $itemName, $uom, $orderQty, $isStaple]);
             $lineId = $db->lastInsertId();
 
-            auditLog('add_line_to_order', 'requisition_lines', $lineId, null, ['item' => $itemName, 'qty' => $orderQty, 'uom' => $uom], $reqId);
-            jsonResponse(['line_id' => $lineId, 'added' => true]);
+            auditLog('add_line_to_order', 'requisition_lines', $lineId, null, ['item' => $itemName, 'qty' => $orderQty, 'uom' => $uom, 'intent' => $intent], $targetReqId);
+            jsonResponse(['line_id' => $lineId, 'added' => true, 'requisition_id' => $targetReqId, 'is_staple' => $isStaple]);
         } catch (Exception $e) {
             jsonError('Failed to add item: ' . $e->getMessage());
         }
@@ -2189,9 +2236,11 @@ switch ($action) {
 
         $db->beginTransaction();
         try {
-            // Clear old dish entries and menu-generated lines (soft-delete to preserve audit trail)
+            // Clear old dish entries and DISH-GENERATED menu lines (soft-delete to preserve audit trail).
+            // Manually-added meal extras (is_staple=0 with no source_recipe_id) are preserved so a
+            // menu regenerate never wipes a chef's one-off dietary item.
             $db->prepare("UPDATE requisition_dishes SET deleted_at = NOW(), deleted_by = ? WHERE requisition_id = ? AND deleted_at IS NULL")->execute([$user['id'], $reqId]);
-            $db->prepare("UPDATE requisition_lines SET deleted_at = NOW(), deleted_by = ? WHERE requisition_id = ? AND is_staple = 0 AND deleted_at IS NULL")->execute([$user['id'], $reqId]);
+            $db->prepare("UPDATE requisition_lines SET deleted_at = NOW(), deleted_by = ? WHERE requisition_id = ? AND is_staple = 0 AND source_recipe_id IS NOT NULL AND deleted_at IS NULL")->execute([$user['id'], $reqId]);
 
             // Aggregated items: itemId => { item_name, total_qty, uom, stock_qty, portion_weight, order_mode, category, sources[] }
             $aggregated = [];

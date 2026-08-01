@@ -555,17 +555,18 @@ function ordRender() {
         }
     });
 
-    // Also show any requisitions whose meal type is NOT in ordTypes (edge case)
+    // Also show any requisitions whose meal type is NOT in ordTypes (edge case).
+    // Never render the standalone staples order as a meal card — it belongs to the Staple tab.
     ordRequisitions.forEach(req => {
         const code = (req.meals || '').toLowerCase();
-        if (!shownMeals.has(code)) {
+        if (!shownMeals.has(code) && code !== 'staples') {
             html += ordRenderCard(req);
         }
     });
 
-    // Fallback: if ordTypes is empty but we have requisitions, show them all
+    // Fallback: if ordTypes is empty but we have requisitions, show them all (except staples)
     if (ordTypes.length === 0) {
-        ordRequisitions.forEach(req => { html += ordRenderCard(req); });
+        ordRequisitions.forEach(req => { if ((req.meals || '').toLowerCase() !== 'staples') html += ordRenderCard(req); });
     }
 
     list.innerHTML = html;
@@ -577,14 +578,14 @@ function ordRenderEmptyMealCard(mealCode, mealName) {
     return `<div class="bg-white rounded-xl border ${color.border} overflow-hidden shadow-sm">
         <div class="flex items-center justify-between px-4 py-3 ${color.header} border-b">
             <span class="text-sm font-bold ${color.text}">${escHtml(mealName)} Order</span>
-            <button onclick="ordCreateAndAddItem('${mealCode}')"
+            <a href="app.php?page=dashboard"
                 class="px-3 py-1.5 rounded-lg bg-orange-500 text-white text-xs font-semibold hover:bg-orange-600 active:bg-orange-700 transition flex items-center gap-1">
                 <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                Add item
-            </button>
+                Plan on Home
+            </a>
         </div>
         <div class="px-4 py-4 text-center">
-            <p class="text-sm text-gray-400">No items yet — tap + to add</p>
+            <p class="text-sm text-gray-400">No menu yet — plan the dishes on Home. Bulk staples go in the Staple tab.</p>
         </div>
     </div>`;
 }
@@ -614,6 +615,12 @@ async function ordCreateAndAddItem(meal) {
     }
 }
 
+// A "meal extra" (one-off dietary item) can only be added once the meal is generated (has a menu).
+// Bulk staples never come through here — they go to the Staple tab / staples order.
+function ordCanAddMealExtra(req) {
+    return ['processing', 'submitted'].includes(req.status) && !ordIsPastDay();
+}
+
 function ordRenderCard(req) {
     const color = ordGetColor(req.meals);
     const typeInfo = ordTypes.find(t => (t.code || '').toLowerCase() === (req.meals || '').toLowerCase());
@@ -639,7 +646,7 @@ function ordRenderCard(req) {
                     <span class="text-sm font-bold ${color.text}">${escHtml(mealLabel)} Order</span>
                     ${ordStatusBadge(req.status)}
                 </div>
-                ${canAddItems ? `<button onclick="event.stopPropagation();ordShowAddItem(${req.id})" class="w-8 h-8 rounded-lg bg-white/80 border border-green-300 text-green-600 flex items-center justify-center hover:bg-green-50 active:bg-green-100 transition" title="Add item">
+                ${ordCanAddMealExtra(req) ? `<button onclick="event.stopPropagation();ordShowAddItem(${req.id}, 'meal_extra')" class="w-8 h-8 rounded-lg bg-white/80 border border-green-300 text-green-600 flex items-center justify-center hover:bg-green-50 active:bg-green-100 transition" title="Add extra item to this meal">
                     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
                 </button>` : ''}
             </div>
@@ -658,10 +665,10 @@ function ordRenderCard(req) {
                     <span class="text-sm font-bold ${color.text}">${escHtml(mealLabel)} Order</span>
                     <span class="text-[10px] text-gray-400">#${req.id}</span>
                 </div>
-                ${canAddItems ? `<button onclick="ordShowAddItem(${req.id})"
+                ${ordCanAddMealExtra(req) ? `<button onclick="ordShowAddItem(${req.id}, 'meal_extra')"
                     class="px-3 py-1.5 rounded-lg bg-orange-500 text-white text-xs font-semibold hover:bg-orange-600 active:bg-orange-700 transition flex items-center gap-1">
                     <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
-                    Add item
+                    Add extra
                 </button>` : ordStatusBadge(req.status)}
             </div>
             ${canAddItems ? `<div class="px-4 py-2 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
@@ -835,11 +842,11 @@ function ordRenderEditableLines(req, lines) {
             class="px-4 py-3 rounded-xl border-2 border-red-200 text-red-500 font-semibold text-sm hover:bg-red-50 flex items-center justify-center gap-1.5 transition">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>
         </button>
-        <button onclick="ordShowAddItem(${req.id})"
+        <button onclick="ordShowAddItem(${req.id}, 'meal_extra')" title="Add an extra item to this meal (not a bulk staple)"
             class="px-4 py-3 rounded-xl border-2 border-orange-200 text-orange-500 font-semibold text-sm hover:bg-orange-50 flex items-center justify-center gap-1.5 transition">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14"/><path d="M5 12h14"/></svg>
         </button>
-        <button onclick="printOrder(${req.id}, ORD_KITCHEN_NAME, true)" title="Print this meal (with its staples)"
+        <button onclick="printOrder(${req.id}, ORD_KITCHEN_NAME, true)" title="Print this meal"
             class="px-4 py-3 rounded-xl border-2 border-gray-200 text-gray-500 font-semibold text-sm hover:bg-gray-50 flex items-center justify-center gap-1.5 transition">
             <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect width="12" height="8" x="6" y="14"/></svg>
         </button>
@@ -1316,41 +1323,46 @@ async function ordRemovePackedDish(reqId, dishName) {
 //  Add Item Modal
 // ══════════════════════════════════════════════
 let ordAddTargetReqId = null;
+let ordAddIntent = 'staple'; // 'staple' = bulk → the day's staples order; 'meal_extra' = stays on the meal
 
-async function ordShowAddItem(reqId) {
+async function ordShowAddItem(reqId, intent) {
+    ordAddIntent = intent === 'meal_extra' ? 'meal_extra' : 'staple';
     let targetReq = null;
     if (reqId) {
         targetReq = ordRequisitions.find(r => r.id == reqId);
     }
-    if (!targetReq) {
-        targetReq = ordRequisitions.find(r => ['draft', 'processing', 'submitted'].includes(r.status));
+    // For a bulk staple we just need any order for context (the server routes it to the staples
+    // order); prefer a real meal, never the staples order itself.
+    if (!targetReq && ordAddIntent === 'staple') {
+        targetReq = ordRequisitions.find(r => ['draft', 'processing', 'submitted'].includes(r.status) && (r.meals || '').toLowerCase() !== 'staples')
+                 || ordRequisitions.find(r => ['draft', 'processing', 'submitted'].includes(r.status));
     }
     if (!targetReq) {
         try {
-            showToast('Creating order...', 'info');
-            let mealCode = 'breakfast';
-            try {
-                if (ordTypes.length > 0) mealCode = ordTypes[0].code;
-            } catch(e) {}
+            showToast('Opening…', 'info');
             const initData = await api('api/requisitions.php?action=page_init', {
                 method: 'POST',
                 body: { req_date: ordDate, kitchen_id: ORD_KITCHEN_ID, guest_count: 20 }
             });
             const newReqs = initData.requisitions || [];
-            if (newReqs.length > 0) targetReq = newReqs[0];
+            if (newReqs.length > 0) targetReq = newReqs.find(r => (r.meals||'').toLowerCase() !== 'staples') || newReqs[0];
         } catch (e) {}
     }
-    if (!targetReq) { showToast('Could not create order. Try again.', 'error'); return; }
+    if (!targetReq) { showToast('Could not open the add screen. Try again.', 'error'); return; }
     ordAddTargetReqId = targetReq.id;
-
-    // All manual additions go to the Staples list. Switch to that tab first so
-    // the chef sees where the item will land.
-    if (ordActiveTab !== 'staple') ordSwitchTab('staple');
 
     const titleEl = document.getElementById('ordAddModalTitle');
     const subEl = document.getElementById('ordAddModalSub');
-    if (titleEl) titleEl.textContent = 'Add Staple Item';
-    if (subEl) subEl.textContent = 'Item will be added to the Staple order';
+    if (ordAddIntent === 'meal_extra') {
+        // A one-off item for THIS meal — stays with the meal.
+        if (titleEl) titleEl.textContent = 'Add extra item to this meal';
+        if (subEl) subEl.textContent = 'A one-off item for this meal — stays with it and is sent with it.';
+    } else {
+        // Bulk staple → the day's separate staples order. Show that tab so the chef sees where it lands.
+        if (ordActiveTab !== 'staple') ordSwitchTab('staple');
+        if (titleEl) titleEl.textContent = 'Add bulk staple';
+        if (subEl) subEl.textContent = 'Salt, sugar, oil… goes to the day’s staples order, not a meal.';
+    }
 
     if (!ordAllItems) {
         try { const res = await api('api/items.php?action=list&active=1'); ordAllItems = res.items || []; } catch (e) { ordAllItems = []; }
@@ -1481,14 +1493,14 @@ async function ordConfirmAddItem(itemId, itemName) {
     if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
 
     try {
-        // Manual additions always go to Staples — Menu items only come from recipes.
+        // Bulk staple → the server routes it to the day's staples order; meal_extra → stays on the meal.
         await api('api/requisitions.php?action=add_line_to_order', {
             method: 'POST',
-            body: { requisition_id: ordAddTargetReqId, item_id: itemId, item_name: itemName, order_qty: qty, uom: uom, is_staple: 1 }
+            body: { requisition_id: ordAddTargetReqId, req_date: ordDate, item_id: itemId, item_name: itemName, order_qty: qty, uom: uom, intent: ordAddIntent }
         });
-        showToast(`${itemName} added!`, 'success');
+        showToast(ordAddIntent === 'meal_extra' ? `${itemName} added to this meal` : `${itemName} added to staples`, 'success');
         ordCloseItemDetail();
-        ordRefreshCard(ordAddTargetReqId);
+        ordLoad(); // reload — a bulk staple lands on the separate staples order, not this card
     } catch (err) {
         showToast(err.message, 'error');
         if (btn) { btn.disabled = false; btn.textContent = 'Add'; }

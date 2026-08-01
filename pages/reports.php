@@ -75,7 +75,8 @@ const rpMealColors = {
     lunch:     { bg: 'bg-blue-50',  text: 'text-blue-700',  border: 'border-blue-200',  bar: 'bg-blue-400',  dot: 'bg-blue-500' },
     dinner:    { bg: 'bg-purple-50',text: 'text-purple-700',border: 'border-purple-200',bar: 'bg-purple-400',dot: 'bg-purple-500' },
     lunchboxes:{ bg: 'bg-green-50', text: 'text-green-700', border: 'border-green-200', bar: 'bg-green-400', dot: 'bg-green-500' },
-    picnics:   { bg: 'bg-rose-50',  text: 'text-rose-700',  border: 'border-rose-200',  bar: 'bg-rose-400',  dot: 'bg-rose-500' }
+    picnics:   { bg: 'bg-rose-50',  text: 'text-rose-700',  border: 'border-rose-200',  bar: 'bg-rose-400',  dot: 'bg-rose-500' },
+    staples:   { bg: 'bg-stone-100',text: 'text-stone-700', border: 'border-stone-300', bar: 'bg-stone-400', dot: 'bg-stone-500' }
 };
 
 const rpStatusBadge = {

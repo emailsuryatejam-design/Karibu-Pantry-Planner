@@ -71,6 +71,24 @@ reconciles unused stock. One app, role-based views. Hosted on Hostinger.
     with a 0600 `--defaults-extra-file`). Backups saved to `~/db-backups/` on the server + pulled to
     local `reports/db-backups/` (gitignored). First backup: 2026-07-29.
 
+## Staples are a SEPARATE order (2026-08-01)
+- **Bulk staples (salt/sugar/butter) live on their own daily order**, not on a meal. `meals='staples'`,
+  one per (kitchen,date), supp 0, created on demand by `ensureStaplesReq()` (api/requisitions.php).
+  Excluded from `mealsToAutoCreate()` and from the Orders **menu tab** (`code !== 'staples'`), shown only
+  in the **Staple tab**. Submitting/fulfilling staples never touches a meal — this fixes the "submit
+  staples → lunch locks with 0 dishes → empty menu" bug at the root.
+- **`add_line_to_order` now takes `intent`:** `'staple'` (default) → routed to the staples order
+  (is_staple=1); `'meal_extra'` → a one-off item that STAYS on the meal (is_staple=0, source_recipe_id
+  NULL). The chef Orders menu-tab "+" is now "Add extra item to this meal" (gated on the meal being
+  generated, `ordCanAddMealExtra` = status processing/submitted); the Staple-tab "+" and top-bar "+" add
+  bulk staples. Empty meal card → "Plan on Home" link (no more manual meal-building from Orders).
+- **Menu regeneration preserves meal extras:** `save_dish_lines` now soft-deletes only dish-generated
+  menu lines (`is_staple=0 AND source_recipe_id IS NOT NULL`), leaving manual meal extras intact.
+- `page_init`/`day_summary`/`list` now filter `deleted_at IS NULL` so archived orders never show.
+- **Data migration (all history) to move existing is_staple=1 lines onto per-day staples orders + archive
+  phantom staples-only meals is PENDING** — backup + dry-run + staged, reversible (manifest + Recycle Bin).
+  Plan file: ~/.claude/plans/calm-roaming-glade.md.
+
 ## No back-dating (2026-07-16)
 - **Chefs can only create/change orders for today or later.** `guardBackdate()` at the top of
   `api/requisitions.php` blocks ~18 write actions (create, ensure_session, lock_menu, submit_order,
