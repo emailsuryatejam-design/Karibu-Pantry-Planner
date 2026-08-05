@@ -85,9 +85,12 @@ reconciles unused stock. One app, role-based views. Hosted on Hostinger.
 - **Menu regeneration preserves meal extras:** `save_dish_lines` now soft-deletes only dish-generated
   menu lines (`is_staple=0 AND source_recipe_id IS NOT NULL`), leaving manual meal extras intact.
 - `page_init`/`day_summary`/`list` now filter `deleted_at IS NULL` so archived orders never show.
-- **Data migration (all history) to move existing is_staple=1 lines onto per-day staples orders + archive
-  phantom staples-only meals is PENDING** — backup + dry-run + staged, reversible (manifest + Recycle Bin).
-  Plan file: ~/.claude/plans/calm-roaming-glade.md.
+- **Data migration DONE (2026-08-05):** moved 3,775 historical is_staple=1 lines off meals onto 144
+  per-(kitchen,date) staples orders; archived 58 staples-only phantom meals (soft, Recycle Bin). Total
+  staple qty preserved exactly (22,773.3 → 22,773.3), 0 staples left on meals. Transactional with
+  verify-or-rollback (first attempt self-rolled-back on a too-narrow check — fixed to compare total
+  staple qty everywhere). Undo manifest: reports/cleanup/staples_migration_2026-08-05.json; backup:
+  db-backups/pantryplanner-20260805-071607.sql.gz. Plan: ~/.claude/plans/calm-roaming-glade.md.
 
 ## No back-dating (2026-07-16)
 - **Chefs can only create/change orders for today or later.** `guardBackdate()` at the top of
