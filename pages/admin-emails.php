@@ -50,7 +50,7 @@ let aeLoaded = false;
     }
 })();
 
-const notifyLabels = { submit: '📤 On Submit', fulfill: '✅ On Fulfill', both: '📧 Both' };
+const notifyLabels = { submit: 'On Submit', fulfill: 'On Fulfill', both: 'Both' };
 const notifyColors = { submit: 'bg-blue-50 text-blue-700', fulfill: 'bg-green-50 text-green-700', both: 'bg-orange-50 text-orange-700' };
 
 function aeRender() {
@@ -70,7 +70,7 @@ function aeRender() {
                     <div class="text-xs text-gray-500 mt-0.5">${escHtml(e.email)}</div>
                     <div class="flex items-center gap-2 mt-1.5 flex-wrap">
                         <span class="text-[10px] px-2 py-0.5 rounded-full font-medium ${notifyColors[e.notify_on] || 'bg-gray-100 text-gray-600'}">${notifyLabels[e.notify_on] || e.notify_on}</span>
-                        <span class="text-[10px] text-gray-400">${e.kitchen_name ? '🏕️ ' + escHtml(e.kitchen_name) : '🌍 All kitchens'}</span>
+                        <span class="text-[10px] text-gray-400">${e.kitchen_name ? '' + escHtml(e.kitchen_name) : 'All kitchens'}</span>
                     </div>
                 </div>
                 <div class="flex items-center gap-1 shrink-0">
@@ -97,7 +97,7 @@ function aeShowEdit(id) { aeOpenForm(aeEmails.find(e => e.id === id)); }
 
 function aeOpenForm(item) {
     const isEdit = !!item;
-    const kitchenOpts = '<option value="">🌍 All Kitchens</option>' +
+    const kitchenOpts = '<option value="">All Kitchens</option>' +
         aeKitchens.map(k => `<option value="${k.id}" ${item?.kitchen_id == k.id ? 'selected' : ''}>${escHtml(k.name)}</option>`).join('');
     openSheet(`
         <div class="flex justify-center pt-2 pb-1"><div class="w-10 h-1 rounded-full bg-gray-300"></div></div>
@@ -119,9 +119,9 @@ function aeOpenForm(item) {
             <div>
                 <label class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1 block">Notify When</label>
                 <select id="aeFormNotifyOn" class="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-orange-200">
-                    <option value="both" ${item?.notify_on === 'both' || !item ? 'selected' : ''}>📧 Both — Submit & Fulfill</option>
-                    <option value="submit" ${item?.notify_on === 'submit' ? 'selected' : ''}>📤 Order Submitted only</option>
-                    <option value="fulfill" ${item?.notify_on === 'fulfill' ? 'selected' : ''}>✅ Order Fulfilled only</option>
+                    <option value="both" ${item?.notify_on === 'both' || !item ? 'selected' : ''}>Both — Submit & Fulfill</option>
+                    <option value="submit" ${item?.notify_on === 'submit' ? 'selected' : ''}>Order Submitted only</option>
+                    <option value="fulfill" ${item?.notify_on === 'fulfill' ? 'selected' : ''}>Order Fulfilled only</option>
                 </select>
             </div>
             <div>
@@ -180,7 +180,7 @@ async function aeSendTest(id) {
     showToast('Sending test to ' + em.email + '…', 'info');
     try {
         await api('api/notification-emails.php', { method: 'POST', body: { action: 'test_send', id } });
-        showToast('Test email sent to ' + em.email + ' ✓');
+        showToast('Test email sent to ' + em.email);
     } catch(e) { showToast('Failed: ' + (e.message || 'unknown error'), 'error'); }
 }
 
@@ -189,9 +189,9 @@ async function aeDiag() {
         showToast('Running diagnostics…', 'info');
         const d = await api('api/notification-emails.php?action=diag');
         const lines = [
-            'PHPMailer: '    + (d.phpmailer_available ? '✅ installed' : '❌ missing (using php mail())'),
-            'SMTP user: '    + (d.smtp_user_set ? '✅ set (' + d.from + ')' : '❌ NOT set'),
-            'SMTP password: '+ (d.smtp_pass_set ? '✅ set' : '❌ NOT set — emails will fail'),
+            'PHPMailer: '    + (d.phpmailer_available ? 'installed' : 'missing (using php mail())'),
+            'SMTP user: '    + (d.smtp_user_set ? 'set (' + d.from + ')' : 'NOT set'),
+            'SMTP password: '+ (d.smtp_pass_set ? 'set' : 'NOT set — emails will fail'),
             'SMTP host: '    + d.smtp_host + ':' + d.smtp_port,
         ];
         alert('Email Diagnostics\n\n' + lines.join('\n'));

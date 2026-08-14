@@ -38,7 +38,7 @@ function acRender() {
         <div class="bg-white rounded-xl border ${c.is_active ? 'border-gray-100' : 'border-red-100'} shadow-sm px-4 py-4 ${c.is_active ? '' : 'opacity-60'}">
             <div class="flex items-start justify-between gap-3">
                 <div class="flex items-center gap-3 min-w-0">
-                    <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center shrink-0 text-lg">🏕️</div>
+                    <div class="w-10 h-10 bg-slate-100 rounded-xl flex items-center justify-center shrink-0 text-lg"></div>
                     <div class="min-w-0">
                         <div class="flex items-center gap-2">
                             <span class="text-sm font-bold text-gray-800">${escHtml(c.name)}</span>
@@ -46,7 +46,7 @@ function acRender() {
                         </div>
                         <div class="flex items-center gap-2 mt-1">
                             <span class="font-mono text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded">${escHtml(c.code)}</span>
-                            <span class="text-[10px] text-gray-400">👥 ${c.user_count || 0} staff</span>
+                            <span class="text-[10px] text-gray-400">${c.user_count || 0} staff</span>
                         </div>
                     </div>
                 </div>

@@ -208,7 +208,7 @@ body.admin-portal {
     position: absolute; top: 100%; left: 0;
     padding-top: 8px;          /* visual gap via padding — keeps hover area solid */
     background: transparent;   /* outer wrapper is transparent */
-    min-width: 210px;
+    min-width: 264px;          /* wide enough that every item subtitle stays on one line */
     opacity: 0; visibility: hidden;
     transform: translateY(-6px) scale(0.98);
     transition: opacity 0.14s ease, transform 0.14s ease, visibility 0.14s;
@@ -391,19 +391,15 @@ body.admin-portal {
                     <div class="admin-dropdown" role="menu">
                       <div class="admin-dropdown-inner">
                         <a href="app.php?page=admin-orders" class="<?= $page === 'admin-orders' ? 'active' : '' ?>" role="menuitem">
-                            <span class="dd-icon">📋</span>
                             <div><div style="font-weight:600">All Orders</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Cross-kitchen order view</div></div>
                         </a>
                         <a href="app.php?page=admin-reports" class="<?= $page === 'admin-reports' ? 'active' : '' ?>" role="menuitem">
-                            <span class="dd-icon">📈</span>
                             <div><div style="font-weight:600">Reports & Analytics</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Usage, waste, summaries</div></div>
                         </a>
                         <a href="app.php?page=admin-attendance" class="<?= $page === 'admin-attendance' ? 'active' : '' ?>" role="menuitem">
-                            <span class="dd-icon">🗓️</span>
                             <div><div style="font-weight:600">Attendance</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Who's ordering vs missing, per day</div></div>
                         </a>
                         <a href="app.php?page=admin-usage" class="<?= $page === 'admin-usage' ? 'active' : '' ?>" role="menuitem">
-                            <span class="dd-icon">📊</span>
                             <div><div style="font-weight:600">Usage Scorecard</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Full lifecycle per camp · live</div></div>
                         </a>
                       </div>
@@ -421,11 +417,9 @@ body.admin-portal {
                     <div class="admin-dropdown" role="menu">
                       <div class="admin-dropdown-inner">
                         <a href="app.php?page=admin-recipes" class="<?= $page === 'admin-recipes' ? 'active' : '' ?>" role="menuitem">
-                            <span class="dd-icon">📖</span>
                             <div><div style="font-weight:600">Recipe Library</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">All chefs · manage defaults</div></div>
                         </a>
                         <a href="app.php?page=admin-stock" class="<?= $page === 'admin-stock' ? 'active' : '' ?>" role="menuitem">
-                            <span class="dd-icon">🏪</span>
                             <div><div style="font-weight:600">Stock Control</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Live inventory · inline edit</div></div>
                         </a>
                       </div>
@@ -444,27 +438,22 @@ body.admin-portal {
                       <div class="admin-dropdown-inner">
                         <div class="admin-dd-label">People</div>
                         <a href="app.php?page=admin-users" class="<?= $page === 'admin-users' ? 'active' : '' ?>" role="menuitem">
-                            <span class="dd-icon">👥</span>
                             <div><div style="font-weight:600">Users</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Chefs, storekeepers, admins</div></div>
                         </a>
                         <a href="app.php?page=admin-camps" class="<?= $page === 'admin-camps' ? 'active' : '' ?>" role="menuitem">
-                            <span class="dd-icon">🏕️</span>
                             <div><div style="font-weight:600">Camps</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Kitchen locations & codes</div></div>
                         </a>
                         <div class="admin-dd-divider"></div>
                         <div class="admin-dd-label">Catalogue</div>
                         <a href="app.php?page=admin-items" class="<?= $page === 'admin-items' ? 'active' : '' ?>" role="menuitem">
-                            <span class="dd-icon">📦</span>
                             <div><div style="font-weight:600">Items</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Portions, weights, UOM</div></div>
                         </a>
                         <a href="app.php?page=admin-meal-types" class="<?= $page === 'admin-meal-types' ? 'active' : '' ?>" role="menuitem">
-                            <span class="dd-icon">🍽️</span>
                             <div><div style="font-weight:600">Meal Types</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Breakfast, lunch, dinner…</div></div>
                         </a>
                         <div class="admin-dd-divider"></div>
                         <div class="admin-dd-label">Notifications</div>
                         <a href="app.php?page=admin-emails" class="<?= $page === 'admin-emails' ? 'active' : '' ?>" role="menuitem">
-                            <span class="dd-icon">📧</span>
                             <div><div style="font-weight:600">Email Alerts</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">External notification recipients</div></div>
                         </a>
                       </div>

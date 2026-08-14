@@ -37,23 +37,23 @@ try {
     <a href="app.php?page=admin-camps" class="bg-white rounded-xl border border-gray-100 p-4 shadow-sm active:bg-gray-50 transition">
         <div class="text-2xl font-bold text-slate-800"><?= $stats['camps'] ?? 0 ?></div>
         <div class="text-xs text-gray-400 mt-0.5">Active Camps</div>
-        <div class="text-[10px] text-slate-400 mt-2 flex items-center gap-1">🏕️ Tap to manage</div>
+        <div class="text-[10px] text-slate-400 mt-2 flex items-center gap-1">Tap to manage</div>
     </a>
     <a href="app.php?page=admin-users" class="bg-white rounded-xl border border-gray-100 p-4 shadow-sm active:bg-gray-50 transition">
         <div class="text-2xl font-bold text-slate-800"><?= $stats['users'] ?? 0 ?></div>
         <div class="text-xs text-gray-400 mt-0.5">Active Users</div>
-        <div class="text-[10px] text-blue-400 mt-2 flex items-center gap-1">👥 <?= $stats['chefs'] ?? 0 ?> chefs</div>
+        <div class="text-[10px] text-blue-400 mt-2 flex items-center gap-1"><?= $stats['chefs'] ?? 0 ?> chefs</div>
     </a>
     <a href="app.php?page=admin-items" class="bg-white rounded-xl border border-gray-100 p-4 shadow-sm active:bg-gray-50 transition">
         <div class="text-2xl font-bold text-slate-800"><?= $stats['items'] ?? 0 ?></div>
         <div class="text-xs text-gray-400 mt-0.5">Pantry Items</div>
-        <div class="text-[10px] text-orange-400 mt-2 flex items-center gap-1">📦 Tap to manage</div>
+        <div class="text-[10px] text-orange-400 mt-2 flex items-center gap-1">Tap to manage</div>
     </a>
     <a href="app.php?page=store-dashboard" class="bg-white rounded-xl border border-<?= ($stats['pending'] ?? 0) > 0 ? 'orange-200' : 'gray-100' ?> p-4 shadow-sm active:bg-gray-50 transition">
         <div class="text-2xl font-bold text-<?= ($stats['pending'] ?? 0) > 0 ? 'orange-600' : 'slate-800' ?>"><?= $stats['pending'] ?? 0 ?></div>
         <div class="text-xs text-gray-400 mt-0.5">Pending Orders</div>
         <div class="text-[10px] text-<?= ($stats['pending'] ?? 0) > 0 ? 'orange-500' : 'gray-400' ?> mt-2">
-            <?= ($stats['pending'] ?? 0) > 0 ? '⚠️ Needs attention' : '✅ All clear' ?>
+            <?= ($stats['pending'] ?? 0) > 0 ? 'Needs attention' : 'All clear' ?>
         </div>
     </a>
 </div>
@@ -62,7 +62,7 @@ try {
 <!-- Open Disputes Panel -->
 <div class="mb-5">
     <div class="flex items-center gap-2 mb-2">
-        <span class="text-sm font-bold text-red-600">⚠️ Open Disputes</span>
+        <span class="text-sm font-bold text-red-600">Open Disputes</span>
         <span class="text-[10px] bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded-full"><?= count($openDisputes) ?></span>
         <span class="text-[10px] text-gray-400 ml-auto">Flagged by chef, not yet resolved</span>
     </div>
@@ -92,12 +92,12 @@ try {
 <div class="bg-white rounded-xl border border-gray-100 shadow-sm divide-y divide-gray-50">
     <?php
     $links = [
-        ['page' => 'admin-users',      'icon' => '👥', 'label' => 'Manage Users',       'sub' => 'Create, edit, assign chefs to camps'],
-        ['page' => 'admin-camps',      'icon' => '🏕️', 'label' => 'Manage Camps',       'sub' => 'Kitchen locations and settings'],
-        ['page' => 'admin-items',      'icon' => '📦', 'label' => 'Pantry Items',        'sub' => 'Items, portions, order modes'],
-        ['page' => 'admin-meal-types', 'icon' => '🍽️', 'label' => 'Meal Types',         'sub' => 'Breakfast, Lunch, Dinner etc.'],
-        ['page' => 'admin-emails',     'icon' => '📧', 'label' => 'Email Notifications', 'sub' => 'Who gets PDF order alerts'],
-        ['page' => 'reports',          'icon' => '📈', 'label' => 'Reports',             'sub' => 'Usage and order history'],
+        ['page' => 'admin-users',      'icon' => '', 'label' => 'Manage Users',       'sub' => 'Create, edit, assign chefs to camps'],
+        ['page' => 'admin-camps',      'icon' => '', 'label' => 'Manage Camps',       'sub' => 'Kitchen locations and settings'],
+        ['page' => 'admin-items',      'icon' => '', 'label' => 'Pantry Items',        'sub' => 'Items, portions, order modes'],
+        ['page' => 'admin-meal-types', 'icon' => '', 'label' => 'Meal Types',         'sub' => 'Breakfast, Lunch, Dinner etc.'],
+        ['page' => 'admin-emails',     'icon' => '', 'label' => 'Email Notifications', 'sub' => 'Who gets PDF order alerts'],
+        ['page' => 'reports',          'icon' => '', 'label' => 'Reports',             'sub' => 'Usage and order history'],
     ];
     foreach ($links as $l):
     ?>

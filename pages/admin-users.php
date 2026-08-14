@@ -82,7 +82,7 @@ function auRender() {
                             ${u.is_active == 0 ? '<span class="text-[9px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">Inactive</span>' : ''}
                         </div>
                         <div class="text-[10px] text-gray-400 mt-0.5">
-                            ${u.kitchen_name ? '🏕️ ' + escHtml(u.kitchen_name) + ' · ' : ''}@${escHtml(u.username)}${u.email ? ' · ' + escHtml(u.email) : ''}
+                            ${u.kitchen_name ? '' + escHtml(u.kitchen_name) + ' · ' : ''}@${escHtml(u.username)}${u.email ? ' · ' + escHtml(u.email) : ''}
                         </div>
                     </div>
                 </div>

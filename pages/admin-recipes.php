@@ -34,7 +34,7 @@
     <!-- Defaults toggle -->
     <button onclick="arDefaultOnly=!arDefaultOnly;arUpdateDefaultBtn();arRender()" id="arDefaultBtn"
             class="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 transition">
-        ⭐ Defaults only
+        Defaults only
     </button>
 </div>
 
@@ -146,8 +146,8 @@ function arRender() {
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 flex-wrap">
                         <span class="text-sm font-semibold text-gray-800">${escHtml(r.name)}</span>
-                        ${r.is_default ? `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700" id="arDefaultBadge${r.id}">⭐ Default</span>` : `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400 hidden" id="arDefaultBadge${r.id}">⭐ Default</span>`}
-                        ${r.is_packed ? '<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">📦 Packed</span>' : ''}
+                        ${r.is_default ? `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700" id="arDefaultBadge${r.id}">Default</span>` : `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-400 hidden" id="arDefaultBadge${r.id}">Default</span>`}
+                        ${r.is_packed ? '<span class="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-yellow-100 text-yellow-700">Packed</span>' : ''}
                     </div>
                     <div class="flex items-center gap-2 mt-1 flex-wrap">
                         <div class="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
@@ -263,7 +263,7 @@ async function arToggleDefault(id, currentVal) {
         // Update badge in-place
         if (badge) {
             if (isDefault) {
-                badge.textContent = '⭐ Default';
+                badge.textContent = 'Default';
                 badge.className = 'text-[10px] font-semibold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700';
                 badge.classList.remove('hidden');
             } else {

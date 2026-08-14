@@ -34,16 +34,16 @@
 
 <!-- Tab pills -->
 <div class="flex gap-1.5 mb-3 overflow-x-auto pb-1">
-    <button onclick="rpSetTab('summary')"  id="rpTabSummary" class="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-800 text-white transition">📋 Order Summary</button>
-    <button onclick="rpSetTab('items')"    id="rpTabItems"   class="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 transition">🔝 Top Items</button>
-    <button onclick="rpSetTab('waste')"    id="rpTabWaste"   class="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 transition">♻️ Waste Tracker</button>
+    <button onclick="rpSetTab('summary')"  id="rpTabSummary" class="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold bg-slate-800 text-white transition">Order Summary</button>
+    <button onclick="rpSetTab('items')"    id="rpTabItems"   class="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 transition">Top Items</button>
+    <button onclick="rpSetTab('waste')"    id="rpTabWaste"   class="shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 text-gray-600 transition">Waste Tracker</button>
 </div>
 
 <!-- Tab: Order Summary -->
 <div id="rpPaneSummary">
     <div class="flex items-center justify-between mb-2">
         <span class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Results</span>
-        <button onclick="rpExportSummaryCSV()" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition compact-btn">⬇ Export CSV</button>
+        <button onclick="rpExportSummaryCSV()" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition compact-btn">Export CSV</button>
     </div>
     <div id="rpSummaryContent">
         <div class="text-center py-10 text-gray-300 text-sm">Press Load to fetch data</div>
@@ -54,7 +54,7 @@
 <div id="rpPaneItems" class="hidden">
     <div class="flex items-center justify-between mb-2">
         <span class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Results</span>
-        <button onclick="rpExportItemsCSV()" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition compact-btn">⬇ Export CSV</button>
+        <button onclick="rpExportItemsCSV()" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition compact-btn">Export CSV</button>
     </div>
     <div id="rpItemsContent">
         <div class="text-center py-10 text-gray-300 text-sm">Press Load to fetch data</div>
@@ -65,7 +65,7 @@
 <div id="rpPaneWaste" class="hidden">
     <div class="flex items-center justify-between mb-2">
         <span class="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Results</span>
-        <button onclick="rpExportWasteCSV()" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition compact-btn">⬇ Export CSV</button>
+        <button onclick="rpExportWasteCSV()" class="text-[10px] font-semibold px-2.5 py-1 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 transition compact-btn">Export CSV</button>
     </div>
     <div id="rpWasteContent">
         <div class="text-center py-10 text-gray-300 text-sm">Press Load to fetch data</div>

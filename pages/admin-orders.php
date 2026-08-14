@@ -211,7 +211,7 @@ function aoRender() {
                             <span class="text-[10px] font-semibold px-2 py-0.5 rounded-full ${badge}">${label}</span>
                         </div>
                         <div class="text-[10px] text-gray-500 mt-0.5">
-                            🏕️ ${escHtml(r.kitchen_name || '—')} · ${mealLbl}
+                            ${escHtml(r.kitchen_name || '—')} · ${mealLbl}
                         </div>
                         <div class="flex items-center gap-3 mt-1 text-[10px] text-gray-400">
                             <span>${r.guest_count ?? 0} guests</span>

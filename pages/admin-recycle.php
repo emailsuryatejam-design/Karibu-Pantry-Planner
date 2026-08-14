@@ -85,7 +85,7 @@ function rbRender() {
     const rows = rbData[rbCurrentTab] || [];
     const panel = document.getElementById('rbPanel');
     if (!rows.length) {
-        panel.innerHTML = `<div class="text-center py-12 text-gray-400 text-sm">✓ ${rbLabels[rbCurrentTab].empty}</div>`;
+        panel.innerHTML = `<div class="text-center py-12 text-gray-400 text-sm">${rbLabels[rbCurrentTab].empty}</div>`;
         return;
     }
     panel.innerHTML = rows.map(r => rbCard(rbCurrentTab, r)).join('');
@@ -118,7 +118,7 @@ function rbCard(type, r) {
         <div class="flex-1 min-w-0">
             <div class="text-sm font-semibold text-gray-800">${title}</div>
             <div class="text-xs text-gray-400 mt-0.5">${sub}</div>
-            <div class="text-[10px] text-red-400 mt-1">🗑 Deleted by ${escHtml(who)} · ${when}</div>
+            <div class="text-[10px] text-red-400 mt-1">Deleted by ${escHtml(who)} · ${when}</div>
         </div>
         <button onclick="rbRestore('${type}', ${r.id})"
             class="shrink-0 bg-green-50 text-green-700 hover:bg-green-100 text-[11px] font-semibold px-3 py-1.5 rounded-lg transition compact-btn">
@@ -130,7 +130,7 @@ function rbCard(type, r) {
 async function rbRestore(type, id) {
     try {
         await api('api/recycle.php', { method: 'POST', body: { action: 'restore', type, id } });
-        showToast('Restored ✓');
+        showToast('Restored');
         // Remove from local data and re-render
         rbData[type] = (rbData[type] || []).filter(r => r.id !== id);
         // Update badge
