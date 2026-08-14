@@ -44,6 +44,14 @@ reconciles unused stock. One app, role-based views. Hosted on Hostinger.
   "phantom" drafts piled up (e.g. sundowner/bush_dinner at camps that don't serve them).
   Those were soft-deleted (reversible; undo manifest in `reports/phantom_purge_manifest_*.json`).
 
+## Admin: Camp Usage Scorecard (2026-08-14)
+- `pages/admin-usage.php` (nav: Admin → **Operations → Usage Scorecard**, `app.php?page=admin-usage&days=7|14|30`).
+  Live, server-rendered, admin-only. Per-camp full lifecycle over the last N completed days (core meals):
+  Ordered (of N×3), On-time %, Reaches-store %, Fulfilled %, Closed %, Stuck (processing count). Green ≥80 /
+  amber 50–79 / red <50. On-time compares `created_at + INTERVAL <offset> HOUR` (offset = DB→EAT, computed
+  live from `NOW()`, ~3) against `TIMESTAMP(req_date, cutoff)` where cutoffs are 08:00/12:00/18:00. Dormant
+  camps shown explicitly. Registered in `$adminPages` + `$opsPages`. Sibling of admin-attendance.php.
+
 ## Admin: Attendance / usage calendar (2026-07-30)
 - `pages/admin-attendance.php` (nav: Admin → **Operations → Attendance**, `app.php?page=admin-attendance&days=7|14|30`).
   Server-rendered grid: rows = active kitchens (excl Demo 6), cols = days, each day = 3 dots B/L/D.
