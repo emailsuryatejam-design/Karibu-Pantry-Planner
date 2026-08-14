@@ -4,6 +4,7 @@
  * Maps each day-of-week + meal to recipe IDs from the recipes table.
  * Run once: https://your-domain.com/seed-weekly-menu.php
  */
+if (PHP_SAPI !== 'cli') { http_response_code(403); exit('Forbidden'); } // CLI only — no web access
 require_once __DIR__ . '/config.php';
 $db = getDB();
 

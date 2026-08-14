@@ -5,8 +5,10 @@
     Require all denied
 </FilesMatch>
 
-# Block config, auth, migration, setup, and key files
-<FilesMatch "^(config\.php|auth\.php|vapid-keys\.php|migrate-.+\.php|setup\.php)$">
+# Block ALL non-entry-point PHP: includes (config/auth/mailer/pdf), setup/migration,
+# and every CLI/cron/seed/scratch script. Only real web entry points stay reachable
+# (index.php, app.php, admin-login/forgot/reset.php, and api/*.php + pages/*.php by basename).
+<FilesMatch "^(config|auth|vapid-keys|setup|mailer|pdf|seed-.+|cron-.+|notify-.+|migrate-.+|test-.+|debug-.+|_.+)\.php$">
     Require all denied
 </FilesMatch>
 
@@ -21,6 +23,11 @@
 
     RewriteRule ^lib/ - [F,L]
     RewriteRule ^\.cache/ - [F,L]
+    # Never serve source backups, DB dumps, generated reports, or the git dir
+    RewriteRule ^_bak/ - [F,L]
+    RewriteRule ^db-backups/ - [F,L]
+    RewriteRule ^reports/ - [F,L]
+    RewriteRule ^\.git/ - [F,L]
 
     # Kitchen login URLs: /NLP, /TES, /SWC, /SSC, /SRC → route to root index.php with kitchen param
     RewriteRule ^(NLP|TES|SWC|SSC|SRC)/?$ /index.php?kitchen=$1 [QSA,L,NC]

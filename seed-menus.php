@@ -6,6 +6,8 @@
  * Only tracks cost-significant ingredients (proteins, dairy, vegetables, fruits, grains, pasta).
  * Basic pantry items (spices, herbs, oils, sauces, sugar, flour, etc.) are excluded.
  */
+// SECURITY: destructive seeder — CLI only. Never runnable from a browser/URL.
+if (PHP_SAPI !== 'cli') { http_response_code(403); exit('Forbidden'); }
 require_once __DIR__ . '/config.php';
 $db = getDB();
 

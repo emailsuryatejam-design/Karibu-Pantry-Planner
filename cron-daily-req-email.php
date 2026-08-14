@@ -16,6 +16,7 @@
  *   php cron-daily-req-email.php 2026-06-14 --to=test@example.com  # send all to one test address
  */
 
+if (PHP_SAPI !== 'cli') { http_response_code(403); exit('Forbidden'); } // CLI only — no web access
 require_once __DIR__ . '/config.php';   // sets Africa/Dar_es_Salaam tz, getDB()
 require_once __DIR__ . '/mailer.php';    // sendMailWithPDF(), mailTemplate()
 

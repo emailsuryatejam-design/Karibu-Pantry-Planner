@@ -44,6 +44,22 @@ reconciles unused stock. One app, role-based views. Hosted on Hostinger.
   "phantom" drafts piled up (e.g. sundowner/bush_dinner at camps that don't serve them).
   Those were soft-deleted (reversible; undo manifest in `reports/phantom_purge_manifest_*.json`).
 
+## Security hardening (2026-08-14)
+- **Web-exposed script audit.** `.htaccess` now denies every non-entry-point PHP by name pattern:
+  `^(config|auth|vapid-keys|setup|mailer|pdf|seed-.+|cron-.+|notify-.+|migrate-.+|test-.+|debug-.+|_.+)\.php$`
+  — only real entry points stay reachable (index.php, app.php, admin-login/forgot/reset.php, api/*.php,
+  pages/*.php by basename). Also `RewriteRule ^_bak/|^db-backups/|^reports/|^\.git/ - [F,L]`.
+- **The big hole was `seed-menus.php` (+ `seed-weekly-menu.php`)** — destructive DB reseeders whose own
+  docblock said "run via URL", no auth, reachable (200). They (and cron-*/notify-*) now have a
+  `if (PHP_SAPI !== 'cli') { http_response_code(403); exit; }` guard AS WELL — defense in depth, so they
+  can't run over the web even if .htaccess is bypassed. CLI runs (SSH/GitHub Actions) still work.
+- Removed leftover `_cleantest.php` from the web root. `_migrate_staples.php` etc. already removed.
+- Verified live: all those scripts now 403/404; index/app/admin-login/assets/api still serve.
+- **Already OK (left as-is):** login rate-limit 5/15min per user+IP (config.php `checkLoginRateLimit`);
+  session cookies HttpOnly+SameSite=Lax+Secure; CSP + HSTS + X-Frame-Options headers; `.env`/config/auth
+  blocked; PDO prepared statements throughout; `reset_all_orders`/`reset_orders` disabled (403).
+- **Still worth doing (not urgent):** rotate Joyce's admin password (shared in plaintext during setup).
+
 ## Admin: Camp Usage Scorecard (2026-08-14)
 - `pages/admin-usage.php` (nav: Admin → **Operations → Usage Scorecard**, `app.php?page=admin-usage&days=7|14|30`).
   Live, server-rendered, admin-only. Per-camp full lifecycle over the last N completed days (core meals):

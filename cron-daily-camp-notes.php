@@ -5,6 +5,7 @@
  *   php cron-daily-camp-notes.php html    → a clean, color-coded HTML page anyone can read
  * Read-only. Excludes Demo Kitchen (id 6).
  */
+if (PHP_SAPI !== 'cli') { http_response_code(403); exit('Forbidden'); } // CLI only — no web access
 require __DIR__ . '/config.php';
 $db = getDB();
 

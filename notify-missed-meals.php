@@ -18,6 +18,7 @@
  *
  * Targets operating camps, EXCLUDING Serengeti Woodlands (id 2) and Demo Kitchen (id 6).
  */
+if (PHP_SAPI !== 'cli') { http_response_code(403); exit('Forbidden'); } // CLI only — no web access
 require __DIR__ . '/config.php';
 require __DIR__ . '/mailer.php';
 
