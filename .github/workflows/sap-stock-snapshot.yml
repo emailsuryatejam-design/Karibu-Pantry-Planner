@@ -1,0 +1,50 @@
+name: SAP stock snapshot
+
+# Pulls the full SAP ItemListDetails catalogue once a day into the sap_stock tables, stamped
+# with the date — building the dated history the SAP audit/reconciliation reads from.
+# The server script (sap-snapshot.php) SKIPS if that day already has a completed snapshot, so
+# the second (fallback) fire only actually pulls SAP if the first one failed — never double-pulls.
+# Times are UTC; EAT = UTC+3. GitHub's scheduler often runs 1–3h late — fine, the delta only needs
+# a consistent daily capture, not an exact minute.
+
+on:
+  schedule:
+    - cron: '10 3 * * *'    # primary  — ~06:10 EAT
+    - cron: '10 6 * * *'    # fallback — ~09:10 EAT (skips if the primary already stored today's)
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Re-pull even if today already has a snapshot
+        type: boolean
+        default: false
+
+concurrency:
+  group: sap-stock-snapshot
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run SAP snapshot over SSH
+        env:
+          SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/hostinger_key
+          chmod 600 ~/.ssh/hostinger_key
+          FLAG=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then FLAG="--force"; fi
+          CMD="cd domains/palegoldenrod-coyote-386848.hostingersite.com/public_html && php sap-snapshot.php $FLAG"
+          # The pull is per-page-durable AND idempotent, so a mid-run SSH drop loses nothing and a
+          # retry just resumes. 3 tries, 30s apart; fail loudly so a silent gap is visible.
+          n=0
+          until [ "$n" -ge 3 ]; do
+            if ssh -i ~/.ssh/hostinger_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 \
+                 -o ServerAliveInterval=15 -o ServerAliveCountMax=20 -p 65002 \
+                 u929828006@46.202.197.46 "$CMD"; then
+              echo "OK on attempt $((n+1))"; exit 0
+            fi
+            n=$((n+1)); echo "attempt $n failed; retrying in 30s..."; sleep 30
+          done
+          echo "::error::SAP snapshot SSH failed after 3 attempts"; exit 1

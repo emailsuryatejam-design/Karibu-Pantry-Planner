@@ -60,6 +60,33 @@ reconciles unused stock. One app, role-based views. Hosted on Hostinger.
   blocked; PDO prepared statements throughout; `reset_all_orders`/`reset_orders` disabled (403).
 - **Still worth doing (not urgent):** rotate Joyce's admin password (shared in plaintext during setup).
 
+## SAP stock integration — daily snapshot (2026-08-16)
+- **Why:** SAP (Rama's ERP) serves live warehouse stock via `POST http://196.61.9.142:8588/api/ItemListDetails`
+  (no auth, reachable from the Hostinger server; NOT from arbitrary hosts). **Item codes match ours 1:1 —
+  `items.code` = SAP `itemCode`** (verified 100/100 on a page, names identical), so we join directly, no mapping
+  table. The 72 old `CHK001`-style seed items don't match; the ~2,979 real items carry SAP numeric codes in `code`.
+- **The endpoint is stock-ONLY — NO dates.** Fields: `onHand,onOrder,isCommited,avaibale,price` + per-warehouse
+  `onHand`. So movement over time can't be read from it — we snapshot daily ourselves; **day-over-day delta = the
+  movement**. Backfilling past movement by posting-date needs a *different* transactions/OINM read endpoint from
+  Rama (not exposed). `GoodsIssue` exists but is a **WRITE — never call it**. Etiquette: one full pull/day (~13 req).
+- **`sap-snapshot.php`** (CLI-only guard + web-blocked via `.htaccess` `sap-.+`): pulls the whole catalogue
+  (~1,285 items, 13×100 pages) into three self-created tables — `sap_stock`(snapshot_date,item_code,whs_code,
+  on_hand; only non-zero rows), `sap_stock_meta`(per item/day: name,grp,uom,onHand,onOrder,committed,available,
+  price), `sap_snapshot_log`(one row/run: pages,items,wh_rows,ok,note). **Commits per page** so a dropped
+  connection loses nothing — Hostinger **reaps detached processes** (nohup AND setsid both get killed) and long
+  attached SSH sessions can drop ~90s in, so per-page commit is the only reliable path. Idempotent upserts;
+  **skips if that day already has an `ok=1` snapshot** (staggered crons never double-pull). Flags: `--force`,
+  `--date=YYYY-MM-DD`, `--quiet`.
+- **Schedule:** GitHub Actions `sap-stock-snapshot.yml` — two staggered daily fires (03:10 + 06:10 UTC; the 2nd
+  skips if the 1st already stored today's), SSH + 3× retry, mirrors `missed-meal-alerts.yml`. **First snapshot:
+  2026-08-16.**
+- **Warehouse→camp map:** Lions Paw = `LP+LPBAR+INTLP` · River = `RC+RCBAR+INTRC` · Sametu = `SAMETU+SMBAR+INTSMT`
+  · Tarangire = `TG+TGBAR+INTTG` · Woodlands = `WOODLAND+WLBAR+INTWL` · shared source = `HO` (also seen: `Raha`,
+  `SUPPLIER`, `INTHO`).
+- **Next:** admin "Daily Audit" page over these snapshots — Tier-1 flags (ordered-but-no-stock, over-order,
+  stuck-in-transit, anomalies) work from day 1; **movement reconciliation** (SAP delta vs app fulfilments) lights
+  up once ≥2 days exist. Cost/consumption in TZS still needs Rama.
+
 ## Admin: Camp Usage Scorecard (2026-08-14)
 - `pages/admin-usage.php` (nav: Admin → **Operations → Usage Scorecard**, `app.php?page=admin-usage&days=7|14|30`).
   Live, server-rendered, admin-only. Per-camp full lifecycle over the last N completed days (core meals):

@@ -8,7 +8,7 @@
 # Block ALL non-entry-point PHP: includes (config/auth/mailer/pdf), setup/migration,
 # and every CLI/cron/seed/scratch script. Only real web entry points stay reachable
 # (index.php, app.php, admin-login/forgot/reset.php, and api/*.php + pages/*.php by basename).
-<FilesMatch "^(config|auth|vapid-keys|setup|mailer|pdf|seed-.+|cron-.+|notify-.+|migrate-.+|test-.+|debug-.+|_.+)\.php$">
+<FilesMatch "^(config|auth|vapid-keys|setup|mailer|pdf|seed-.+|cron-.+|notify-.+|migrate-.+|sap-.+|test-.+|debug-.+|_.+)\.php$">
     Require all denied
 </FilesMatch>
 
