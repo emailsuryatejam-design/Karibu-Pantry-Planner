@@ -83,9 +83,27 @@ reconciles unused stock. One app, role-based views. Hosted on Hostinger.
 - **Warehouse→camp map:** Lions Paw = `LP+LPBAR+INTLP` · River = `RC+RCBAR+INTRC` · Sametu = `SAMETU+SMBAR+INTSMT`
   · Tarangire = `TG+TGBAR+INTTG` · Woodlands = `WOODLAND+WLBAR+INTWL` · shared source = `HO` (also seen: `Raha`,
   `SUPPLIER`, `INTHO`).
-- **Next:** admin "Daily Audit" page over these snapshots — Tier-1 flags (ordered-but-no-stock, over-order,
-  stuck-in-transit, anomalies) work from day 1; **movement reconciliation** (SAP delta vs app fulfilments) lights
-  up once ≥2 days exist. Cost/consumption in TZS still needs Rama.
+## SAP Daily Stock Audit — page + email automation (2026-08-16)
+- **One brain, two faces.** `sap-audit-lib.php` (`sapAuditData($db)`) computes all flags; used by BOTH the live
+  page and the daily email so they never drift. Joins open orders + snapshot on `items.code = SAP itemCode`.
+  Warehouse→camp map lives in `sapCampMap()`.
+- **Live page:** `pages/admin-stock-audit.php` (nav: Admin → **Operations → Stock Audit**,
+  `app.php?page=admin-stock-audit`). Admin-only, dark theme (sibling of admin-usage), recomputed each visit.
+  Per camp: **ordered-but-nothing-on-hand** (open orders where camp store+bar+transit = 0; shows if HO can
+  cover via transfer vs a real gap), **in-transit now** (`INT*`), **anomalies** (negative stock), and
+  **movement reconciliation** (net store change since last snapshot vs app-recorded fulfilment — advisory,
+  activates once ≥2 snapshots exist). Registered in `$adminPages` + `$opsPages` (key `admin-stock-audit`;
+  NB `admin-audit` = the unrelated change-log, `admin-stock` = the inventory page — both pre-existing).
+- **Automation:** `cron-sap-audit.php` (CLI, web-blocked) emails the same digest via `sendMail`/`mailTemplate`.
+  Once-a-day guard keyed on snapshot date (`cacheGet/Set`); `--dry`/`--force`/`--to=`. **Recipients =
+  `emailsuryateja.m@gmail.com` only (rollout)** — add camp admins in `$RECIPIENTS` once signed off.
+- **Schedule:** GitHub Actions `sap-stock-audit.yml` fires on **`workflow_run`** of "SAP stock snapshot"
+  (completed+success) — runs right after the snapshot, never races the scheduler; the fallback snapshot fire
+  re-triggering it is a no-op (guard). Manual: `gh workflow run "SAP stock audit email" -f dry=true`.
+- **Known v1 caveats (refine with real 2-snapshot data):** ordered-but-no-stock naturally flags fresh
+  perishables (tomatoes/spinach = 0 at snapshot, delivered same day) — the "none at HO" vs "HO holds X" split
+  separates real gaps from daily-fresh. Reconciliation is NET change + SAP-vs-app **units may differ**; framed
+  as a lead, not proof. **Cost/consumption in TZS still needs Rama** (a transactions/OINM read endpoint).
 
 ## Admin: Camp Usage Scorecard (2026-08-14)
 - `pages/admin-usage.php` (nav: Admin → **Operations → Usage Scorecard**, `app.php?page=admin-usage&days=7|14|30`).

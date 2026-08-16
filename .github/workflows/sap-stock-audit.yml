@@ -1,0 +1,53 @@
+name: SAP stock audit email
+
+# Emails the daily stock-audit digest (cron-sap-audit.php) AFTER the snapshot has stored the
+# day's data. Triggered by the snapshot workflow completing — not a fixed time — so it never
+# races GitHub's late scheduler. The script has its own once-a-day guard, so the snapshot's
+# second (fallback) fire triggering this again is a harmless no-op.
+
+on:
+  workflow_run:
+    workflows: ["SAP stock snapshot"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Re-send even if today's audit already went out
+        type: boolean
+        default: false
+      dry:
+        description: Dry run (build the digest, send nothing)
+        type: boolean
+        default: false
+
+concurrency:
+  group: sap-stock-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    # Only after a SUCCESSFUL snapshot, or a manual dispatch.
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Send stock-audit digest over SSH
+        env:
+          SSH_KEY: ${{ secrets.HOSTINGER_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/hostinger_key
+          chmod 600 ~/.ssh/hostinger_key
+          FLAG=""
+          if [ "${{ github.event.inputs.force }}" = "true" ]; then FLAG="$FLAG --force"; fi
+          if [ "${{ github.event.inputs.dry }}" = "true" ]; then FLAG="$FLAG --dry"; fi
+          CMD="cd domains/palegoldenrod-coyote-386848.hostingersite.com/public_html && php cron-sap-audit.php $FLAG"
+          n=0
+          until [ "$n" -ge 3 ]; do
+            if ssh -i ~/.ssh/hostinger_key -o StrictHostKeyChecking=no -o ConnectTimeout=25 \
+                 -o ServerAliveInterval=15 -o ServerAliveCountMax=20 -p 65002 \
+                 u929828006@46.202.197.46 "$CMD"; then
+              echo "OK on attempt $((n+1))"; exit 0
+            fi
+            n=$((n+1)); echo "attempt $n failed; retrying in 30s..."; sleep 30
+          done
+          echo "::error::SAP stock-audit SSH failed after 3 attempts"; exit 1

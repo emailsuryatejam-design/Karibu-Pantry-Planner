@@ -24,6 +24,7 @@ $adminPages = array_unique(array_merge($chefPages, $storePages, [
     'admin-items', 'admin-kitchens', 'admin-req-types', 'admin-set-menus',
     'admin-emails', 'admin-orders', 'admin-stock', 'admin-recipes',
     'admin-reports', 'admin-audit', 'admin-recycle', 'admin-attendance', 'admin-usage',
+    'admin-stock-audit',
 ]));
 
 $allowedPages = isAdmin() ? $adminPages : (isChef() ? $chefPages : $storePages);
@@ -77,7 +78,7 @@ $adminPortalPages = [
 $isAdminPage = $isAdminRole && in_array($page, $adminPortalPages);
 
 // Nav group membership for active-state highlighting
-$opsPages  = ['admin-orders','admin-reports','admin-attendance','admin-usage'];
+$opsPages  = ['admin-orders','admin-reports','admin-attendance','admin-usage','admin-stock-audit'];
 $cntPages  = ['admin-recipes','admin-stock'];
 $mgmtPages = ['admin-users','admin-camps','admin-items','admin-meal-types','admin-emails','admin-kitchens','admin-req-types','admin-set-menus'];
 
@@ -401,6 +402,9 @@ body.admin-portal {
                         </a>
                         <a href="app.php?page=admin-usage" class="<?= $page === 'admin-usage' ? 'active' : '' ?>" role="menuitem">
                             <div><div style="font-weight:600">Usage Scorecard</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Full lifecycle per camp · live</div></div>
+                        </a>
+                        <a href="app.php?page=admin-stock-audit" class="<?= $page === 'admin-stock-audit' ? 'active' : '' ?>" role="menuitem">
+                            <div><div style="font-weight:600">Stock Audit</div><div style="font-size:11px;color:#9ca3af;margin-top:1px">Orders vs SAP stock · daily</div></div>
                         </a>
                       </div>
                     </div>
