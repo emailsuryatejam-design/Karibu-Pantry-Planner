@@ -34,8 +34,11 @@ function ca_fmt($n) { $s = number_format((float)$n, 1); return rtrim(rtrim($s, '
 function ca_esc($s) { return htmlspecialchars((string)$s, ENT_QUOTES); }
 
 // ---- build digest ----
-$tNo = 0; $tTr = 0; $tAn = 0;
-foreach ($A['camps'] as $c) { $tNo += count($c['no_stock']); $tTr += count($c['in_transit']); $tAn += count($c['anomalies']); }
+$tNo = 0; $tTr = 0; $tAn = 0; $tIss = 0; $tMm = 0;
+foreach ($A['camps'] as $c) {
+  $tNo += count($c['no_stock']); $tTr += count($c['in_transit']); $tAn += count($c['anomalies']);
+  $tIss += count($c['issued']); $tMm += count($c['mismatch']);
+}
 
 $capt = $A['captured_at'] ? date('D d M, H:i', strtotime($A['captured_at'])) : $A['latest'];
 $row = fn($l, $r) => '<tr><td style="padding:3px 8px 3px 0;color:#334155">' . $l . '</td><td style="padding:3px 0;color:#64748b;text-align:right">' . $r . '</td></tr>';
@@ -43,20 +46,32 @@ $row = fn($l, $r) => '<tr><td style="padding:3px 8px 3px 0;color:#334155">' . $l
 $c = '<p style="margin:0 0 4px;color:#475569;font-size:13px">SAP snapshot <b>' . ca_esc($capt) . ' EAT</b> · ' . number_format($A['items']) . ' items'
    . ($A['recon_available'] ? ' · movement vs ' . ca_esc($A['prev']) : ' · reconciliation activates with the next snapshot')
    . '</p>';
-$c .= '<p style="margin:0 0 14px;font-size:14px"><b>' . $tNo . '</b> ordered-but-no-stock · <b>' . $tTr . '</b> in transit · <b>' . $tAn . '</b> anomalies</p>';
+$c .= '<p style="margin:0 0 14px;font-size:14px"><b>' . $tNo . '</b> ordered-but-no-stock'
+   . ($A['recon_available'] ? ' · <b>' . $tIss . '</b> issued-not-ordered · <b>' . $tMm . '</b> qty inconsistencies' : '')
+   . ' · <b>' . $tAn . '</b> anomalies · <b>' . $tTr . '</b> in transit</p>';
 
 foreach ($A['camps'] as $kid => $cp) {
-  $has = count($cp['no_stock']) + count($cp['anomalies']);
-  $reconBig = 0;
-  foreach ($cp['recon'] as $x) if (abs($x['gap']) > 5) $reconBig++;
+  $has = count($cp['no_stock']) + count($cp['anomalies']) + count($cp['issued']) + count($cp['mismatch']);
   $c .= '<div style="margin:0 0 12px;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden">';
   $c .= '<div style="background:#0f172a;color:#fff;padding:8px 12px;font-weight:700;font-size:13px">' . ca_esc($cp['name'])
-      . '<span style="float:right;font-weight:400;color:#94a3b8">' . count($cp['no_stock']) . ' no-stock · ' . count($cp['in_transit']) . ' transit · ' . count($cp['anomalies']) . ' anomaly</span></div>';
+      . '<span style="float:right;font-weight:400;color:#94a3b8">' . count($cp['no_stock']) . ' no-stock · ' . count($cp['issued']) . ' off-app · ' . count($cp['mismatch']) . ' qty · ' . count($cp['anomalies']) . ' anomaly</span></div>';
   $c .= '<div style="padding:10px 12px;font-size:12px">';
 
-  if (!$has && !$reconBig) {
-    $c .= '<span style="color:#16a34a">✓ All open orders covered, no anomalies.</span>';
+  if (!$has) {
+    $c .= '<span style="color:#16a34a">✓ All open orders covered, nothing issued off-app, no anomalies.</span>';
   } else {
+    if ($cp['issued']) {
+      $c .= '<div style="color:#dc2626;font-weight:600;margin:0 0 4px">Left store — NOT ordered in app (14d · review)</div><table style="width:100%;border-collapse:collapse;margin:0 0 8px">';
+      foreach (array_slice($cp['issued'], 0, 12) as $x)
+        $c .= $row(ca_esc($x['name']), 'stock left <b>' . ca_fmt($x['moved']) . '</b> ' . ca_esc($x['uom']) . ' · no app order');
+      $c .= '</table>';
+    }
+    if ($cp['mismatch']) {
+      $c .= '<div style="color:#b45309;font-weight:600;margin:0 0 4px">Quantity inconsistencies (ordered vs stock moved)</div><table style="width:100%;border-collapse:collapse;margin:0 0 8px">';
+      foreach (array_slice($cp['mismatch'], 0, 10) as $x)
+        $c .= $row(ca_esc($x['name']), 'ordered <b>' . ca_fmt($x['ordered']) . '</b> · moved <b>' . ca_fmt($x['moved']) . '</b> · ' . ($x['gap'] > 0 ? '+' : '') . ca_fmt($x['gap']) . ($x['gap'] > 0 ? ' more left' : ' less left'));
+      $c .= '</table>';
+    }
     if ($cp['no_stock']) {
       $c .= '<div style="color:#dc2626;font-weight:600;margin:0 0 4px">Ordered — nothing on hand at camp</div><table style="width:100%;border-collapse:collapse;margin:0 0 8px">';
       foreach (array_slice($cp['no_stock'], 0, 12) as $x)
@@ -69,18 +84,13 @@ foreach ($A['camps'] as $kid => $cp) {
         $c .= $row(ca_esc($x['name']), ca_esc($x['whs']) . ' = <b>' . ca_fmt($x['qty']) . '</b>');
       $c .= '</table>';
     }
-    if ($reconBig) {
-      $c .= '<div style="color:#64748b;font-weight:600;margin:0 0 4px">Movement vs recorded fulfilment (advisory)</div><table style="width:100%;border-collapse:collapse;margin:0 0 8px">';
-      foreach (array_slice($cp['recon'], 0, 8) as $x) { if (abs($x['gap']) <= 5) continue;
-        $c .= $row(ca_esc($x['name']), 'moved <b>' . ca_fmt($x['moved']) . '</b> · app <b>' . ca_fmt($x['fulfilled']) . '</b> · gap <b>' . ca_fmt($x['gap']) . '</b>'); }
-      $c .= '</table>';
-    }
   }
   if ($cp['in_transit']) $c .= '<div style="color:#94a3b8;font-size:11px">' . count($cp['in_transit']) . ' item(s) in transit to this camp.</div>';
   $c .= '</div></div>';
 }
 
-$subject = 'Karibu Stock Audit — ' . date('D d M', strtotime($A['latest'])) . ': ' . $tNo . ' no-stock, ' . $tAn . ' anomalies';
+$subject = 'Karibu Stock Audit — ' . date('D d M', strtotime($A['latest'])) . ': '
+   . ($A['recon_available'] ? $tIss . ' off-app, ' . $tMm . ' qty-gaps, ' : '') . $tNo . ' no-stock, ' . $tAn . ' anomalies';
 $html = mailTemplate('Daily Stock Audit', $c, 'Open the live audit', 'https://palegoldenrod-coyote-386848.hostingersite.com/app.php?page=admin-stock-audit');
 
 if ($dry) { echo "DRY RUN — subject: $subject\n" . strip_tags(str_replace(['</div>', '</tr>'], "\n", $c)) . "\n"; exit(0); }

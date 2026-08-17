@@ -68,19 +68,38 @@ function sapAuditData(PDO $db): array {
      GROUP BY r.kitchen_id, i.code HAVING SUM(rl.order_qty) > 0");
   foreach ($oq as $r) $openByCamp[(int)$r['kid']][] = $r;
 
-  // fulfilled per camp/code on the previous snapshot date — reconciliation baseline
-  $ffPrev = [];
+  // Order data for reconciliation. We compare stock movement to what was ORDERED (requested), not
+  // fulfilled — many camps skip the fulfil tap (e.g. Lions Paw), so fulfilled_qty is unreliable.
+  //  · appManaged: items a kitchen actually orders via the app (last 90d) — excludes non-app items
+  //    like fuel/cleaning that always "move without an order".
+  //  · order14: ordered in the last 14d — tolerates bulk items ordered weekly, consumed daily.
+  //  · orderPrev: ordered specifically for the previous snapshot day — the day-aligned amount.
+  $appManaged = []; $order14 = []; $orderPrev = [];
   if ($prevDate) {
-    $fq = $db->prepare("SELECT r.kitchen_id kid, i.code code, SUM(rl.fulfilled_qty) ff
-       FROM requisition_lines rl JOIN requisitions r ON r.id=rl.requisition_id JOIN items i ON i.id=rl.item_id
-       WHERE r.deleted_at IS NULL AND rl.deleted_at IS NULL AND r.req_date=?
+    $am = $db->prepare("SELECT r.kitchen_id kid, i.code code FROM requisition_lines rl
+       JOIN requisitions r ON r.id=rl.requisition_id JOIN items i ON i.id=rl.item_id
+       WHERE r.deleted_at IS NULL AND rl.deleted_at IS NULL AND r.req_date BETWEEN ? - INTERVAL 90 DAY AND ?
          AND i.code IS NOT NULL AND i.code<>'' GROUP BY r.kitchen_id, i.code");
-    $fq->execute([$prevDate]);
-    foreach ($fq as $r) $ffPrev[(int)$r['kid']][$r['code']] = (float)$r['ff'];
+    $am->execute([$prevDate, $prevDate]);
+    foreach ($am as $r) $appManaged[(int)$r['kid']][$r['code']] = 1;
+
+    $o14 = $db->prepare("SELECT r.kitchen_id kid, i.code code, SUM(rl.order_qty) o FROM requisition_lines rl
+       JOIN requisitions r ON r.id=rl.requisition_id JOIN items i ON i.id=rl.item_id
+       WHERE r.deleted_at IS NULL AND rl.deleted_at IS NULL AND rl.status<>'rejected'
+         AND r.req_date BETWEEN ? - INTERVAL 14 DAY AND ? AND i.code IS NOT NULL AND i.code<>'' GROUP BY r.kitchen_id, i.code");
+    $o14->execute([$latest, $latest]);
+    foreach ($o14 as $r) $order14[(int)$r['kid']][$r['code']] = (float)$r['o'];
+
+    $op = $db->prepare("SELECT r.kitchen_id kid, i.code code, SUM(rl.order_qty) o FROM requisition_lines rl
+       JOIN requisitions r ON r.id=rl.requisition_id JOIN items i ON i.id=rl.item_id
+       WHERE r.deleted_at IS NULL AND rl.deleted_at IS NULL AND rl.status<>'rejected'
+         AND r.req_date=? AND i.code IS NOT NULL AND i.code<>'' GROUP BY r.kitchen_id, i.code");
+    $op->execute([$prevDate]);
+    foreach ($op as $r) $orderPrev[(int)$r['kid']][$r['code']] = (float)$r['o'];
   }
 
   foreach (sapCampMap() as $kid => $c) {
-    $noStock = []; $inTransit = []; $anomalies = []; $recon = [];
+    $noStock = []; $inTransit = []; $anomalies = []; $issued = []; $mismatch = [];
 
     // (1) feasibility — open-order items with nothing on hand at the camp
     foreach ($openByCamp[$kid] ?? [] as $o) {
@@ -107,25 +126,36 @@ function sapAuditData(PDO $db): array {
       }
     }
 
-    // (4) reconciliation — net store movement (prev → latest) vs app-recorded fulfilment.
-    //     ADVISORY: net change conflates receipts/issues/transfers, and SAP vs app units may differ.
+    // (4) reconciliation — where stock movement (prev → latest) and app orders disagree. Split into:
+    //   · issued   = app-managed item left the store, but NOT ordered in the last 14 days → off-app (review)
+    //   · mismatch = ordered FOR that day, but a materially different amount actually moved
+    // ADVISORY: inferred from net daily stock change (also includes deliveries), and camps that
+    // under-use the app inflate "issued". Precise off-app detection needs SAP's issue-level feed.
     if ($prevDate) {
+      $tiny = 0.001; $FLOOR = 2.0; // ignore ≤1-unit noise
       $codes = [];
       foreach ($stock as $code => $_) if ($sum($stock, $code, $c['store']) != 0) $codes[$code] = 1;
       foreach ($pstock as $code => $_) if ($sum($pstock, $code, $c['store']) != 0) $codes[$code] = 1;
-      foreach (($ffPrev[$kid] ?? []) as $code => $_) $codes[$code] = 1;
       foreach (array_keys($codes) as $code) {
         $moved = $sum($pstock, $code, $c['store']) - $sum($stock, $code, $c['store']); // >0 = left the store
-        $ff = $ffPrev[$kid][$code] ?? 0;
-        if (abs($moved) < 0.001 && $ff == 0) continue;
-        $recon[] = ['name' => $meta[$code]['name'] ?? $code, 'code' => $code,
-                    'moved' => $moved, 'fulfilled' => $ff, 'gap' => $moved - $ff];
+        if ($moved < $tiny) continue;
+        $o14 = $order14[$kid][$code] ?? 0;
+        $oPrev = $orderPrev[$kid][$code] ?? 0;
+        $row = ['name' => $meta[$code]['name'] ?? $code, 'code' => $code,
+                'moved' => $moved, 'ordered' => $oPrev, 'uom' => $meta[$code]['uom'] ?? ''];
+        if (isset($appManaged[$kid][$code]) && $moved >= $FLOOR && $o14 <= $tiny) {
+          $issued[] = $row;                                    // left the store, app item, no order in 14d
+        } elseif ($oPrev > $tiny && abs($moved - $oPrev) >= max($FLOOR, 0.25 * $oPrev)) {
+          $row['gap'] = $moved - $oPrev;
+          $mismatch[] = $row;                                  // ordered for the day, but a different amount moved
+        }
       }
-      usort($recon, fn($a, $b) => abs($b['gap']) <=> abs($a['gap']));
+      usort($issued, fn($a, $b) => $b['moved'] <=> $a['moved']);
+      usort($mismatch, fn($a, $b) => abs($b['gap']) <=> abs($a['gap']));
     }
 
     $out['camps'][$kid] = ['name' => $c['name'], 'no_stock' => $noStock, 'in_transit' => $inTransit,
-                           'anomalies' => $anomalies, 'recon' => $recon];
+                           'anomalies' => $anomalies, 'issued' => $issued, 'mismatch' => $mismatch];
   }
   return $out;
 }

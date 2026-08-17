@@ -35,7 +35,7 @@ $db->exec("CREATE TABLE IF NOT EXISTS sap_stock (
   PRIMARY KEY (snapshot_date, item_code, whs_code),
   KEY idx_item (item_code),
   KEY idx_date (snapshot_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 $db->exec("CREATE TABLE IF NOT EXISTS sap_stock_meta (
   snapshot_date DATE NOT NULL,
   item_code VARCHAR(50) NOT NULL,
@@ -49,7 +49,7 @@ $db->exec("CREATE TABLE IF NOT EXISTS sap_stock_meta (
   price DECIMAL(14,4) NOT NULL DEFAULT 0,
   PRIMARY KEY (snapshot_date, item_code),
   KEY idx_item (item_code)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 $db->exec("CREATE TABLE IF NOT EXISTS sap_snapshot_log (
   id INT AUTO_INCREMENT PRIMARY KEY,
   snapshot_date DATE NOT NULL,
@@ -61,7 +61,7 @@ $db->exec("CREATE TABLE IF NOT EXISTS sap_snapshot_log (
   ok TINYINT NOT NULL DEFAULT 0,
   note VARCHAR(255) NULL,
   KEY idx_date (snapshot_date)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4");
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
 /* Already have a good snapshot for this day? Skip. Lets the scheduler fire a few staggered
    crons for reliability without ever double-pulling SAP (etiquette: one full pull/day). */

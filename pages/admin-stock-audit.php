@@ -44,14 +44,27 @@ $reconOn = $A['recon_available'];
 
 <?php
 // summary strip
-$tNo = 0; $tTr = 0; $tAn = 0;
-foreach ($A['camps'] as $c) { $tNo += count($c['no_stock']); $tTr += count($c['in_transit']); $tAn += count($c['anomalies']); }
+$tNo = 0; $tTr = 0; $tAn = 0; $tIss = 0; $tMm = 0;
+foreach ($A['camps'] as $c) {
+    $tNo += count($c['no_stock']); $tTr += count($c['in_transit']); $tAn += count($c['anomalies']);
+    $tIss += count($c['issued']); $tMm += count($c['mismatch']);
+}
 ?>
-<div class="grid gap-2 mb-5" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">
+<div class="grid gap-2 mb-5" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))">
     <div class="rounded-xl border border-slate-700 px-4 py-3" style="background:#1e293b">
         <div class="text-2xl font-bold" style="color:<?= $tNo ? '#ef4444' : '#22c55e' ?>"><?= $tNo ?></div>
         <div class="text-[11px] text-slate-400 mt-0.5">ordered · none in stock</div>
     </div>
+    <?php if ($reconOn): ?>
+    <div class="rounded-xl border border-slate-700 px-4 py-3" style="background:#1e293b">
+        <div class="text-2xl font-bold" style="color:<?= $tIss ? '#ef4444' : '#22c55e' ?>"><?= $tIss ?></div>
+        <div class="text-[11px] text-slate-400 mt-0.5">issued · not ordered</div>
+    </div>
+    <div class="rounded-xl border border-slate-700 px-4 py-3" style="background:#1e293b">
+        <div class="text-2xl font-bold" style="color:<?= $tMm ? '#f59e0b' : '#22c55e' ?>"><?= $tMm ?></div>
+        <div class="text-[11px] text-slate-400 mt-0.5">qty inconsistencies</div>
+    </div>
+    <?php endif; ?>
     <div class="rounded-xl border border-slate-700 px-4 py-3" style="background:#1e293b">
         <div class="text-2xl font-bold" style="color:<?= $tTr ? '#f59e0b' : '#64748b' ?>"><?= $tTr ?></div>
         <div class="text-[11px] text-slate-400 mt-0.5">items in transit</div>
@@ -118,23 +131,36 @@ foreach ($A['camps'] as $c) { $tNo += count($c['no_stock']); $tTr += count($c['i
             </div>
             <?php endif; ?>
 
-            <!-- reconciliation -->
+            <!-- issued to kitchen, not ordered in app -->
             <?php if ($reconOn): ?>
             <div>
-                <div class="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style="color:#94a3b8">Movement vs recorded fulfilment <span class="normal-case font-normal text-slate-500">(advisory · net change, units may differ)</span></div>
-                <?php if (!$c['recon']): ?>
-                    <div class="text-xs text-slate-500">No stock movement recorded for this camp.</div>
-                <?php else:
-                    foreach (array_slice($c['recon'], 0, 10) as $x):
-                        $gap = $x['gap']; $big = abs($gap) > 0.001;
-                        $col = !$big ? '#22c55e' : (abs($gap) > 5 ? '#f87171' : '#fbbf24'); ?>
+                <div class="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style="color:#f87171">Left store — not ordered in app <span class="normal-case font-normal text-slate-500">(no order in 14 days · review)</span></div>
+                <?php if (!$c['issued']): ?>
+                    <div class="text-xs text-slate-500">Nothing material left the store without an app order. ✓</div>
+                <?php else: foreach (array_slice($c['issued'], 0, 12) as $x): ?>
                     <div class="flex items-center justify-between text-xs py-1 border-b border-slate-700/50">
                         <span class="text-slate-200 truncate pr-2"><?= htmlspecialchars($x['name']) ?></span>
-                        <span class="shrink-0 text-slate-400">stock moved <b class="text-slate-200"><?= sa_fmt($x['moved']) ?></b>
-                            · app <b class="text-slate-200"><?= sa_fmt($x['fulfilled']) ?></b>
-                            · gap <b style="color:<?= $col ?>"><?= sa_fmt($gap) ?></b></span>
+                        <span class="shrink-0 text-slate-400">stock left <b style="color:#f87171"><?= sa_fmt($x['moved']) ?></b> <?= htmlspecialchars($x['uom']) ?> · <b class="text-slate-500">no app order</b></span>
                     </div>
-                    <?php endforeach; endif; ?>
+                <?php endforeach;
+                    if (count($c['issued']) > 12): ?><div class="text-[11px] text-slate-500 mt-1">+ <?= count($c['issued']) - 12 ?> more</div><?php endif;
+                endif; ?>
+            </div>
+
+            <!-- quantity inconsistencies -->
+            <div>
+                <div class="text-[11px] font-semibold uppercase tracking-wide mb-1.5" style="color:#fbbf24">Quantity inconsistencies <span class="normal-case font-normal text-slate-500">(ordered for the day vs stock actually moved)</span></div>
+                <?php if (!$c['mismatch']): ?>
+                    <div class="text-xs text-slate-500">Ordered amounts match what moved. ✓</div>
+                <?php else: foreach (array_slice($c['mismatch'], 0, 10) as $x):
+                    $over = $x['gap'] > 0; ?>
+                    <div class="flex items-center justify-between text-xs py-1 border-b border-slate-700/50">
+                        <span class="text-slate-200 truncate pr-2"><?= htmlspecialchars($x['name']) ?></span>
+                        <span class="shrink-0 text-slate-400">ordered <b class="text-slate-200"><?= sa_fmt($x['ordered']) ?></b>
+                            · moved <b class="text-slate-200"><?= sa_fmt($x['moved']) ?></b>
+                            · <b style="color:#fbbf24"><?= $over ? '+' : '' ?><?= sa_fmt($x['gap']) ?></b> <?= $over ? 'more left' : 'less left' ?></span>
+                    </div>
+                <?php endforeach; endif; ?>
             </div>
             <?php endif; ?>
 
@@ -146,6 +172,7 @@ foreach ($A['camps'] as $c) { $tNo += count($c['no_stock']); $tTr += count($c['i
     <div><b class="text-slate-300">Ordered — nothing on hand</b> — an open order (today+) whose item shows 0 across the camp's store, bar and in-transit. If HO holds it, an internal transfer covers it; if not, a real shortage.</div>
     <div><b class="text-slate-300">In transit</b> — dispatched to the camp but not yet received into its store (SAP <code>INT*</code>).</div>
     <div><b class="text-slate-300">Anomalies</b> — negative on-hand in SAP = a data or counting error to chase.</div>
-    <div><b class="text-slate-300">Movement vs fulfilment</b> — how much the camp's store fell since the last snapshot vs what the app recorded the store issuing. A gap is a lead to investigate — net change also includes deliveries, and SAP/app units can differ.</div>
+    <div><b class="text-slate-300">Left store — not ordered in app</b> — an app-managed item's store stock fell with no order in the last 14 days. A <em>review lead</em>, not proof: camps that under-order in the app inflate this, net change also includes deliveries, and precise off-app detection needs SAP's issue-level feed (Rama).</div>
+    <div><b class="text-slate-300">Quantity inconsistencies</b> — the item <em>was</em> ordered for that day, but a materially different amount actually left the store (≥2 units and ≥25% off). SAP/app units can differ, so treat as a lead.</div>
 </div>
 <p class="text-xs text-slate-500 mt-3">Joined on <code>items.code = SAP itemCode</code>. Snapshot pulled daily; this page reads the latest.</p>
