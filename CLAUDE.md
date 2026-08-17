@@ -90,9 +90,9 @@ reconciles unused stock. One app, role-based views. Hosted on Hostinger.
 - **Live page:** `pages/admin-stock-audit.php` (nav: Admin → **Operations → Stock Audit**,
   `app.php?page=admin-stock-audit`). Admin-only, dark theme (sibling of admin-usage), recomputed each visit.
   Per camp: **ordered-but-nothing-on-hand** (open orders where camp store+bar+transit = 0; shows if HO can
-  cover via transfer vs a real gap), **in-transit now** (`INT*`), **anomalies** (negative stock), and
-  **movement reconciliation** (net store change since last snapshot vs app-recorded fulfilment — advisory,
-  activates once ≥2 snapshots exist). Registered in `$adminPages` + `$opsPages` (key `admin-stock-audit`;
+  cover via transfer vs a real gap), **in-transit now** (`INT*`), **anomalies** (negative stock), plus two
+  reconciliation views that activate once ≥2 snapshots exist: **left-store-not-ordered** (off-app) and
+  **quantity inconsistencies**. Registered in `$adminPages` + `$opsPages` (key `admin-stock-audit`;
   NB `admin-audit` = the unrelated change-log, `admin-stock` = the inventory page — both pre-existing).
 - **Automation:** `cron-sap-audit.php` (CLI, web-blocked) emails the same digest via `sendMail`/`mailTemplate`.
   Once-a-day guard keyed on snapshot date (`cacheGet/Set`); `--dry`/`--force`/`--to=`. **Recipients =
@@ -100,10 +100,18 @@ reconciles unused stock. One app, role-based views. Hosted on Hostinger.
 - **Schedule:** GitHub Actions `sap-stock-audit.yml` fires on **`workflow_run`** of "SAP stock snapshot"
   (completed+success) — runs right after the snapshot, never races the scheduler; the fallback snapshot fire
   re-triggering it is a no-op (guard). Manual: `gh workflow run "SAP stock audit email" -f dry=true`.
-- **Known v1 caveats (refine with real 2-snapshot data):** ordered-but-no-stock naturally flags fresh
-  perishables (tomatoes/spinach = 0 at snapshot, delivered same day) — the "none at HO" vs "HO holds X" split
-  separates real gaps from daily-fresh. Reconciliation is NET change + SAP-vs-app **units may differ**; framed
-  as a lead, not proof. **Cost/consumption in TZS still needs Rama** (a transactions/OINM read endpoint).
+- **Reconciliation logic (calibrated 2026-08-17 on real Aug16→Aug17 data — naive version was 100s/camp of
+  noise).** Movement = prev-store − latest-store (>0 = left the store). Compared to what was **ordered**
+  (`order_qty`), NOT fulfilled — many camps skip the fulfil tap (Lions Paw fulfils 0%), so `fulfilled_qty` is
+  useless here. `sap-audit-lib.php` constants: `$FLOOR=2` (ignore ≤1-unit noise), off-app needs the item to be
+  **app-managed** (kitchen ordered it ≤90d — excludes fuel/cleaning that always "move without an order") AND
+  **no order in 14d** (tolerates weekly bulk buys consumed daily); qty-inconsistency = ordered FOR that day but
+  moved differs by ≥2 units AND ≥25%. Result ≈ 0–19/camp. Both are **review leads, not proof** — camps that
+  under-order in the app inflate off-app, net change includes deliveries, SAP/app units can differ. To tune,
+  change `$FLOOR`/windows in the lib.
+- **Known caveats:** ordered-but-no-stock naturally flags fresh perishables (tomatoes/spinach = 0 at snapshot,
+  delivered same day) — the "none at HO" vs "HO holds X" split separates real gaps from daily-fresh. **Precise
+  off-app issuance + cost/consumption in TZS still needs Rama** (a transactions/OINM issue-level read endpoint).
 
 ## Admin: Camp Usage Scorecard (2026-08-14)
 - `pages/admin-usage.php` (nav: Admin → **Operations → Usage Scorecard**, `app.php?page=admin-usage&days=7|14|30`).
